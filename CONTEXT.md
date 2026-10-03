@@ -9,8 +9,24 @@ The assistant as a whole: it reads game state and gives advice. It never acts in
 _Avoid_: Bot, AI player, helper
 
 **Advice**:
-A recommendation the coach gives the player for the current decision, such as "level now" or "hold this unit".
+A recommendation computed from the live game state for the current decision, such as "level now" or "hold this unit". Only Live mode gives advice.
 _Avoid_: Callout (a callout is advice delivered by voice), tip
+
+**Live mode**:
+The opt-in mode in which the coach gives advice computed from the live game state, including what it knows of opponents' boards.
+_Avoid_: Real-time mode, cheat mode
+
+**Baseline mode**:
+The mode in which the coach shows Guides, highlights and stage-keyed hints but never advice computed from the live game state.
+_Avoid_: Compliant mode, safe mode
+
+**Guide**:
+Static content for one comp, fixed before the game: its econ and leveling plan, items, augments, positioning, interim board and pivot alternatives.
+_Avoid_: Build, tier list
+
+**Post-game review**:
+A replay of a finished game's decisions against what the coach's engine would have chosen.
+_Avoid_: Recap, match summary
 
 **Comp**:
 The target team the player is building toward: units, carry, items and traits.
