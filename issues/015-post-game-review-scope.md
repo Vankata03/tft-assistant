@@ -17,3 +17,7 @@ What does the post-game review show after a finished game, and what data does it
 ### 2026-10-04 — claude-code
 
 Input from "Data source strategy": the coach logs every captured game from day one, and the owner will hold a Riot personal API key (see "Register a Riot personal API key"), usable only for the owner's own matches. Both data sources named in the question are therefore available.
+
+### 2026-10-04 — claude-code
+
+Input from "Advice engine architecture": the Engine is a pure function of the game snapshot, the game history and the data snapshot, so post-game review replays the captured game log through it round by round and gets the same advice Live mode would have given. Review prose comes from templates; v1 uses no language model. The Engine core runs post-game in both modes. Board and lobby strength is the Engine's weakest part, so if the review doubles as the evaluation harness it should measure that first (see "Board and lobby strength heuristic").

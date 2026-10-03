@@ -28,6 +28,22 @@ _Avoid_: Build, tier list
 A replay of a finished game's decisions against what the coach's engine would have chosen.
 _Avoid_: Recap, match summary
 
+**Engine**:
+The deterministic part of the coach that computes what the coach would do from a game snapshot and the game's history. Live mode uses it during a game; post-game review uses it after a game in both modes.
+_Avoid_: AI, model, solver
+
+**Live advisor**:
+The in-game loop that feeds live game state to the engine and shows its advice. It is the separable part of Live mode.
+_Avoid_: Live engine, overlay
+
+**Game plan**:
+The player's current target comp together with its line, seeded from the comp's Guide and replaced by a pivot.
+_Avoid_: Strategy, plan (bare)
+
+**Line**:
+A sequence of level and roll-down timings through the game, such as "fast 8 at 4-2".
+_Avoid_: Curve, leveling curve
+
 **Comp**:
 The target team the player is building toward: units, carry, items and traits.
 _Avoid_: Team, build, lineup
