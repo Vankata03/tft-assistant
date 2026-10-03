@@ -20,7 +20,7 @@ An MVP spec for a personal TFT coach, ready to hand to build sessions. The coach
 - **Policy**: settled in [Policy stance and feature modes](008-policy-stance-and-modes.md). Baseline mode follows Riot's third-party policy as approved apps apply it. Live mode breaks it and runs on the owner's main account at the owner's risk. Live mode is a separable component a public build can omit. The coach never automates input.
 - **Game-state input**: automatic capture only. Manual entry is rejected.
 - **Advice engine**: the owner doubts a cloud LLM is the answer. Training a model, a local LLM and a deterministic solver are all still open.
-- **Data**: the owner believes some stats sites expose APIs. Check before choosing scraping or self-aggregation.
+- **Data**: settled in [Data source strategy](010-data-source-strategy.md).
 - **Hardware** (owner's PC, checked 2026-10-04): AMD Ryzen 7 7800X3D, 32 GB RAM, AMD Radeon RX 6800 (16 GB VRAM, no CUDA). Any local model shares this GPU with the running game.
 
 ## Decisions so far
@@ -34,13 +34,14 @@ An MVP spec for a personal TFT coach, ready to hand to build sessions. The coach
 - [Prior art for TFT decision engines and the train-vs-LLM question](007-decision-engine-prior-art.md): no trained decision model is needed; a deterministic engine (rules, maths, statistics) leads, a local LLM (Vulkan only on the RX 6800) is at most a phrasing layer, and training belongs in screen-capture recognition if that route is chosen.
 - [TFT econ, level and roll math and established theory](006-econ-level-roll-theory.md): odds, pool, XP, gold and damage numbers are published in Riot data and patch notes, and hit odds, the XP/gold calendar and level-versus-roll trade-offs are directly calculable; leveling lines and pivot reasoning are heuristics; board strength and pivot timing need statistics.
 - [Policy stance and feature modes](008-policy-stance-and-modes.md): Live mode (advice from live state, all opponent data the route gives) is the product, on the main account at the owner's risk; Baseline mode is the same engine filtered to Guides, highlights and grey-zone hints; surfaces share the rules; post-game review joins v1; measured as 50 no-coach games, then 50 Live-mode games.
+- [Data source strategy](010-data-source-strategy.md): MetaTFT JSON for statistics with tactics.tools as fallback, TFT Academy for Guides with an owner override file, Data Dragon and CommunityDragon for static data plus a hand-kept per-patch file; refreshed between games, never during one; Diamond+ filter; no Riot crawler in v1, and a personal key for the owner's own matches.
 
 ## Not yet specified
 
 - **Advice surface UX**: what each surface (overlay, second screen, voice) shows, the latency budget per game phase, and how a callout competes with the player's attention. Needs the capture route first; mode rules per surface are settled in "Policy stance and feature modes".
 - **Evaluation harness**: how to judge advice quality before 50 live games, for example replaying recorded games or comparing against high-elo decisions. Depends on the data available, and may be answered by "Post-game review scope".
 - **Sub-engines for items, augments, positioning and carousel**: each probably needs its own model of the decision. These become tickets once the engine architecture is chosen.
-- **Patch cadence**: TFT patches every two weeks and a new set roughly every four months. How the coach refreshes its data and rules per patch and per set.
+- **Patch cadence**: TFT patches every two weeks and a new set roughly every four months. Data refresh is settled in "Data source strategy". Still open: how engine rules, the per-patch static file and the owner's Guide overrides are updated per patch, and what a new set breaks.
 - **Stack and runtime**: language, packaging, and how the capture, engine and surfaces talk to each other. Follows the capture route and engine decisions.
 - **Dedicated TFT client**: Riot's new PC client ships on 2026-10-09 or 2026-11-03. Every capture route needs re-checking once it is live.
 
