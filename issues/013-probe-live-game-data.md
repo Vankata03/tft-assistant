@@ -19,3 +19,9 @@ What do the local data sources actually return during a live TFT game on the own
 The results feed "Game-state capture route".
 
 Run this after 2026-10-06, when Vanguard starts blocking game-memory access for unknown third-party apps (see "Riot third-party app policy for real-time TFT advice"). If an Overwolf developer build is available by then, also record which Overwolf TFT game-event keys still update.
+
+## Comments
+
+### 2026-10-04 — claude-code
+
+Input from "Transition and pivot domain model": also screenshot one or two scouted opponent boards (with the bench if it shows), so the probe can judge whether screen capture reads opponents' boards well enough for the contested count.

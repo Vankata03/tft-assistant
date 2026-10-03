@@ -37,8 +37,23 @@ The in-game loop that feeds live game state to the engine and shows its advice. 
 _Avoid_: Live engine, overlay
 
 **Game plan**:
-The player's current target comp together with its line, seeded from the comp's Guide and replaced by a pivot.
+The player's current target comp together with its line, seeded from the comp's Guide and replaced by a pivot. An Open game plan keeps several candidate comps; a Committed one has one target comp and at most one backup comp.
 _Avoid_: Strategy, plan (bare)
+
+**Open**:
+The early state of a game plan, before commitment: several candidate comps are kept and the strongest board is played while flexible units are held.
+_Avoid_: Flex (as a noun)
+
+**Committed**:
+The state of a game plan after a commitment trigger, such as the first item completed for a carry, a 2-star key unit, a comp-defining augment, or a stage deadline. Leaving the target comp after this point is a pivot.
+
+**Backup comp**:
+The second-best comp in a committed game plan, whose key units are held when bench space allows so that a pivot is cheaper.
+_Avoid_: Plan B, secondary comp
+
+**Comp fit**:
+The expected placement if the player plays a given comp from now on, given the units, items, augments, level, gold, HP and pool the player has. Game plan choices and pivots compare comps by comp fit.
+_Avoid_: Comp score, tier
 
 **Line**:
 A sequence of level and roll-down timings through the game, such as "fast 8 at 4-2".
@@ -59,6 +74,16 @@ _Avoid_: Swap, pivot
 **Pivot**:
 Abandoning the target comp for a different comp partway through the game, for example because its units are contested.
 _Avoid_: Transition, switch
+
+**Pivot margin**:
+How much better another comp's comp fit must be than the target comp's before the coach calls a pivot. It is larger later in the game.
+
+**Recommended board**:
+The strongest set of units the player owns that fits on the board at the current level. Transition advice is the difference between it and the current board.
+_Avoid_: Best board, optimal board
+
+**Unguided comp**:
+A comp that statistics sources know but that has no Guide. It is considered only when the player turns it on.
 
 **Contested**:
 A unit or comp that other players in the same lobby are also collecting, which lowers the odds of finding its copies.

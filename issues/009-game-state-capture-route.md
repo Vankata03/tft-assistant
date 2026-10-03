@@ -21,3 +21,7 @@ Input from "Policy stance and feature modes": Live mode may use every field the 
 ### 2026-10-04 — claude-code
 
 Input from "Advice engine architecture": the Engine runs on the CPU only, with a budget of 100 ms per snapshot, so the GPU is shared only between the game and a vision model if screen capture is chosen. Each sub-engine declares its required fields and stays silent when the route lacks one, so a route gap disables specific advice rather than the coach. "Positioning decisions" is blocked on this ticket because live positioning depends on which opponent boards the route reveals.
+
+### 2026-10-04 — claude-code
+
+Input from "Transition and pivot domain model": contest is counted from each opponent's latest board sighting, plus benches only if the route exposes them. A sighting has full weight for about 2 rounds, then fades and lowers confidence; with no opponent data there is no contested term. The owner accepts scouting every opponent's board each round if a screen-capture route reads scouted boards reliably.

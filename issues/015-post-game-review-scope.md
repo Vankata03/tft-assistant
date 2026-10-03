@@ -21,3 +21,7 @@ Input from "Data source strategy": the coach logs every captured game from day o
 ### 2026-10-04 — claude-code
 
 Input from "Advice engine architecture": the Engine is a pure function of the game snapshot, the game history and the data snapshot, so post-game review replays the captured game log through it round by round and gets the same advice Live mode would have given. Review prose comes from templates; v1 uses no language model. The Engine core runs post-game in both modes. Board and lobby strength is the Engine's weakest part, so if the review doubles as the evaluation harness it should measure that first (see "Board and lobby strength heuristic").
+
+### 2026-10-04 — claude-code
+
+Input from "Transition and pivot domain model": the Game plan is folded from the game history, so replaying the log reproduces every plan change. The review should show pivot calls the player ignored and pivots the player made without a call.

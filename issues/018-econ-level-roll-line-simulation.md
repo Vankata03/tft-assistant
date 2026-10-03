@@ -11,3 +11,9 @@ blocked_by: []
 ## Question
 
 How does the econ, level and roll sub-engine choose between candidate Lines? "Advice engine architecture" fixed the method: simulate a few candidate Lines (the Guide's Line, one level earlier or later, roll-down now versus next stage) to the end of the next stage over the XP and gold calendar, hit odds and the damage model, scored by expected placement. Decide which candidates are generated and when, how hit odds account for contested units and Wisp shops, how HP and rounds left to live set roll depth, how a simulated outcome converts to expected placement, and which thresholds go into the per-patch tunables file. Stress-test against a 3-2 roll-down at 40 HP and a fast-8 Line on a loss streak.
+
+## Comments
+
+### 2026-10-04 — claude-code
+
+Input from "Transition and pivot domain model": this sub-engine supplies two comp fit terms for every candidate comp, not only the target: key-unit hit probability under the comp's Line, and Line feasibility against rounds left to live. Hit probability is computed from the current level onward, over the pool minus copies seen on opponents' boards; a sighting has full weight for about 2 rounds, then fades. With no opponent data, the pool is not reduced. Because it runs for several comps per snapshot, its per-comp cost matters against the 100 ms budget. The missed roll-down at 4-2 (keep rolling or not) is decided here.
