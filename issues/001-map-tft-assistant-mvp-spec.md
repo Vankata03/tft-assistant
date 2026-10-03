@@ -27,6 +27,8 @@ An MVP spec for a personal TFT coach, ready to hand to build sessions. The coach
 
 <!-- one line per closed ticket: [title](link): gist -->
 
+- [Current TFT set and its mechanics, including wisp](005-current-set-mechanics.md): Set 18 (Enchanted Wilds, patch 18.3); the Wisp is a per-round shop purchase that changes econ, XP and roll odds, and its tables change every patch.
+
 ## Not yet specified
 
 - **Advice surface UX**: what each surface (overlay, second screen, voice) shows, the latency budget per game phase, and how a callout competes with the player's attention. Needs the capture route and the policy stance first.

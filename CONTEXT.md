@@ -41,3 +41,7 @@ _Avoid_: All-in
 
 **Econ**:
 The player's gold management: interest, streaks, and when to spend versus save.
+
+**Wisp**:
+Set 18's set mechanic: a one-shot effect (gold, XP, rerolls, units, items or a combat buff) sold for gold in the rightmost slot of every other shop, at most one per round. "Buy Wisp" is the recurring decision of whether its effect is worth its gold against the econ, level and roll plan.
+_Avoid_: Charm (the Set 12 predecessor)
