@@ -29,6 +29,7 @@ An MVP spec for a personal TFT coach, ready to hand to build sessions. The coach
 
 - [Current TFT set and its mechanics, including wisp](005-current-set-mechanics.md): Set 18 (Enchanted Wilds, patch 18.3); the Wisp is a per-round shop purchase that changes econ, XP and roll odds, and its tables change every patch.
 - [Automatic game-state capture options for TFT](003-game-state-capture-options.md): Overwolf game events cover almost all state (needs Overwolf developer access; augment keys forbidden); screen capture is the only Overwolf-free route; Riot's port 2999 API is unusable for TFT; memory reading is blocked by Vanguard.
+- [Riot third-party app policy for real-time TFT advice](002-riot-third-party-policy.md): real-time prescriptive advice (level, roll, buy) is forbidden on every surface with no personal-tool exemption, so the opt-in mode risks the account; pre-game guides, comp-unit highlighting, stage-keyed leveling and post-game review are allowed; from 2026-10-06 Vanguard blocks memory access for unknown apps.
 
 ## Not yet specified
 

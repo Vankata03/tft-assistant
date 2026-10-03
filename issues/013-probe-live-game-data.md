@@ -17,3 +17,5 @@ What do the local data sources actually return during a live TFT game on the own
 - Screenshots of the planning phase at the owner's resolution, for judging OCR and vision feasibility. They should show the HUD, shop with a Wisp, board and bench.
 
 The results feed "Game-state capture route".
+
+Run this after 2026-10-06, when Vanguard starts blocking game-memory access for unknown third-party apps (see "Riot third-party app policy for real-time TFT advice"). If an Overwolf developer build is available by then, also record which Overwolf TFT game-event keys still update.
