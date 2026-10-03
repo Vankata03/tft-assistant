@@ -28,6 +28,7 @@ An MVP spec for a personal TFT coach, ready to hand to build sessions. The coach
 <!-- one line per closed ticket: [title](link): gist -->
 
 - [Current TFT set and its mechanics, including wisp](005-current-set-mechanics.md): Set 18 (Enchanted Wilds, patch 18.3); the Wisp is a per-round shop purchase that changes econ, XP and roll odds, and its tables change every patch.
+- [Automatic game-state capture options for TFT](003-game-state-capture-options.md): Overwolf game events cover almost all state (needs Overwolf developer access; augment keys forbidden); screen capture is the only Overwolf-free route; Riot's port 2999 API is unusable for TFT; memory reading is blocked by Vanguard.
 
 ## Not yet specified
 
@@ -36,6 +37,7 @@ An MVP spec for a personal TFT coach, ready to hand to build sessions. The coach
 - **Sub-engines for items, augments, positioning and carousel**: each probably needs its own model of the decision. These become tickets once the engine architecture is chosen.
 - **Patch cadence**: TFT patches every two weeks and a new set roughly every four months. How the coach refreshes its data and rules per patch and per set.
 - **Stack and runtime**: language, packaging, and how the capture, engine and surfaces talk to each other. Follows the capture route and engine decisions.
+- **Dedicated TFT client**: Riot's new PC client ships on 2026-10-09 or 2026-11-03. Every capture route needs re-checking once it is live.
 - **Baseline measurement**: the owner's current rank and average placement over recent games, recorded before the coach is used.
 
 ## Out of scope
