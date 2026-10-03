@@ -32,6 +32,7 @@ An MVP spec for a personal TFT coach, ready to hand to build sessions. The coach
 - [Riot third-party app policy for real-time TFT advice](002-riot-third-party-policy.md): real-time prescriptive advice (level, roll, buy) is forbidden on every surface with no personal-tool exemption, so the opt-in mode risks the account; pre-game guides, comp-unit highlighting, stage-keyed leveling and post-game review are allowed; from 2026-10-06 Vanguard blocks memory access for unknown apps.
 - [TFT stats data sources and their APIs](004-stats-data-sources-and-apis.md): only Riot has a documented API (match results, no positions or round-by-round econ); MetaTFT, tactics.tools and TFT Academy serve undocumented, unlicensed JSON; self-aggregation needs about 12.5k matches per patch for comp stats and far more for augments.
 - [Prior art for TFT decision engines and the train-vs-LLM question](007-decision-engine-prior-art.md): no trained decision model is needed; a deterministic engine (rules, maths, statistics) leads, a local LLM (Vulkan only on the RX 6800) is at most a phrasing layer, and training belongs in screen-capture recognition if that route is chosen.
+- [TFT econ, level and roll math and established theory](006-econ-level-roll-theory.md): odds, pool, XP, gold and damage numbers are published in Riot data and patch notes, and hit odds, the XP/gold calendar and level-versus-roll trade-offs are directly calculable; leveling lines and pivot reasoning are heuristics; board strength and pivot timing need statistics.
 
 ## Not yet specified
 
