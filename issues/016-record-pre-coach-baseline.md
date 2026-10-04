@@ -17,3 +17,7 @@ What are the owner's current rank and average placement over 50 games played wit
 ### 2026-10-04 — claude-code
 
 Blocked by "Register a Riot personal API key". "Data source strategy" chose a personal key, used only for the owner's own matches, over 24-hour development keys.
+
+### 2026-10-04 — claude-code
+
+Unblocked by "Register a Riot personal API key". A development key works now (stored at `$HOME\.config\tft-assistant\riot-api-key`, regenerated daily); the personal key is pending Riot's review. The owner's account (EUNE, region `europe`) has at least 100 matches in `tft-match-v1`, across all queues, so past games must be filtered to ranked and Set 18 from the match details. `tft-league-v1` by PUUID gives tier, rank and LP for the start and end rank.
