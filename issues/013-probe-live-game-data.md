@@ -25,3 +25,7 @@ Run this after 2026-10-06, when Vanguard starts blocking game-memory access for 
 ### 2026-10-04 — claude-code
 
 Input from "Transition and pivot domain model": also screenshot one or two scouted opponent boards (with the bench if it shows), so the probe can judge whether screen capture reads opponents' boards well enough for the contested count.
+
+### 2026-10-04 — claude-code
+
+Input from "Econ, level and roll Line simulation": during the probe game, also record rules facts the simulator currently takes as defaults: whether a PvE round keeps, breaks or ignores a win or loss streak; the gold that PvE orbs drop in each PvE round; and whether the Wisp's 4-champion shop alternates per round or per roll (and what the shop shows after a Wisp is bought). Each confirmed fact replaces a default in the per-patch static file.

@@ -62,3 +62,7 @@ Resolved by grilling with the owner. Sources: "Advice engine architecture", "Dat
 Glossary terms Open, Committed, Backup comp, Comp fit, Pivot margin, Recommended board and Unguided comp added to `CONTEXT.md`; Game plan sharpened.
 
 Input posted to "Item decisions", "Augment decisions", "Shop, Wisp and carousel decisions", "Econ, level and roll Line simulation", "Board and lobby strength heuristic", "Positioning decisions", "Game-state capture route", "Probe live game data sources in a real TFT game" and "Post-game review scope".
+
+### 2026-10-04 — claude-code
+
+Input from "Econ, level and roll Line simulation": this amends the comp fit terms. For comps the econ, level and roll sub-engine simulates (the target comp, the Backup comp and the top challengers from an analytic screen), the best Line's simulated expected placement is the backbone of comp fit, and comp fit equals that value plus item fit plus augment fit. Owned progress, key-unit hit probability and Line feasibility are inside the simulated result and are not added again; they survive only as its reason decomposition. Comps that are only screened keep the additive form above.

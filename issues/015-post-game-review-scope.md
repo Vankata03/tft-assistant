@@ -25,3 +25,7 @@ Input from "Advice engine architecture": the Engine is a pure function of the ga
 ### 2026-10-04 — claude-code
 
 Input from "Transition and pivot domain model": the Game plan is folded from the game history, so replaying the log reproduces every plan change. The review should show pivot calls the player ignored and pivots the player made without a call.
+
+### 2026-10-04 — claude-code
+
+Input from "Econ, level and roll Line simulation": in Live mode the player can pin a Line, and the Engine then follows the pin and only notes when another Line beats it by the line margin. The review should show pinned against recommended Lines, and each round's Line projection (gold, level, probability of having hit the key units, expected HP and expected placement) is available for replay. Free-form what-if editing of a Line was left for after v1, and the review is the natural place for it, because time is free there.

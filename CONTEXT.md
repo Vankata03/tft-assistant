@@ -56,8 +56,27 @@ The expected placement if the player plays a given comp from now on, given the u
 _Avoid_: Comp score, tier
 
 **Line**:
-A sequence of level and roll-down timings through the game, such as "fast 8 at 4-2".
+A sequence of level and roll-down timings through the game, such as "fast 8 at 4-2": the level to reach by each round, and the rounds in which to roll down, each down to a gold floor.
 _Avoid_: Curve, leveling curve
+
+**Gold floor**:
+The gold a roll-down stops at if the key units have not been found, such as "roll to 10".
+_Avoid_: Roll budget
+
+**Rounds left to live**:
+How many more lost rounds the player survives at the current HP, given the expected damage of a loss at the current stage.
+_Avoid_: Lives, HP buffer
+
+**Line margin**:
+How much better another Line's expected placement must be than the currently advised Line's before the coach changes its Line advice.
+
+**Stabilize**:
+Spending now to field the strongest board the player can reach, regardless of the target comp, because few rounds are left to live.
+_Avoid_: Panic roll
+
+**Pinned Line**:
+A Line the player chose in Live mode. The coach follows it and only notes when another Line beats it by the line margin.
+_Avoid_: Locked Line, override
 
 **Comp**:
 The target team the player is building toward: units, carry, items and traits.
