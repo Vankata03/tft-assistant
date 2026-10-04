@@ -38,3 +38,7 @@ Two facts for later tickets:
 
 - `info.game_version` is the literal `TFT Unreal Version ?.?.?.?` for every Set 18 game, so the match API no longer gives the patch. Splitting matches by patch, including any self-aggregation, has to map game dates to the patch calendar.
 - Riot's API sits behind Cloudflare, which rejects Python's default `urllib` User-Agent with HTTP 403 `error code: 1010`. Every client sends its own User-Agent.
+
+### 2026-10-04 — claude-code
+
+Input from "Evaluation harness": the coach can run silent games, capturing and logging a game while showing nothing (no advice, no Guides, no highlights). A silent game counts as a no-coach game for the pre-coach baseline as long as the owner opens no review of it before the Live-mode run starts. Playing the baseline's ranked games as silent games gives the evaluation harness game logs to fit and calibrate against before the first Live-mode game.

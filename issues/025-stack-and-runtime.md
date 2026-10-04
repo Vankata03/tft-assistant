@@ -75,3 +75,7 @@ Resolved by grilling with the owner, who accepted every recommendation. Inputs: 
 21. **One repo.** `core/` is a uv workspace with `engine`, `capture`, `live`, `review` and `harness` packages; `ui/` holds Electron and React; `schemas/` holds the generated message schemas; `data/` holds the static and tunables files per patch.
 
 Glossary terms Snapshot and Data snapshot added to `CONTEXT.md`. Inputs passed to "Advice surface UX" and "Evaluation harness".
+
+### 2026-10-04 — claude-code
+
+Input from "Evaluation harness": the CLI has two commands. `uv run tft-harness eval` replays every game log and writes a Markdown report beside the logs (gates, calibration curves, the advice diff, flip rates and the capture gap share), always compared against the latest committed tunables file. `uv run tft-harness fit` writes a candidate tunables file, which the owner accepts by committing it to `data/`. The game index records each Live-mode game's 10-game block beside its engine version, and the review store holds the owner's moment tags.

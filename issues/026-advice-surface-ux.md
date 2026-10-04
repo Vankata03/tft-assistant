@@ -72,3 +72,7 @@ Resolved with the owner by reacting to a prototype. The prototype is on the thro
   The review's layout is the one given by "Post-game review scope", drawn in the prototype's Game end phase.
 
 Input posted to "Game-state capture route" (the shop-strip capture rate during a roll-down) and "Evaluation harness" (late and too-late advice). Glossary terms Overlay, Second screen, Callout and Roll-down tracker added to `CONTEXT.md`. No new tickets.
+
+### 2026-10-04 — claude-code
+
+Input from "Evaluation harness": each review moment card on the second screen carries an agree, disagree or unsure tag for the owner. Tags are stored in the review store, keyed by game and decision point, not in the game log, and survive review regeneration. The harness reports the disagree rate; it never gates on it. During a silent game the overlay, second screen and voice show nothing, and the silent game's review stays closed until the Live-mode run starts.

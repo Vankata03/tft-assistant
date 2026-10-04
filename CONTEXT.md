@@ -60,8 +60,16 @@ The share of the advice shown in a game that the player followed.
 _Avoid_: Compliance
 
 **Evaluation harness**:
-The tool that judges the engine's advice quality across many game logs and sets the engine's tunables against it. It reads the same replay records as post-game review but is not part of it.
+The tool that judges the engine's advice quality across many game logs, mainly by scoring the engine's predictions (fight odds, damage, hit odds, expected placement) against what happened, and that proposes tunables from that judgement. It reads the same replay records as post-game review but is not part of it.
 _Avoid_: Test suite, benchmark
+
+**Flip**:
+Advice that changes and then changes back within a few planning phases when nothing the advice depends on has changed. The evaluation harness counts flips to check that margins hold advice steady.
+_Avoid_: Flicker, oscillation
+
+**Silent game**:
+A game the coach captures and logs while showing the player nothing: no advice, no Guides, no highlights, and no review until the Live-mode run starts. It counts as a game played without the coach.
+_Avoid_: Shadow mode, dry run, capture-only mode
 
 **Game log**:
 The coach's record of one game: every snapshot of game state it read, every offer, roll, pick, sighting and fight result, and the keyframes taken at decision points. Post-game review replays it.
@@ -226,7 +234,7 @@ Set 18's set mechanic: a one-shot effect (gold, XP, rerolls, units, items or a c
 _Avoid_: Charm (the Set 12 predecessor)
 
 **Pre-coach baseline**:
-The owner's average placement over the last 50 ranked games played without the coach, in the same set as the Live-mode games it is compared against. It is refreshed just before the first Live-mode game.
+The owner's average placement over the last 50 ranked games played without the coach or as silent games, in the same set as the Live-mode games it is compared against. It is refreshed just before the first Live-mode game.
 _Avoid_: Baseline (alone, it collides with Baseline mode), control group
 
 **Key unit**:
