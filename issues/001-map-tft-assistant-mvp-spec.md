@@ -2,7 +2,7 @@
 id: 1
 title: "Map: TFT Assistant MVP spec"
 labels: [wayfinder:map]
-status: open
+status: closed
 assignee:
 parent:
 blocked_by: []
@@ -71,3 +71,11 @@ An MVP spec for a personal TFT coach, ready to hand to build sessions. The coach
 - **Counter-positioning against opponent hexes and items** ([Positioning decisions](022-positioning-decisions.md)): placing against an enemy carry's hex or against Zephyr and Shroud needs opponent positions and items, which v1 does not read; scouted boards give traits only.
 - **The next set's set mechanic** ([Patch-day and new-set workflow](028-patch-day-and-new-set-workflow.md)): v1 fixes only the plug-in contract and the repair order; designing the replacement for the Wisp sub-engine is a new-set effort once that set is known.
 - **Public release and monetization**: a separate effort if the personal tool proves itself. This includes a real installer (electron-builder plus a frozen Python); v1 runs from the repo ([Stack and runtime](025-stack-and-runtime.md)).
+
+## Comments
+
+### 2026-10-04 — claude-code (resolution)
+
+Closed by the owner: the destination is reached. The MVP spec in `docs/spec.md` and `docs/spec/` is ready to hand to build sessions, and every ticket on the map is closed. The four gaps found while compiling the spec are resolved.
+
+One patch of fog stays open and is carried by the spec, not by this map: re-checking the screen-capture route once Riot's dedicated TFT client ships (2026-10-09 or 2026-11-03). It is listed under "Fog carried from the map" in the spec's open items, and `probe/probe.ps1` re-runs the checks. If the re-check changes a decision, it starts a new effort.
