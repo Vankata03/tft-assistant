@@ -45,3 +45,7 @@ Input from "Augment decisions": the Riot match record for Set 18 has no `augment
 ### 2026-10-04 — claude-code
 
 Input from "Shop, Wisp and carousel decisions": post-game review replays shop buys and sells, Wisp purchases and carousel picks through the same rules as Live mode. This needs the captured shop contents on every roll, the offered Wisps and the carousel options in the game log.
+
+### 2026-10-04 — claude-code
+
+Input from "Probe live game data sources in a real TFT game": the owner reports that TFT Academy's desktop app records each whole game as video and deletes old recordings after a while, so a recording-based review is feasible here too. Lossless frames at 1.6 s cost about 6 GB per game, so a review that keeps footage needs video encoding or keeps only selected frames. The League client's `lol-end-of-game/v1/tft-eog-stats` endpoint is another end-of-game source to check.

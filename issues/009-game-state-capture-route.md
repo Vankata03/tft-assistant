@@ -41,3 +41,7 @@ Input from "Augment decisions": the augment sub-engine requires the three offere
 ### 2026-10-04 — claude-code
 
 Input from "Shop, Wisp and carousel decisions": the shop and Wisp sub-engines require the shop's champion slots, the offered Wisp's id and cost, gold, board and bench, and the shop's slot count (5, or 4 with a Wisp) on every roll. The carousel sub-engine requires each carousel option's unit and item before the player's pick. A sub-engine whose fields are missing emits nothing.
+
+### 2026-10-04 — claude-code
+
+Input from "Probe live game data sources in a real TFT game": port 2999 is closed during a TFT game, and the League client API gives only the gameflow phase (start, reconnect, end), so the realistic routes are screen capture and Overwolf (not installed on the owner's PC). Borderless GDI capture at 2560×1440 reads every field the sub-engines need as text, including Wisp text, augment names and reroll buttons, and scouted boards. The owner wants scouting captured at about 1.5 s or faster, because a 10 s interval misses scouted boards and rerolls. The game process can crash and restart mid-match, so capture must re-attach. Correction to the augment input above: the selection timer opened at about 48–49 s for all three offers. TFT Academy's approved desktop app already overlays tier letters on live augment, item and Wisp choices and records whole games as video.
