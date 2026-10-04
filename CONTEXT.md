@@ -28,6 +28,25 @@ _Avoid_: Build, tier list
 A replay of a finished game's decisions against what the coach's engine would have chosen.
 _Avoid_: Recap, match summary
 
+**Replay record**:
+What replaying one decision point of a game log through the engine yields: the player's choice, the engine's choice, every option the engine scored, the estimated cost and whether advice was shown. Post-game review and the evaluation harness both read replay records.
+_Avoid_: Replay (alone), decision log
+
+**Moment**:
+A decision, or a run of the same decision over consecutive rounds, where the player's choice cost expected placement against the engine's choice. Post-game review surfaces the costliest moments.
+_Avoid_: Mistake, error
+
+**Close call**:
+A decision where the player's choice and the engine's choice differ by less than the estimate's noise. It is never shown as a moment.
+
+**Follow rate**:
+The share of the advice shown in a game that the player followed.
+_Avoid_: Compliance
+
+**Evaluation harness**:
+The tool that judges the engine's advice quality across many game logs and sets the engine's tunables against it. It reads the same replay records as post-game review but is not part of it.
+_Avoid_: Test suite, benchmark
+
 **Game log**:
 The coach's record of one game: every snapshot of game state it read, every offer, roll, pick, sighting and fight result, and the keyframes taken at decision points. Post-game review replays it.
 _Avoid_: Recording, replay file, match history (that is Riot's record)

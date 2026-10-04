@@ -11,3 +11,9 @@ blocked_by: []
 ## Question
 
 What language, runtime and packaging does the coach use, and how do capture, the Engine, the game log and the surfaces talk to each other? Constraints already settled: capture is screen capture of the "TFT" window plus the League client API ("Game-state capture route"); OCR and an onnxruntime vision model run on the CPU on changed regions at about 4 Hz; the Engine is a deterministic pure function on the CPU with a 100 ms budget per snapshot ("Advice engine architecture"); the surfaces are an overlay, a second-screen window and voice; the Live advisor must be a separable component that a public build can omit ("Policy stance and feature modes"); data is refreshed between games ("Data source strategy"). Decide the process layout (one process or several), the message format between components, how the overlay draws over a borderless game window, and how the pieces are packaged and started for the owner's Windows 11 PC.
+
+## Comments
+
+### 2026-10-04 — claude-code
+
+Input from "Post-game review scope": post-game review runs as an offline replay job when the League client reports the end of the game, replaying about 300 decision points through the Engine (about 30 s). Its output, one replay record per decision point, is cached with the engine version and the data snapshot id and regenerated on demand. The evaluation harness re-runs the same job over every game log when the engine or the tunables change. The game log must also record every piece of advice shown, with its timestamp and surface.
