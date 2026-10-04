@@ -33,3 +33,7 @@ Input from "Econ, level and roll Line simulation": in Live mode the player can p
 ### 2026-10-04 — claude-code
 
 Input from "Board and lobby strength heuristic": board power is measured three ways — final-board ranking on the owner's matches (Spearman correlation and placement MAE, available now), win-probability calibration from fight logs (Brier score, log-loss, calibration by stage), and damage MAE per lost round. Post-game review can show the per-fight win chance against the actual result, and that data feeds the second and third metrics.
+
+### 2026-10-04 — claude-code
+
+Input from "Item decisions": post-game review replays slams, interim holder choices and remover use through the same rules, so it can show where the player held components the coach would have slammed, or locked an item on a unit that was not its holder.

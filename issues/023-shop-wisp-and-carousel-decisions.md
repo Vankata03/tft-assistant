@@ -21,3 +21,7 @@ Input from "Transition and pivot domain model": while the plan is Open, the shop
 ### 2026-10-04 — claude-code
 
 Input from "Econ, level and roll Line simulation": a Wisp on offer with a gold, XP or roll effect is valued through the Line simulator: the simulated Line value with the Wisp bought minus the value without it, using the same seed. The simulator ignores Wisps not yet offered. It takes the shop's champion slot count (5, or 4 with a Wisp) from the capture route when known, and assumes 4.5 otherwise.
+
+### 2026-10-04 — claude-code
+
+Input from "Item decisions": carousel items, item anvils, Item-category Wisps, artifact picks and removers on offer are scored by the best comp fit across candidate comps after the choice, where the item part of comp fit is item fit: the best assignment of finished items and components to the comp's item holders, valued from MetaTFT per-unit item statistics, minus the holders' average item value. A component counts at its option value, which falls to about 0 by stage 5.

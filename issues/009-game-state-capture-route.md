@@ -29,3 +29,7 @@ Input from "Transition and pivot domain model": contest is counted from each opp
 ### 2026-10-04 — claude-code
 
 Input from "Board and lobby strength heuristic": the error metrics for board power need, per combat round, the opponent fought, the result, and the player's HP lost. Scouted boards should record items and star levels when visible, because missing fields are imputed at the stage average and lower advice confidence. A route that logs these lets `win_probability` and `surviving_units` be calibrated from fight logs.
+
+### 2026-10-04 — claude-code
+
+Input from "Item decisions": the item sub-engine requires the items on the player's units and the item bench, and stays silent without the item bench. It also reads item offers (anvils, Item-category Wisps) and held removers and Reforgers when the route exposes them. Opponents' items are not used by this sub-engine.

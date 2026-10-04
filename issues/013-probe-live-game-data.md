@@ -33,3 +33,7 @@ Input from "Econ, level and roll Line simulation": during the probe game, also r
 ### 2026-10-04 — claude-code
 
 Input from "Board and lobby strength heuristic": during the probe game, also record the HP lost on a few lost rounds together with the number and star levels of the opponent's surviving units, so the per-unit damage rule in the static file can be confirmed for Set 18.
+
+### 2026-10-04 — claude-code
+
+Input from "Item decisions": during the probe game, confirm the Set 18 item rules the item sub-engine assumes: a finished item stays on its unit until the unit is sold (items return to the item bench) or a Magnetic Remover is used; a single component can sit on a unit and gives its stats; a second component combines in place. Also note which special item kinds appear (emblems, artifacts, Radiant, support items, Reforger, item anvils) and how they show on the item bench.

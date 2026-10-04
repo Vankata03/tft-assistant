@@ -58,3 +58,7 @@ Amendments from "Board and lobby strength heuristic", which defines the four int
 - Terminal strength holds items generic, not out: a flat value per finished item and component, the same for every comp. The player's items are fixed across Lines and comps, so the term cancels in comp comparisons, and item fit stays with "Item decisions".
 - `opponent_growth_curve` is computed from statistics (units by a standard level calendar × average unit-star power under shop odds, plus the stage-typical item term), not hand-typed. It is recomputed when statistics refresh.
 - `win_probability` = σ(k_stage · power gap); `placement` = 1 + Σ P(opponent outlasts the player), using `terminal_hp_weight` on the HP gap in lost rounds; `surviving_units` = the winner's unit count × σ(c_stage · gap).
+
+### 2026-10-04 — claude-code
+
+Input from "Item decisions": this amends "the simulator holds the player's items fixed across Lines and comps". The item sub-engine values a slam (building a finished item now, or placing a single component on a unit) by running the current best Line twice with the same seed, once with the item built and once with the components held on the bench, as the Wisp valuation does. The simulator must therefore accept an item state as input and carry its generic item term in board power through the simulated rounds. At most 3 slam candidates are simulated per snapshot, which counts against the 100 ms budget.

@@ -112,6 +112,22 @@ _Avoid_: Win rate (a statistic of a comp or unit across many games), win odds
 **Unguided comp**:
 A comp that statistics sources know but that has no Guide. It is considered only when the player turns it on.
 
+**Item holder**:
+A unit in a comp that is meant to carry items, such as the carry or the main tank. A comp has at most three.
+_Avoid_: Item carrier, itemizer
+
+**Best-in-slot**:
+The items a comp's Guide gives each item holder.
+_Avoid_: BiS (in prose), ideal items
+
+**Item fit**:
+How much the player's finished items and components, given to a comp's item holders in the best way, change that comp's expected placement compared with the items its holders usually carry.
+_Avoid_: Item score
+
+**Slam**:
+Building a finished item now, or placing a single component on a unit, instead of holding the components on the bench.
+_Avoid_: Force, rush
+
 **Contested**:
 A unit or comp that other players in the same lobby are also collecting, which lowers the odds of finding its copies.
 
