@@ -49,3 +49,7 @@ Input from "Shop, Wisp and carousel decisions": post-game review replays shop bu
 ### 2026-10-04 — claude-code
 
 Input from "Probe live game data sources in a real TFT game": the owner reports that TFT Academy's desktop app records each whole game as video and deletes old recordings after a while, so a recording-based review is feasible here too. Lossless frames at 1.6 s cost about 6 GB per game, so a review that keeps footage needs video encoding or keeps only selected frames. The League client's `lol-end-of-game/v1/tft-eog-stats` endpoint is another end-of-game source to check.
+
+### 2026-10-04 — claude-code
+
+Input from "Game-state capture route": the coach keeps a game log per game, keyed by the League client's game id. Structured snapshots (every offer, roll, pick, sighting and fight result, with each field's timestamp and source) are kept forever. Media is a setting: keyframes at decision points by default (each shop after a roll, each augment, Wisp and carousel offer, each scouted board, the end of each planning phase), or full video, capped at 20 GB with the 50 Live-mode evaluation games pinned. A crash leaves a recorded gap. Augments come only from the game log, since the match API no longer records them for Set 18. Every disagreement between vision and purchase tracking is logged with a keyframe, which the review can show.

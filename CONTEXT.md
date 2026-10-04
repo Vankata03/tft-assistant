@@ -28,6 +28,22 @@ _Avoid_: Build, tier list
 A replay of a finished game's decisions against what the coach's engine would have chosen.
 _Avoid_: Recap, match summary
 
+**Game log**:
+The coach's record of one game: every snapshot of game state it read, every offer, roll, pick, sighting and fight result, and the keyframes taken at decision points. Post-game review replays it.
+_Avoid_: Recording, replay file, match history (that is Riot's record)
+
+**Keyframe**:
+A screenshot kept in the game log at a decision point, such as a shop after a roll, an augment offer or a scouted board.
+_Avoid_: Snapshot (a snapshot is the read game state, not an image)
+
+**Sighting**:
+What the coach learned of one opponent's board the last time the player scouted it, with its age in rounds. Confidence in a sighting fades as it ages.
+_Avoid_: Scout (the player's action), opponent snapshot
+
+**Purchase tracking**:
+Knowing which units the player owns from what they bought, sold and were given, rather than from looking at the board.
+_Avoid_: Shop tracking, inventory
+
 **Engine**:
 The deterministic part of the coach that computes what the coach would do from a game snapshot and the game's history. Live mode uses it during a game; post-game review uses it after a game in both modes.
 _Avoid_: AI, model, solver
