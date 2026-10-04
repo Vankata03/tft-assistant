@@ -3,7 +3,7 @@ id: 29
 title: "Assemble the MVP spec"
 labels: [wayfinder:task]
 status: open
-assignee:
+assignee: Ivan Terziev
 parent: 1
 blocked_by: []
 ---
@@ -22,3 +22,22 @@ Do:
 - **Prose pass.** The spec is a human-facing project document, so finish with an `unslop` cleanup pass and its preservation check against the draft.
 
 Resolved when `docs/spec.md` is committed, the owner has read it, and every gap it found is either a new ticket on the map or answered by an existing one.
+
+## Comments
+
+### 2026-10-04 — claude-code
+
+Progress, not a resolution: the draft is committed and waits for the owner to read it.
+
+- **Spec.** [`docs/spec.md`](../docs/spec.md) holds purpose and success measure, modes and policy, an architecture sketch, the build-order proposal, out of scope and open items. It links nine area files under [`docs/spec/`](../docs/spec/): capture, data, engine, sub-engines, surfaces, review and harness, runtime, patch workflow, and the tunables index. One file would have run past easy reading, and build sessions can load only their area.
+- **Prose pass.** `unslop` cleanup found no hard or soft phrase hits; its two soft structure flags (repeated openers in the build-order list, a "coda" that is the tunables index's final fact) are genre-natural, so no text changed. The preservation check passed on all ten files against the draft.
+- **Gaps raised as tickets**, all grilling, all on the frontier:
+  - [Opponent model from trait-only sightings](030-opponent-model-from-trait-only-sightings.md): scouted boards give traits only, but opponent board power, comp labels, the contested count, the pool reduction and the simulator's opponent start assume units.
+  - [Baseline mode and opponent sightings](031-baseline-mode-and-opponent-sightings.md): opponent-board data is Live mode only, yet Baseline mode's win chance comes from sightings, and "the Engine runs only after a game ends" in Baseline mode conflicts with that in-game win chance.
+  - [Families for unassigned tunables](032-families-for-unassigned-tunables.md): about 20 tunables have an owner but no family.
+  - [Data refresh trigger and silent sessions](033-data-refresh-trigger-and-silent-sessions.md): per-source minimum ages against a flat 6-hour check, and no way yet to start a silent session.
+- **Answered already.** The ticket's example open fact, whether MetaTFT's `comp_augment_tiers` holds per-comp augment statistics, was answered by "Augment decisions": it holds curated tiers, and no Set 18 augment statistics exist.
+- **Open build facts** carried in the spec without tickets, because none needs a decision: the `tft-eog-stats` endpoint, the OCR benchmark, the Engine budget, the board-reader fixes and item bench, reading the current opponent per combat round (the probe's field list did not include it), PvE orb gold and per-unit damage defaults, the pending personal key, and the overlay hotkey.
+- **Build order** is a proposal for the owner, starting with capture and the game log so silent games log early.
+
+Remaining to resolve: the owner reads the spec and accepts, reorders or rejects the build order.
