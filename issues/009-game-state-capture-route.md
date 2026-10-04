@@ -73,3 +73,7 @@ Resolved with the owner in a grilling session. Two research passes informed it; 
 9. **Opponents.** The coach uses whatever boards the player scouts and shows each opponent's sighting age. Whether the coach prompts the player to scout belongs to "Advice surface UX".
 
 **Map changes.** New task "Benchmark open-source board recognition on probe frames", which now blocks "Positioning decisions". "Stack and runtime" and "Advice surface UX" graduate from the fog into tickets. Model retraining per set joins the "Patch cadence" fog. Overwolf joins Out of scope.
+
+### 2026-10-04 — claude-code
+
+Input from "Advice surface UX": during a roll-down, capture reads the shop strip at about 15 Hz instead of the usual change check of about 4 Hz, so shop buys and the roll-down tracker show within 0.25 s of each new shop. A roll-down starts when the advised Line rolls down now or when the player rolls twice within about 2 s, and ends after about 3 s without a roll or at the gold floor. Normal planning keeps a 0.5 s budget for shop calls, so the shop strip must be read within about 0.3 s outside a roll-down. The rest of the capture route is unchanged.

@@ -26,3 +26,7 @@ Input from "Positioning decisions": positioning is rule-based and has no placeme
 ### 2026-10-04 — claude-code
 
 Input from "Stack and runtime": the harness is a manual Python CLI (`uv run tft-harness ...`), never scheduled. Game logs are append-only JSON Lines files with lossless WebP keyframes beside them, under `%LOCALAPPDATA%\tft-assistant\`. A rebuildable SQLite index holds game id, date, patch, placement, the pinned flag and the replay-record cache. The engine version is the git commit plus a dirty flag, and replay records cached under a dirty version are never reused. The static and tunables files are TOML in the repo's `data/`, one per patch, so git history records which tunables each run used. Each game keeps the data snapshot it started with.
+
+### 2026-10-04 — claude-code
+
+Input from "Advice surface UX": each kind of advice has a latency budget, from 0.25 s for roll-down shop buys to 3 s for the carousel pick. Advice that misses its budget still shows and is logged as late; advice whose decision passed before it was ready is dropped and logged as too late, and counts as not shown. The harness can report the share of late and too-late advice per kind as a report-only metric. Roll-down mode's thresholds (two rolls within about 2 s to start, about 3 s without a roll to end) are UX settings, not Engine tunables.

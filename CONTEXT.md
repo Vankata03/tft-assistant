@@ -12,6 +12,22 @@ _Avoid_: Bot, AI player, helper
 A recommendation computed from the live game state for the current decision, such as "level now" or "hold this unit". Only Live mode gives advice.
 _Avoid_: Callout (a callout is advice delivered by voice), tip
 
+**Overlay**:
+The coach's transparent window over the game. It anchors each piece of advice to the game element it concerns, such as a shop slot or a player-list row, and lets clicks pass through to the game except on the Line chip and the review toast.
+_Avoid_: HUD (the game's own interface), widget layer
+
+**Second screen**:
+The coach's ordinary window, meant for another monitor. In game it shows all current advice, the Line projection, the game plan, the target layout and the opponents at once; after a game it shows the post-game review.
+_Avoid_: Companion app, dashboard
+
+**Callout**:
+Advice spoken by voice. Live mode speaks only big moments, such as an augment pick or the start of a roll-down; Baseline mode speaks only the Guide's step for the stage.
+_Avoid_: Alert, voice line
+
+**Roll-down tracker**:
+The overlay widget shown during a roll-down: the gold floor, the rolls left, the chance of hitting the key units by the floor and how many copies of each key unit the player holds.
+_Avoid_: Roll counter
+
 **Live mode**:
 The opt-in mode in which the coach gives advice computed from the live game state, including what it knows of opponents' boards.
 _Avoid_: Real-time mode, cheat mode
