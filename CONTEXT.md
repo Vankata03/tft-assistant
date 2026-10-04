@@ -63,6 +63,10 @@ _Avoid_: Scout (the player's action), opponent snapshot
 Knowing which units the player owns from what they bought, sold and were given, rather than from looking at the board.
 _Avoid_: Shop tracking, inventory
 
+**Board reader**:
+The vision step of capture that identifies each unit, its star level and its items on the player's own board and bench, and the hex each board unit stands on. It works alongside purchase tracking: purchase tracking says which units the player owns, and the board reader says where they stand and what they hold.
+_Avoid_: Vision model (the board reader also includes bar detection and item matching), detector
+
 **Engine**:
 The deterministic part of the coach that computes what the coach would do from a game snapshot and the game's history. Live mode uses it during a game; post-game review uses it after a game in both modes.
 _Avoid_: AI, model, solver

@@ -17,3 +17,7 @@ What language, runtime and packaging does the coach use, and how do capture, the
 ### 2026-10-04 — claude-code
 
 Input from "Post-game review scope": post-game review runs as an offline replay job when the League client reports the end of the game, replaying about 300 decision points through the Engine (about 30 s). Its output, one replay record per decision point, is cached with the engine version and the data snapshot id and regenerated on demand. The evaluation harness re-runs the same job over every game log when the engine or the tunables change. The game log must also record every piece of advice shown, with its timestamp and surface.
+
+### 2026-10-04 — claude-code
+
+Input from "Benchmark open-source board recognition on probe frames": v1 reuses TFT-COACH's board reader (MIT), which is Python with onnxruntime and OpenCV; its own app wraps a Python backend in an Electron and React overlay. The reader ran unchanged on Python 3.14.6 with onnxruntime 1.30.0 on the CPU at 24 ms per pass. The Riot API rejects Python's default `urllib` User-Agent through Cloudflare (HTTP 403, `error code: 1010`), so the API client must send its own User-Agent.

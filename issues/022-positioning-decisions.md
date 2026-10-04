@@ -25,3 +25,7 @@ Input from "Game-state capture route": the route is screen capture only, with no
 ### 2026-10-04 — claude-code
 
 Input from "Post-game review scope": the review replays every decision point through the Engine and shows the costliest moments. Positioning review follows whatever this ticket settles. For it to work, the game log needs the own board's hex positions at the end of each planning phase and any scouted opponent positions, so the replay record can hold positions per fight.
+
+### 2026-10-04 — claude-code
+
+Input from "Benchmark open-source board recognition on probe frames": v1 uses TFT-COACH's board reader, with fixes, beside purchase tracking. The reader gives the own board's hex positions, units, star levels and items. In the probe game, every unit it read was right, but late-game 5-costs were often missed until the build fixes land, and purchase tracking fills those hexes without a position. It does not read opponents, so scouted boards give traits only in v1, with no opponent positions or items. Live positioning therefore has the own board's positions but only scouted traits to react to.
