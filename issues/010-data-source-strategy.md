@@ -33,3 +33,7 @@ Resolved by grilling with the owner. Sources: "TFT stats data sources and their 
 Open fact for the build: whether MetaTFT's `comp_augment_tiers` holds augment statistics per comp. The `augments` field in `comp_details` is empty for Set 18. If both are empty, augment rankings use global augment statistics.
 
 Graduated: "Register a Riot personal API key", which now blocks "Record the pre-coach baseline". The data side of the map's "Patch cadence" fog is settled here.
+
+### 2026-10-04 — claude-code
+
+Correction from "Augment decisions": the open fact above is answered. MetaTFT's `comp_augment_tiers` holds per-comp curated letter tiers (S, A, B), not statistics. No source has Set 18 augment statistics: the Riot match record has no `augments` field for Set 18, MetaTFT's explorer returns null augment ids, and tactics.tools has an empty augment table. Augment values come from MetaTFT's per-comp and global tiers until statistics return. The statistics path and its flags stay in the design and switch on per augment once a source publishes rows.

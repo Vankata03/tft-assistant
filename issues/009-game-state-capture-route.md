@@ -33,3 +33,7 @@ Input from "Board and lobby strength heuristic": the error metrics for board pow
 ### 2026-10-04 — claude-code
 
 Input from "Item decisions": the item sub-engine requires the items on the player's units and the item bench, and stays silent without the item bench. It also reads item offers (anvils, Item-category Wisps) and held removers and Reforgers when the route exposes them. Opponents' items are not used by this sub-engine.
+
+### 2026-10-04 — claude-code
+
+Input from "Augment decisions": the augment sub-engine requires the three offered augment ids, the offer tier, which options still have a reroll, and the augments the player holds. Advice must show within about 2 s of the offer appearing (the selection timer is about 43 s, then 58 s). The Riot match API no longer records augments for Set 18, so capture is the only source of held augments, and the coach's game log must record every offer, reroll and pick for post-game review.

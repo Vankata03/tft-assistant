@@ -37,3 +37,7 @@ Input from "Board and lobby strength heuristic": during the probe game, also rec
 ### 2026-10-04 — claude-code
 
 Input from "Item decisions": during the probe game, confirm the Set 18 item rules the item sub-engine assumes: a finished item stays on its unit until the unit is sold (items return to the item bench) or a Magnetic Remover is used; a single component can sit on a unit and gives its stats; a second component combines in place. Also note which special item kinds appear (emblems, artifacts, Radiant, support items, Reforger, item anvils) and how they show on the item bench.
+
+### 2026-10-04 — claude-code
+
+Input from "Augment decisions": during the probe game, confirm the Set 18 augment rules the augment sub-engine assumes: offers at 2-1, 3-2 and 4-2; all three options in one offer share a tier (silver, gold or prismatic); each option can be rerolled once, for free; the selection timer is about 43 s for the first offer and 58 s for the others. Screenshot one augment offer before and after a reroll, for judging how capture reads augment names and the remaining rerolls.

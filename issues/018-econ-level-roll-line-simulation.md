@@ -62,3 +62,7 @@ Amendments from "Board and lobby strength heuristic", which defines the four int
 ### 2026-10-04 — claude-code
 
 Input from "Item decisions": this amends "the simulator holds the player's items fixed across Lines and comps". The item sub-engine values a slam (building a finished item now, or placing a single component on a unit) by running the current best Line twice with the same seed, once with the item built and once with the components held on the bench, as the Wisp valuation does. The simulator must therefore accept an item state as input and carry its generic item term in board power through the simulated rounds. At most 3 slam candidates are simulated per snapshot, which counts against the 100 ms budget.
+
+### 2026-10-04 — claude-code
+
+Input from "Augment decisions": augments tagged as econ in the per-patch static file (gold, XP or free rolls) are valued like Wisps, by a same-seed simulation pair with and without the augment, from the current round and HP. Their effects are encoded in the same form as Wisp effects. Up to three offered options, plus any reroll evaluation, may need pairs during an augment selection, within the roughly 2 s budget for augment advice.

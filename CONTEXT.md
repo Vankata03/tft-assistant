@@ -124,6 +124,14 @@ _Avoid_: BiS (in prose), ideal items
 How much the player's finished items and components, given to a comp's item holders in the best way, change that comp's expected placement compared with the items its holders usually carry.
 _Avoid_: Item score
 
+**Augment fit**:
+How much the augments the player holds change a comp's expected placement compared with the augments players of that comp usually take. An augment slot not yet picked counts as an average augment.
+_Avoid_: Augment score, augment tier
+
+**Comp-defining augment**:
+An augment whose pick leaves one candidate comp clearly ahead of the others, mostly because of that augment's augment fit. Picking one commits the game plan.
+_Avoid_: Carry augment, trait augment (as a synonym)
+
 **Slam**:
 Building a finished item now, or placing a single component on a unit, instead of holding the components on the bench.
 _Avoid_: Force, rush
