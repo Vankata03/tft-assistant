@@ -24,6 +24,10 @@ _Avoid_: Companion app, dashboard
 Advice spoken by voice. Live mode speaks only big moments, such as an augment pick or the start of a roll-down; Baseline mode speaks only the Guide's step for the stage.
 _Avoid_: Alert, voice line
 
+**Confidence**:
+How far the coach trusts a piece of advice, in three bands: low, medium and high. Low-confidence advice is shown marked as uncertain and is never spoken.
+_Avoid_: Certainty (a sighting's inference certainty is one input to confidence)
+
 **Roll-down tracker**:
 The overlay widget shown during a roll-down: the gold floor, the rolls left, the chance of hitting the key units by the floor and how many copies of each key unit the player holds.
 _Avoid_: Roll counter

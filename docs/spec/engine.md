@@ -25,6 +25,8 @@ Each advice item carries:
 
 The Engine returns the list ranked by urgency, then by impact on expected placement. Surfaces choose only how many items to show; they never re-rank. Surfaces drop items below a confidence threshold, and voice uses a stricter threshold than the overlay.
 
+**Confidence** is a number from 0 to 1 in three bands: low below `confidence_medium_min` (0.5), medium, and high from `confidence_high_min` (0.8). Surfaces drop advice below `confidence_show_min` (0.2). Low-confidence advice shows dashed and is never spoken; voice speaks medium and high advice only.
+
 ### Missing and flagged data
 
 Each sub-engine declares its required fields and stays silent when one is missing or stale; it never guesses. Stale, "changed this patch", `default` and `carried` data lower confidence ([data.md](data.md), [patch-workflow.md](patch-workflow.md)).
@@ -49,8 +51,8 @@ The Engine core always ships, because post-game review runs it in both modes. Th
 
 The Engine derives the Game plan by folding the Game plan layer over the game history. Each call replays the layer over past snapshots, so it knows the previous plan without hidden state, and that fold gives hysteresis. Caching the fold is an optimization only.
 
-- **Open.** The plan keeps the top-k candidate comps (k in tunables), the strongest board is played, and flexible units are held. Moving between candidates while Open is free and raises no call.
-- **Committed.** The plan commits at the first commitment trigger: the first finished item on a carry, a 2-star or 3-star key unit, a comp-defining augment, or stage 3-2 at the latest. The triggers live in tunables. A Committed plan has one target comp and at most one Backup comp, the second-best comp by comp fit, whose key units the shop holds when bench space allows.
+- **Open.** The plan keeps the top-k candidate comps (k is `open_candidate_count`, 3), the strongest board is played, and flexible units are held. Moving between candidates while Open is free and raises no call.
+- **Committed.** The plan commits at the first commitment trigger: the first finished item on a carry, a 2-star or 3-star key unit, a comp-defining augment, or stage 3-2 at the latest. The triggers are fixed rules; only the latest round, `commit_latest_round`, is a tunable. A Committed plan has one target comp and at most one Backup comp, the second-best comp by comp fit, whose key units the shop holds when bench space allows.
 - **First candidates.** The Open plan's first top-k candidates at 1-1 are ranked by comp fit, which at that point is mostly the MetaTFT average, plus the item fit of held components, plus the opening encounter's effect. There is no separate opener logic.
 
 ### Comp universe
@@ -85,12 +87,12 @@ There is no separate contest rule; contest acts only through hit probability.
 
 - Unit level: the pool loses each unit's expected copies on opponents' boards, from each opponent's inferred board: P(unit) × the expected copies at the unit's cost under `opponent_star_mix` for the round (1 for 1-star, 3 for 2-star, 9 for 3-star). Opponents' benches are never seen, so contest is underestimated, never overstated.
 - Comp level: the number of opponents whose label is the same comp. It is display and reason text only ("2 opponents on Ahri") and has no channel into hit odds, because opponents' future buys are not projected.
-- A sighting has full weight for about 2 rounds (tunable). After that its contested term fades and advice confidence drops.
+- A sighting has full age weight for `sighting_full_weight_rounds` (start 2). After that its age weight halves every `sighting_half_life_rounds` (start 1), so its contested term fades and advice confidence drops.
 - With no opponent data there is no contested term. The coach never infers contest from the player's own shop.
 
 ### Transition
 
-- Each planning phase the Engine computes the recommended board: the owned units (board and bench) within the unit cap that give the highest board power. Progress toward the target comp only breaks ties within a strength tolerance. Because trait breakpoints make the sum non-additive, the build picks the subset by greedy selection with swap improvement; exhaustive search over a full bench is near the 100 ms budget.
+- Each planning phase the Engine computes the recommended board: the owned units (board and bench) within the unit cap that give the highest board power. Progress toward the target comp only breaks ties within `transition_tolerance`, a family 2 margin. Because trait breakpoints make the sum non-additive, the build picks the subset by greedy selection with swap improvement; exhaustive search over a full bench is near the 100 ms budget.
 - Transition is strength-gated: a comp unit replaces an interim unit only when the board stays at least as strong, within the tolerance.
 - The deadline is the main roll-down in the comp's Line (for example 4-2 for fast 8, 3-1 for reroll), or the owner override's deadline. Past it, the board takes the comp's units even at some loss of strength.
 - Advice is the difference from the current board: "Swap X for Y", "Hold Y" (within the bench budget in [sub-engines.md](sub-engines.md#shop)) and "Sell X". Item handover belongs to the item sub-engine; placement belongs to positioning.
@@ -130,7 +132,7 @@ The **opponent growth curve** gives typical board power per round: the units a s
 
 ### Comp classifier
 
-The comp classifier serves Game plan inference and opponent labels; it does not feed board power. Similarity is the weighted overlap between a board's units and a comp's final units: the carry ×3, other key units ×2, other units ×1, and the bench at half weight. Stars are ignored. It returns the top comps with their similarity; below a threshold the label is "no comp". Open plans read the top-k list. Early boards rarely classify, which is correct.
+The comp classifier serves Game plan inference and opponent labels; it does not feed board power. Similarity is the weighted overlap between a board's units and a comp's final units: the carry ×3, other key units ×2, other units ×1, and the bench at half weight, divided by the comp's own total weight so it runs from 0 to 1. Stars are ignored. It returns the top comps with their similarity; below `classifier_threshold` (0.5) the label is "no comp". Open plans read the top-k list. Early boards rarely classify, which is correct.
 
 An opponent is labelled from their inferred board by expected similarity: each unit's weight times its probability, with no bench term, against the same threshold.
 

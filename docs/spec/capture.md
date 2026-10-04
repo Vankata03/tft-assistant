@@ -44,7 +44,7 @@ The own board and bench come from two sources, and neither is trusted alone.
   2. Retrain on crops from the owner's game logs labelled by purchase tracking, to cover Lux's Avatar forms and board views of 5-costs (see the training-crop pipeline in [patch-workflow.md](patch-workflow.md)).
   3. Add a Tactician's Cape template and fetch the component templates from CommunityDragon.
   4. Read bench slot 9, which TFT-COACH skips.
-- **Merging.** Purchase tracking fills any hex the reader leaves empty, without a position. When they disagree, the reader decides position, star level and items. Unit identity follows the reader above a confidence threshold and purchase tracking below it. Every disagreement is logged with a keyframe.
+- **Merging.** Purchase tracking fills any hex the reader leaves empty, without a position. When they disagree, the reader decides position, star level and items. Unit identity follows the reader above `board_reader_identity_min` (0.55) and purchase tracking below it. Every disagreement is logged with a keyframe.
 - **Scouted boards give traits only in v1.** The reader does not read opponents (enemy units carry red bars). Opponent positions and items are not read. A sighting is the trait panel's rows with their unit counts, the hidden-row count and the opponent's level; the Engine infers the units from it ([engine.md](engine.md#opponent-model)).
 
 Augments are read from the screen in both modes. Held augments are tracked from the picks, because the Riot match record for Set 18 has no augments.
@@ -59,7 +59,7 @@ Augments are read from the screen in both modes. Held augments are tracked from 
 ## Missing, stale and conflicting fields
 
 - Each field keeps its last known value with a timestamp and source.
-- Each sub-engine declares the fields it requires and a maximum age per field. Past that age the field counts as missing and the sub-engine stays silent. A route gap therefore disables specific advice, not the coach.
+- Each sub-engine declares the fields it requires. Each field has one maximum age, shared by every sub-engine (`field_max_age_seconds`: 2 s by default, 0.5 s for the shop in roll-down mode). Past that age the field counts as missing and the sub-engines that require it stay silent. A route gap therefore disables specific advice, not the coach.
 - A failed read is never guessed. The only imputation is for opponents' board power ([engine.md](engine.md#opponent-model)).
 - HUD-layout drift after a patch needs no special mode: fields that fail to read go stale and silence their sub-engine.
 

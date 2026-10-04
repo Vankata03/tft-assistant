@@ -28,7 +28,7 @@ Baseline mode shows nothing on player-list rows and no opponent data during a ga
 ## Voice rules
 
 - Live mode speaks only big moments: the augment pick, the carousel pick, an anti-dive or anti-AoE adjustment turning on, a pivot call and the start of a roll-down. It also says "scout X" when an anti-dive or anti-AoE decision depends on that opponent's sighting.
-- Shop buys, holding gold and ordinary scout prompts are never spoken. Low-confidence advice is never spoken.
+- Shop buys, holding gold and ordinary scout prompts are never spoken. Low-confidence advice (below `confidence_medium_min`) is never spoken.
 - Baseline mode reads the Guide's step for the stage at round start, and nothing else.
 - The post-game review has no voice summary.
 

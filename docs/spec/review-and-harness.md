@@ -63,7 +63,7 @@ The evaluation harness judges the Engine's advice quality across many game logs 
 
 Each fitted metric has two comparative gates and no absolute threshold:
 
-- **Beat a naive baseline.** `win_probability` beats a stage-only win rate on Brier score. Expected placement beats the HP rank on mean absolute error. Hit probability beats the closed-form shop chain on log-loss. Damage beats the stage base alone on mean absolute error.
+- **Beat a naive baseline.** `win_probability` beats a stage-only win rate on Brier score. Expected placement beats the HP rank on mean absolute error. Hit probability beats the closed-form shop chain on log-loss. Damage beats the stage base alone on mean absolute error. The sighting age weight and persistence boost beat a model with no persistence on the log-loss of each opponent's next sighting.
 - **No regression.** A candidate is not worse than the accepted version by more than the 95 % bootstrap interval, resampled by game.
 - **Flip rate.** A flip is advice A, then B, then A within 3 planning phases with no change in the sub-engine's required fields that explains it. The rate per sub-engine must not rise against the accepted version. Target, not a gate: under 5 % of decision points.
 
@@ -74,10 +74,20 @@ Absolute thresholds may be added after 20 logged games, if the curves suggest th
 Only family 1 is tuned on the owner's games, which is the main guard against overfitting. The index of every tunable is in [tunables.md](tunables.md).
 
 1. **Fitted** on game logs by maximum likelihood (log-loss or mean absolute error) and gated.
-2. **Margins**, set from noise: each margin is z times the standard error of the difference it guards, combining Monte Carlo noise and the model error measured for family 1, per decision kind and stage. z is 2 for costly or sticky calls (pivots, comp-defining augments) and 1 for cheap or reversible ones. The harness writes each margin to the tunables file as a fixed number per stage; the Engine never computes margins live. Current starting values stay as floors until the harness has data.
+2. **Margins**, set from noise (including `transition_tolerance`): each margin is z times the standard error of the difference it guards, combining Monte Carlo noise and the model error measured for family 1, per decision kind and stage. z is 2 for costly or sticky calls (pivots, comp-defining augments) and 1 for cheap or reversible ones. The harness writes each margin to the tunables file as a fixed number per stage; the Engine never computes margins live. Current starting values stay as floors until the harness has data.
 3. **Priors from public statistics**, set by empirical Bayes or holdout on MetaTFT and tactics.tools data.
 
-A fourth group is hand-set and report-only, because no v1 data can set it.
+A fourth group is hand-set and report-only, because no v1 data can set it. A fifth is computed from data at each refresh (`opponent_growth_curve`, `default_lines_by_carry_cost`).
+
+### Checks on hand-set tunables
+
+Each check is report-only, never a gate.
+
+- **Widened-candidate check.** Replay with a widened candidate set, where the 100 ms budget does not apply: gold floors every 10 gold, `all_in_rounds_left` and `stabilize_rounds_left` removed, and `line_candidate_cap`, `challengers_simulated`, `slam_candidate_cap` and `open_candidate_count` raised. Report how often the chosen advice changes and the expected-placement difference.
+- **Classifier.** The label at each stage against the label of the same player's final board: the owner's from the game log, opponents' from the match API.
+- **Confidence bands.** Prediction accuracy per confidence band, which must improve from low to medium to high.
+- **Board-reader identity.** Where the board reader and purchase tracking disagree, which source the match API's final board proves right, per reader-confidence bucket.
+- **Field age.** The stale-silence share per field, inside the capture-gap report.
 
 ### Fit protocol
 

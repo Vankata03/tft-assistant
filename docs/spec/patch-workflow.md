@@ -10,6 +10,7 @@ TFT patches about every two weeks and ships a new set about every four months. S
 - An agent session then fills the fields the patch notes change, citing the patch-note line for each. The owner reviews the diff and commits.
 - **Schema check.** Every field holds a value and a `source` tag: `cdragon`, `ddragon`, `patch-notes`, `carried` or `default`. A missing field fails the load, and so does a new id without an entry, such as a new Wisp with no effect kind. A `carried` field on an entity the patch notes name raises a warning. Live mode lowers confidence on `default` and `carried` fields.
 - The Baseline-mode Wisp worth table is recomputed from the committed file.
+- The threat keyword lists are per-set data in the static file, hand-kept and carried over each patch.
 
 ## Tunables file
 
@@ -17,6 +18,7 @@ A new patch's tunables file starts as a whole copy of the previous patch's.
 
 - **Family 1 (fitted)** carries over. Refits stay on the 10-game block boundary and use every game of the current set, with no patch weighting. A patch inside a block does not trigger a refit.
 - **Family 2 (margins)** carries over, because Monte Carlo and model noise do not change with a patch.
+- **Hand-set** tunables carry over. **Computed** tunables (`opponent_growth_curve`, `default_lines_by_carry_cost`) recompute at each refresh.
 - **Family 3 (priors)** is recomputed by `uv run tft-harness fit --priors` at the first refresh in which the new patch's statistics pass about 500 boards; until then the old priors stay. The candidate is accepted by commit.
 - The harness first runs on a patch's own games at the next normal 10-game block.
 
@@ -59,7 +61,7 @@ This is needed within Set 18, not only at a new set, because the board reader mi
 
 The spec gives a repair checklist and a contract, not a design for the next set's mechanic. Repair order:
 
-1. The static file, from scratch.
+1. The static file, from scratch, including the threat keyword lists.
 2. Name lists and icon templates, automatic from CommunityDragon and Data Dragon.
 3. The Guides and statistics mapping, with each adapter re-checked against its schema.
 4. A board-recognition retrain.
