@@ -41,3 +41,7 @@ Input from "Item decisions": during the probe game, confirm the Set 18 item rule
 ### 2026-10-04 — claude-code
 
 Input from "Augment decisions": during the probe game, confirm the Set 18 augment rules the augment sub-engine assumes: offers at 2-1, 3-2 and 4-2; all three options in one offer share a tier (silver, gold or prismatic); each option can be rerolled once, for free; the selection timer is about 43 s for the first offer and 58 s for the others. Screenshot one augment offer before and after a reroll, for judging how capture reads augment names and the remaining rerolls.
+
+### 2026-10-04 — claude-code
+
+Input from "Shop, Wisp and carousel decisions": during the probe game, also note whether low gold seems to limit which Wisps are offered (the unconfirmed affordability rule), what the shop shows after a Wisp is bought, and which opening encounter the lobby got. Screenshot one carousel, for judging how capture reads each option's unit and item.

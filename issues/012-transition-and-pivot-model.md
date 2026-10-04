@@ -70,3 +70,7 @@ Input from "Econ, level and roll Line simulation": this amends the comp fit term
 ### 2026-10-04 — claude-code
 
 Input from "Board and lobby strength heuristic": the recommended board is scored with board power, an additive sum of unit, trait-breakpoint and generic item terms. Trait breakpoints make the sum non-additive across units, so picking the best subset of owned units within the unit cap needs a search. Exhaustive search over a full bench (about 48,000 subsets at level 9) is near the 100 ms budget, so the build should use greedy selection with swap improvement. That is a build detail, not a decision.
+
+### 2026-10-04 — claude-code
+
+Input from "Shop, Wisp and carousel decisions": the bench budget behind "Hold Y" is a priority order: target key units (by copies toward the next star level), Backup key units, pairs of recommended-board units, interim units holding items, then the rest; overflow sells from the bottom. The Open plan's first candidates at 1-1 are ranked by comp fit, mostly the MetaTFT average plus item fit of the held components plus the opening encounter's effect. There is no separate opener logic.

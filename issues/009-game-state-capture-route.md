@@ -37,3 +37,7 @@ Input from "Item decisions": the item sub-engine requires the items on the playe
 ### 2026-10-04 — claude-code
 
 Input from "Augment decisions": the augment sub-engine requires the three offered augment ids, the offer tier, which options still have a reroll, and the augments the player holds. Advice must show within about 2 s of the offer appearing (the selection timer is about 43 s, then 58 s). The Riot match API no longer records augments for Set 18, so capture is the only source of held augments, and the coach's game log must record every offer, reroll and pick for post-game review.
+
+### 2026-10-04 — claude-code
+
+Input from "Shop, Wisp and carousel decisions": the shop and Wisp sub-engines require the shop's champion slots, the offered Wisp's id and cost, gold, board and bench, and the shop's slot count (5, or 4 with a Wisp) on every roll. The carousel sub-engine requires each carousel option's unit and item before the player's pick. A sub-engine whose fields are missing emits nothing.

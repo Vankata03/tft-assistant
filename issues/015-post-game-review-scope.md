@@ -41,3 +41,7 @@ Input from "Item decisions": post-game review replays slams, interim holder choi
 ### 2026-10-04 — claude-code
 
 Input from "Augment decisions": the Riot match record for Set 18 has no `augments` field, so augment review depends entirely on the coach's own capture log of offers, rerolls and picks. A game played without a log gets no augment review. The review replays each offer through the same ranking and reroll rules as Live mode.
+
+### 2026-10-04 — claude-code
+
+Input from "Shop, Wisp and carousel decisions": post-game review replays shop buys and sells, Wisp purchases and carousel picks through the same rules as Live mode. This needs the captured shop contents on every roll, the offered Wisps and the carousel options in the game log.

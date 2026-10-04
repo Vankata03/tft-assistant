@@ -66,3 +66,7 @@ Input from "Item decisions": this amends "the simulator holds the player's items
 ### 2026-10-04 — claude-code
 
 Input from "Augment decisions": augments tagged as econ in the per-patch static file (gold, XP or free rolls) are valued like Wisps, by a same-seed simulation pair with and without the augment, from the current round and HP. Their effects are encoded in the same form as Wisp effects. Up to three offered options, plus any reroll evaluation, may need pairs during an augment selection, within the roughly 2 s budget for augment advice.
+
+### 2026-10-04 — claude-code
+
+Input from "Shop, Wisp and carousel decisions": the Line owns gold. Outside a roll-down, the shop may spend only the gold above the Line's planned end-of-round gold; copies of the target comp's key units are always bought, as the simulator assumes. In a roll-down round, roll gold includes the sale value of bench units below Backup priority ("Sell X, roll"). The simulator must also accept two more inputs for same-seed pairs: a one-round board power bonus (combat-buff Wisps) and a gold reduction alone (the gold price of a choice-rule Wisp, run with `rollouts_reroll`). Opening encounters with free rolls (Reroll Subscription) enter as static-file effects.

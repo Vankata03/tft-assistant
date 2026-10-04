@@ -157,3 +157,11 @@ _Avoid_: Charm (the Set 12 predecessor)
 **Pre-coach baseline**:
 The owner's average placement over the last 50 ranked games played without the coach, in the same set as the Live-mode games it is compared against. It is refreshed just before the first Live-mode game.
 _Avoid_: Baseline (alone, it collides with Baseline mode), control group
+
+**Key unit**:
+A unit whose copies a comp needs at a target star level, such as its carry and core units. The target star level is usually 2, and 3 for a reroll comp's carry.
+_Avoid_: Core unit (as a separate term), main unit
+
+**Opener**:
+The decisions from stage 1 to early stage 2 (the first carousel, early shop buys and items from the opening encounter) that seed the first candidate comps of an Open game plan.
+_Avoid_: Early game, start
