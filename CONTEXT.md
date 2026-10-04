@@ -55,6 +55,14 @@ _Avoid_: Recording, replay file, match history (that is Riot's record)
 A screenshot kept in the game log at a decision point, such as a shop after a roll, an augment offer or a scouted board.
 _Avoid_: Snapshot (a snapshot is the read game state, not an image)
 
+**Snapshot**:
+The game state the coach has read at one moment: every field with its last known value, its age and its source. The engine computes advice from a snapshot and the game's history.
+_Avoid_: Frame, keyframe (a keyframe is an image), state dump
+
+**Data snapshot**:
+The statistics, Guides and static data fetched in one refresh. It never changes once written, and a game uses the data snapshot it started with from start to end.
+_Avoid_: Data version, cache
+
 **Sighting**:
 What the coach learned of one opponent's board the last time the player scouted it, with its age in rounds. Confidence in a sighting fades as it ages.
 _Avoid_: Scout (the player's action), opponent snapshot

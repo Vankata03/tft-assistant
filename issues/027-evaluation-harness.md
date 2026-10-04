@@ -22,3 +22,7 @@ Decide:
 ### 2026-10-04 — claude-code
 
 Input from "Positioning decisions": positioning is rule-based and has no placement cost, so it never produces a moment. The harness reports the `win_probability` residual on fights where an anti-dive or anti-AoE adjustment was active, split by whether the player followed the target layout. The metric is report-only, never a pass gate. Tunables waiting on this ticket: `threat_share_on` (about 0.5), `threat_share_off` (about 0.3) and `board_settle_seconds` (about 2).
+
+### 2026-10-04 — claude-code
+
+Input from "Stack and runtime": the harness is a manual Python CLI (`uv run tft-harness ...`), never scheduled. Game logs are append-only JSON Lines files with lossless WebP keyframes beside them, under `%LOCALAPPDATA%\tft-assistant\`. A rebuildable SQLite index holds game id, date, patch, placement, the pinned flag and the replay-record cache. The engine version is the git commit plus a dirty flag, and replay records cached under a dirty version are never reused. The static and tunables files are TOML in the repo's `data/`, one per patch, so git history records which tunables each run used. Each game keeps the data snapshot it started with.

@@ -28,3 +28,7 @@ Input from "Post-game review scope": the review opens on demand in the second-sc
 ### 2026-10-04 — claude-code
 
 Input from "Positioning decisions": positioning advice is a target layout for the whole board, issued once per planning phase after the board has settled for about 2 s, and re-issued only when the recommended board changes or an anti-dive or anti-AoE adjustment turns on or off. Units whose current hex is known get a move arrow; a unit known only to purchase tracking shows its target hex without one. Each adjustment carries a template reason. Voice speaks only when an anti-dive or anti-AoE adjustment turns on. Baseline mode shows only the Guide's own final and interim layouts.
+
+### 2026-10-04 — claude-code
+
+Input from "Stack and runtime": the overlay and the second-screen window are two windows of one Electron, TypeScript and React app, and voice uses Electron's `speechSynthesis` with the Windows OneCore voices. The overlay is click-through by default; single widgets can take clicks when hovered, and a hotkey hides the whole overlay. Which widgets are interactive is decided here. The overlay is excluded from screen capture, so OBS, Discord and Game Bar recordings do not show it. The game must run borderless or windowed; on exclusive fullscreen the second screen shows a warning and the overlay stays off. If the core restarts mid-game, the second screen shows a "coach restarting" state and the overlay hides advice older than the restart. The UI reports each piece of advice it showed, with surface and timestamp, to the core for the game log.
