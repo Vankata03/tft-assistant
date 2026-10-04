@@ -4,7 +4,7 @@ This is the build spec for v1 of the coach. It compiles the decisions recorded o
 
 Terms follow the glossary in [`CONTEXT.md`](../CONTEXT.md). Capitalised or domain terms such as Engine, Line, Comp fit, Board power, Snapshot and Game log mean exactly what the glossary says.
 
-Status: compiled 2026-10-04 for patch 18.3 of Set 18 (Enchanted Wilds) and read by the owner, who accepted the build order. Four gaps are open as tickets; see [Open items](#open-items).
+Status: compiled 2026-10-04 for patch 18.3 of Set 18 (Enchanted Wilds) and read by the owner, who accepted the build order. Three gaps are open as tickets; see [Open items](#open-items).
 
 ## Contents
 
