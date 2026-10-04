@@ -1,0 +1,218 @@
+{
+  "$defs": {
+    "CoreMessage": {
+      "description": "Any message the core sends to the shell.",
+      "discriminator": {
+        "mapping": {
+          "error": "#/$defs/ErrorMessage",
+          "gameflow": "#/$defs/Gameflow",
+          "session_mode": "#/$defs/SessionModeState"
+        },
+        "propertyName": "type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Gameflow"
+        },
+        {
+          "$ref": "#/$defs/SessionModeState"
+        },
+        {
+          "$ref": "#/$defs/ErrorMessage"
+        }
+      ],
+      "title": "CoreMessage"
+    },
+    "ErrorMessage": {
+      "additionalProperties": false,
+      "description": "The core rejected a message from the shell.",
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "type": {
+          "const": "error",
+          "default": "error",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "type",
+        "code",
+        "message"
+      ],
+      "title": "ErrorMessage",
+      "type": "object"
+    },
+    "Gameflow": {
+      "additionalProperties": false,
+      "description": "The League client's state and gameflow phase.\n\n`phase` is the client's phase string as reported (`Lobby`, `ChampSelect`,\n`InProgress`, `Reconnect`, `PreEndOfGame` and so on); null when the client\nis not running or reports no phase.",
+      "properties": {
+        "client_running": {
+          "title": "Client Running",
+          "type": "boolean"
+        },
+        "phase": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Phase"
+        },
+        "type": {
+          "const": "gameflow",
+          "default": "gameflow",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "type",
+        "client_running",
+        "phase"
+      ],
+      "title": "Gameflow",
+      "type": "object"
+    },
+    "Hello": {
+      "additionalProperties": false,
+      "description": "First message on every connection; the core closes it on a wrong token.",
+      "properties": {
+        "token": {
+          "title": "Token",
+          "type": "string"
+        },
+        "type": {
+          "const": "hello",
+          "default": "hello",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "type",
+        "token"
+      ],
+      "title": "Hello",
+      "type": "object"
+    },
+    "SessionMode": {
+      "description": "The mode the coach runs a game in. Stage 1 wires the selector only.",
+      "enum": [
+        "silent",
+        "baseline",
+        "live"
+      ],
+      "title": "SessionMode",
+      "type": "string"
+    },
+    "SessionModeState": {
+      "additionalProperties": false,
+      "description": "The session mode the core holds; sent on connect and on every change.",
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/SessionMode"
+        },
+        "type": {
+          "const": "session_mode",
+          "default": "session_mode",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "type",
+        "mode"
+      ],
+      "title": "SessionModeState",
+      "type": "object"
+    },
+    "SetSessionMode": {
+      "additionalProperties": false,
+      "description": "The owner picked a session mode in the tray menu.",
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/SessionMode"
+        },
+        "type": {
+          "const": "set_session_mode",
+          "default": "set_session_mode",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "type",
+        "mode"
+      ],
+      "title": "SetSessionMode",
+      "type": "object"
+    },
+    "UiMessage": {
+      "description": "Any message the shell sends to the core.",
+      "discriminator": {
+        "mapping": {
+          "hello": "#/$defs/Hello",
+          "set_session_mode": "#/$defs/SetSessionMode"
+        },
+        "propertyName": "type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Hello"
+        },
+        {
+          "$ref": "#/$defs/SetSessionMode"
+        }
+      ],
+      "title": "UiMessage"
+    }
+  },
+  "description": "Core and shell WebSocket messages, schema version 1.",
+  "title": "Messages"
+}

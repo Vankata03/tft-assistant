@@ -1,0 +1,14 @@
+[project]
+name = "tft-capture"
+version = "0.1.0"
+description = "Game-state capture: the League client API and, later, the game window."
+requires-python = ">=3.14,<3.15"
+dependencies = [
+    "httpx>=0.28",
+    "psutil>=7",
+    "websockets>=15",
+]
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"

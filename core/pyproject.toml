@@ -1,0 +1,81 @@
+[project]
+name = "tft-core"
+version = "0.1.0"
+description = "The coach's Python core process: the WebSocket to the shell, the League client API phase watcher and, later, capture and the Engine."
+requires-python = ">=3.14,<3.15"
+dependencies = [
+    "pydantic>=2.12",
+    "websockets>=15",
+    "tft-capture",
+    "tft-engine",
+    "tft-harness",
+    "tft-review",
+]
+
+[project.scripts]
+tft-core = "tft_core.app:main"
+tft-schemas = "tft_core.schemas:main"
+
+[dependency-groups]
+dev = [
+    "import-linter>=2.3",
+    "jsonschema>=4.23",
+    "pytest>=8.4",
+]
+# The Live advisor. A public build syncs with `--no-group live`.
+live = ["tft-live"]
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv]
+default-groups = ["dev", "live"]
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+tft-capture = { workspace = true }
+tft-engine = { workspace = true }
+tft-harness = { workspace = true }
+tft-live = { workspace = true }
+tft-review = { workspace = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.importlinter]
+root_packages = [
+    "tft_core",
+    "tft_engine",
+    "tft_capture",
+    "tft_live",
+    "tft_review",
+    "tft_harness",
+]
+
+[[tool.importlinter.contracts]]
+name = "Nothing outside live imports live"
+type = "forbidden"
+source_modules = [
+    "tft_core",
+    "tft_engine",
+    "tft_capture",
+    "tft_review",
+    "tft_harness",
+]
+forbidden_modules = ["tft_live"]
+
+[[tool.importlinter.contracts]]
+name = "Baseline features reach the Engine only through its allowlist"
+type = "forbidden"
+source_modules = ["tft_core.baseline"]
+forbidden_modules = ["tft_engine"]
+ignore_imports = [
+    "tft_core.baseline -> tft_engine.allowlist",
+    "tft_core.baseline.** -> tft_engine.allowlist",
+]
+unmatched_ignore_imports_alerting = "none"
+# The allowlist module itself calls into the rest of the Engine.
+allow_indirect_imports = true
