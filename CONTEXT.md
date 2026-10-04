@@ -32,12 +32,16 @@ _Avoid_: Certainty (a sighting's inference certainty is one input to confidence)
 The overlay widget shown during a roll-down: the gold floor, the rolls left, the chance of hitting the key units by the floor and how many copies of each key unit the player holds.
 _Avoid_: Roll counter
 
+**Session mode**:
+The mode the coach runs a game in: silent, Baseline or Live. During a game it can only go down, never up, and a game counts under the highest mode it reached.
+_Avoid_: Live switch, coach mode
+
 **Live mode**:
-The opt-in mode in which the coach gives advice computed from the live game state, including what it knows of opponents' boards.
+The session mode in which the coach gives advice computed from the live game state, including what it knows of opponents' boards.
 _Avoid_: Real-time mode, cheat mode
 
 **Baseline mode**:
-The mode in which the coach shows Guides, highlights and stage-keyed hints but never advice computed from the live game state, and never anything about opponents' boards during a game.
+The session mode in which the coach shows Guides, highlights and stage-keyed hints but never advice computed from the live game state, and never anything about opponents' boards during a game.
 _Avoid_: Compliant mode, safe mode
 
 **Guide**:
@@ -72,7 +76,7 @@ Advice that changes and then changes back within a few planning phases when noth
 _Avoid_: Flicker, oscillation
 
 **Silent game**:
-A game the coach captures and logs while showing the player nothing: no advice, no Guides, no highlights, and no review until the Live-mode run starts. It counts as a game played without the coach.
+A game played in the silent session mode: the coach captures and logs it while showing the player nothing (no advice, no Guides, no highlights). If it was played before the Live-mode run started, its review stays locked until then. It counts as a game played without the coach.
 _Avoid_: Shadow mode, dry run, capture-only mode
 
 **Game log**:
@@ -254,8 +258,12 @@ The mechanic unique to one TFT set, such as Set 18's Wisp. It is replaced when a
 _Avoid_: Gimmick, set feature
 
 **Pre-coach baseline**:
-The owner's average placement over the last 50 ranked games played without the coach or as silent games, in the same set as the Live-mode games it is compared against. It is refreshed just before the first Live-mode game.
+The owner's average placement over the last 50 ranked games played without the coach or as silent games, in the same set as the Live-mode games it is compared against. It is refreshed and frozen when the Live-mode run starts.
 _Avoid_: Baseline (alone, it collides with Baseline mode), control group
+
+**Live-mode run**:
+The 50 measured Live-mode games, counted from the moment the owner starts the run, which also freezes the pre-coach baseline. Live-mode games played before the run starts are dev games and do not count.
+_Avoid_: Trial, experiment, evaluation run
 
 **Key unit**:
 A unit whose copies a comp needs at a target star level, such as its carry and core units. The target star level is usually 2, and 3 for a reroll comp's carry.

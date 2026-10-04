@@ -4,7 +4,7 @@ This is the build spec for v1 of the coach. It compiles the decisions recorded o
 
 Terms follow the glossary in [`CONTEXT.md`](../CONTEXT.md). Capitalised or domain terms such as Engine, Line, Comp fit, Board power, Snapshot and Game log mean exactly what the glossary says.
 
-Status: compiled 2026-10-04 for patch 18.3 of Set 18 (Enchanted Wilds) and read by the owner, who accepted the build order. One gap is open as a ticket; see [Open items](#open-items).
+Status: compiled 2026-10-04 for patch 18.3 of Set 18 (Enchanted Wilds) and read by the owner, who accepted the build order. No gap ticket is open; see [Open items](#open-items) for the fog and the build facts left.
 
 ## Contents
 
@@ -31,7 +31,7 @@ It is a personal tool first, designed so it could go public later. Public releas
 
 **Success measure.** Average placement over 50 ranked games without the coach (the pre-coach baseline), then over 50 games in Live mode with post-game review on.
 
-- The pre-coach baseline is rolling: the last 50 ranked games (queue `1100`) of the same set as the Live-mode games, played without the coach or as silent games. It is refreshed just before the first Live-mode game. If the set has fewer than 50 such games by then, the owner plays the missing ones first.
+- The pre-coach baseline is rolling: the last 50 ranked games (queue `1100`) of the same set as the Live-mode games, played without the coach or as silent games ([spec/review-and-harness.md](spec/review-and-harness.md#silent-games) gives the exact rule). It is refreshed and frozen when the owner starts the Live-mode run. If the set has fewer than 50 such games by then, the owner plays the missing ones first.
 - The snapshot taken on 2026-10-04 is 4.62 average placement (standard deviation 2.49, standard error 0.35) at Platinum III. The difference between two 50-game averages has a standard error of about 0.5, so only a large improvement will stand out.
 - The 50 Live-mode games must finish within Set 18. If they cannot, the run restarts in the new set with a fresh pre-coach baseline. Set 19 is expected around 2026-12-01 ([Current TFT set and its mechanics, including wisp](../issues/005-current-set-mechanics.md)).
 - No evaluation gate ever uses the placement of the 50 Live-mode games ([Evaluation harness](../issues/027-evaluation-harness.md)).
@@ -44,7 +44,7 @@ Riot's policy forbids real-time prescriptive advice ("level now", "roll", "buy t
 
 The coach therefore has two modes over one Engine:
 
-- **Live mode** is the product. It gives advice computed from the live game state, including whatever the capture route knows of opponents' boards. It runs on the owner's main account; the owner accepts the Terms of Service risk. It is opt-in: one switch per session, off by default.
+- **Live mode** is the product. It gives advice computed from the live game state, including whatever the capture route knows of opponents' boards. It runs on the owner's main account; the owner accepts the Terms of Service risk. It is one of three session modes, chosen per session (below).
 - **Baseline mode** shows Guides, shop highlights and a few grey-zone hints, never advice computed from the live game state. It is compliant by the precedent of approved apps, not provably compliant. Its grey-zone hints are an XP-aware leveling hint, par win chance and the list of opponents already faced (names and results only).
 
 Opponent-board data is Live mode only during a game, with no exception ([Baseline mode and opponent sightings](../issues/031-baseline-mode-and-opponent-sightings.md)):
@@ -54,7 +54,11 @@ Opponent-board data is Live mode only during a game, with no exception ([Baselin
 - The **XP-aware leveling hint** states the gap between the player's level and XP and the Guide's stage-keyed level target, counting passive XP up to the target round, for example "Guide: 8 at 4-2 · 3 XP buys (12 gold) short". It is a fact, never "level now", and is plain arithmetic over the static XP table.
 - During a game in Baseline mode, the advice pipeline (Game plan, sub-engines, Line simulator, opponent model) never runs. Baseline features may call only an allowlist of Engine functions: own-board board power, `win_probability` and the opponent growth curve lookup ([spec/engine.md](spec/engine.md#mode-separation)). Offline per-patch output, such as the Wisp worth table, counts as static data.
 
-Silent games are a third way to run a session: the coach captures and logs the game and shows nothing ([Evaluation harness](../issues/027-evaluation-harness.md)). How a session is set to silent is open ([Data refresh trigger and silent sessions](../issues/033-data-refresh-trigger-and-silent-sessions.md)).
+**Session mode** ([Data refresh trigger and silent sessions](../issues/033-data-refresh-trigger-and-silent-sessions.md)). The coach runs each game in one of three session modes: silent, Baseline or Live. In a silent game the coach captures and logs the game and shows nothing ([Evaluation harness](../issues/027-evaluation-harness.md)).
+
+- **Default.** Silent until the owner starts the Live-mode run, Live after it. A build without the `live` package defaults to Baseline instead. This amends "off by default" from [Policy stance and feature modes](../issues/008-policy-stance-and-modes.md) for the owner's build: before the run, a forgotten switch must never coach a game, because that game is lost to the pre-coach baseline; during the run, a forgotten switch would only waste games.
+- **Changes.** The owner sets the mode from the second-screen window or the tray menu, never from the overlay. During a game the mode can only go down (Live to Baseline to silent), never up, so the owner keeps a kill switch for Live mode and a silent game can never become coached. Each change is a game-log event, and a game counts under the highest mode it reached.
+- **Live-mode run.** `uv run tft-harness start-run` starts it. The command refreshes the pre-coach baseline from the match API and freezes it (average placement, game count, rank), records the start time, and unlocks the reviews of silent games played before it. Live-mode games after it are numbered 1 to 50 in 10-game blocks. Live-mode games played before it, for example while building Live mode, are dev games and do not count toward the 50.
 
 What each mode shows per decision:
 
@@ -103,7 +107,7 @@ Between games: data refresh writes a new immutable data snapshot
 The owner accepted this order on 2026-10-04, when closing [Assemble the MVP spec](../issues/029-assemble-mvp-spec.md). It aims to get silent games logging early, because silent games feed the pre-coach baseline and give the evaluation harness game logs before the first Live-mode game.
 
 1. **Skeleton.** The uv workspace (`engine`, `capture`, `live`, `review`, `harness`), the Electron shell that starts and supervises the core, the versioned WebSocket with generated schemas, the tray app and the League client API phase watcher. Exit: the shell starts the core and shows the gameflow phase.
-2. **Capture and game log, for silent games.** Name lists from Data Dragon and CommunityDragon for OCR matching, WGC capture with change checks, digit templates and RapidOCR for the HUD, shop, Wisps, augments, carousel, trait panel (own and scouted, with the hidden-row count), player list and scouted players' levels, purchase tracking, fight results, the JSONL game log with keyframes, the SQLite index, crash re-attach, and the silent session. Exit: the owner plays ranked silent games and each leaves a complete game log. From here every ranked game counts toward the refreshed baseline and feeds the harness.
+2. **Capture and game log, for silent games.** Name lists from Data Dragon and CommunityDragon for OCR matching, WGC capture with change checks, digit templates and RapidOCR for the HUD, shop, Wisps, augments, carousel, trait panel (own and scouted, with the hidden-row count), player list and scouted players' levels, purchase tracking, fight results, the JSONL game log with keyframes, the SQLite index, crash re-attach, and the session mode with silent as its default. Exit: the owner plays ranked silent games and each leaves a complete game log. From here every ranked game counts toward the refreshed baseline and feeds the harness.
 3. **Board reader.** TFT-COACH's reader with the four fixes, and the training-crop pipeline (`tft-train`) fed by the silent-game logs.
 4. **Data layer.** The TOML static, tunables and override files with schema and `source` tags, `tft-data new-patch`, `data/patches.toml`, the MetaTFT, tactics.tools and TFT Academy adapters, immutable data snapshots, the refresh job, and the Riot API client (own User-Agent) with the baseline refresh script.
 5. **Board power and the first harness metrics.** Unit, trait and item terms, the three global weights fitted on the owner's final boards, the four interface functions, the growth curve, the comp classifier and the opponent model (the inferred-board solver, its priors fitted on match final boards, and `opponent_star_mix`). `tft-harness eval` with final-board ranking now, and `win_probability` and damage calibration from silent-game logs.
@@ -112,7 +116,7 @@ The owner accepted this order on 2026-10-04, when closing [Assemble the MVP spec
 8. **Replay, review and the full harness.** Replay records, the post-game review on the second screen, owner tags, gates, flip rate and `tft-harness fit`.
 9. **Baseline mode surfaces.** Guides, highlights, the Wisp worth table, tiers, Guide layouts, Baseline voice and the grey-zone hints.
 10. **Live advisor and Live surfaces.** The `live` package, the anchored overlay, the cockpit, voice callouts, Line pinning, roll-down mode and the latency budgets.
-11. **Start the run.** Refresh the pre-coach baseline, then play the 50 Live-mode games in blocks of 10.
+11. **Start the run.** `uv run tft-harness start-run` refreshes and freezes the pre-coach baseline and unlocks silent-game reviews; then the owner plays the 50 Live-mode games in blocks of 10.
 
 Slices 3 to 5 can overlap once slice 2 is logging. The calendar is tight: everything must fit before Set 19 (around 2026-12-01) for the measurement to finish within Set 18.
 
@@ -133,9 +137,7 @@ Also deferred past v1 by individual tickets: free-form what-if editing of a Line
 
 ### Gaps raised as tickets
 
-These need a decision no ticket made, or sit between tickets that disagree. Each is a grilling ticket on the map.
-
-- [Data refresh trigger and silent sessions](../issues/033-data-refresh-trigger-and-silent-sessions.md). Two refresh rules disagree (per-source minimum ages against a flat 6 hours), and no ticket says how a session is set to silent.
+None is open. The four gaps found while compiling the spec were resolved on 2026-10-04: [Opponent model from trait-only sightings](../issues/030-opponent-model-from-trait-only-sightings.md), [Baseline mode and opponent sightings](../issues/031-baseline-mode-and-opponent-sightings.md), [Families for unassigned tunables](../issues/032-families-for-unassigned-tunables.md) and [Data refresh trigger and silent sessions](../issues/033-data-refresh-trigger-and-silent-sessions.md).
 
 ### Fog carried from the map
 
@@ -155,3 +157,4 @@ Facts the build must check. None needs a decision.
 - **Static-file defaults not yet confirmed** ([Probe live game data sources in a real TFT game](../issues/013-probe-live-game-data.md)): PvE orb gold per PvE round, and the damage per surviving enemy unit for Set 18. The local probe frames hold HP and boards for every round if the damage rule needs checking.
 - **Riot personal key.** Submitted on 2026-10-04 and pending review. Until approved, a 24-hour development key in `$HOME\.config\tft-assistant\riot-api-key` serves, regenerated on days the owner plays ([Register a Riot personal API key](../issues/017-register-riot-personal-api-key.md)).
 - **Overlay hotkey.** The default key that toggles the whole overlay is left to the build ([Advice surface UX](../issues/026-advice-surface-ux.md)).
+- **Game id join.** The pre-coach baseline joins match-API games to game logs by game id. Confirm that a match id is `EUN1_<gameId>` with the League client API's game id ([Data refresh trigger and silent sessions](../issues/033-data-refresh-trigger-and-silent-sessions.md)).

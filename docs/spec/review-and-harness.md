@@ -1,16 +1,16 @@
 # Game log, post-game review and evaluation harness
 
-Part of the [MVP spec](../spec.md). Sources: [Game-state capture route](../../issues/009-game-state-capture-route.md), [Post-game review scope](../../issues/015-post-game-review-scope.md), [Evaluation harness](../../issues/027-evaluation-harness.md), [Stack and runtime](../../issues/025-stack-and-runtime.md), [Board and lobby strength heuristic](../../issues/019-board-and-lobby-strength-heuristic.md), [Positioning decisions](../../issues/022-positioning-decisions.md), [Advice surface UX](../../issues/026-advice-surface-ux.md), [Record the pre-coach baseline](../../issues/016-record-pre-coach-baseline.md), [Opponent model from trait-only sightings](../../issues/030-opponent-model-from-trait-only-sightings.md).
+Part of the [MVP spec](../spec.md). Sources: [Game-state capture route](../../issues/009-game-state-capture-route.md), [Post-game review scope](../../issues/015-post-game-review-scope.md), [Evaluation harness](../../issues/027-evaluation-harness.md), [Stack and runtime](../../issues/025-stack-and-runtime.md), [Board and lobby strength heuristic](../../issues/019-board-and-lobby-strength-heuristic.md), [Positioning decisions](../../issues/022-positioning-decisions.md), [Advice surface UX](../../issues/026-advice-surface-ux.md), [Record the pre-coach baseline](../../issues/016-record-pre-coach-baseline.md), [Opponent model from trait-only sightings](../../issues/030-opponent-model-from-trait-only-sightings.md), [Data refresh trigger and silent sessions](../../issues/033-data-refresh-trigger-and-silent-sessions.md).
 
 ## Game log
 
 The game log is the coach's record of one game and the source of truth for review and the harness.
 
 - **Key.** The League client API's game id.
-- **Structured content**, kept forever: every snapshot with each field's timestamp and source; every offer, roll, pick, sighting and fight result (opponent fought, result, HP lost); the own board's hexes at the last snapshot before each combat; every piece of advice shown, with timestamp and surface (reported by the UI); every disagreement between the board reader and purchase tracking; capture gaps from crashes and core restarts; stale-field silences; the data snapshot's patch label; the board-reader model version; and a flag for games played on the previous patch's static file.
+- **Structured content**, kept forever: every snapshot with each field's timestamp and source; every offer, roll, pick, sighting and fight result (opponent fought, result, HP lost); the own board's hexes at the last snapshot before each combat; every piece of advice shown, with timestamp and surface (reported by the UI); every disagreement between the board reader and purchase tracking; capture gaps from crashes and core restarts; stale-field silences; the session mode at game start and every change to it; the data snapshot's patch label; the board-reader model version; and a flag for games played on the previous patch's static file.
 - **Format.** One append-only JSON Lines file per game, which survives a crash mid-write and replays in order.
 - **Media** is a setting. Keyframes by default (each shop after a roll; each augment, Wisp and carousel offer; each scouted board; the end of each planning phase), stored as lossless WebP beside the log, roughly 100 to 300 MB per game. Full video is the alternative. Media is capped at 20 GB with the oldest deleted first; the 50 Live-mode evaluation games are pinned. Lossless frames at the probe's rate would cost about 6 GB per game.
-- **Index.** A SQLite index across games holds game id, date, patch, placement, the pinned flag, each Live-mode game's 10-game block and engine version, and the replay-record cache. It can always be rebuilt from the logs.
+- **Index.** A SQLite index across games holds game id, date, patch, placement, the session mode (the highest the game reached), whether its review is locked, the pinned flag, each Live-mode game's 10-game block and engine version, and the replay-record cache. It can always be rebuilt from the logs and `run.json`.
 - Augments come only from the game log, because the Riot match record for Set 18 has none. A game without a log gets no review.
 
 ## Replay records
@@ -105,11 +105,14 @@ Data is dropped per decision point and per field, never imputed. A fight with an
 - `uv run tft-harness eval` replays every game log (reusing cached replay records unless the engine version or tunables changed) and writes a Markdown report beside the logs: gates, curves, the advice diff, flip rates and the gap share, always against the latest committed tunables file.
 - `uv run tft-harness fit` writes a candidate tunables file. The owner accepts it by committing it to `data/`. Git is the record; there is no separate registry.
 - `uv run tft-harness fit --priors` recomputes the family 3 priors.
+- `uv run tft-harness start-run` starts the Live-mode run once: it refreshes and freezes the pre-coach baseline, records the start time in `run.json` and unlocks silent-game reviews ([spec.md](../spec.md#modes-and-policy)).
 
 ## Silent games
 
-A silent game is captured and logged while the coach shows nothing: no advice, no Guides, no highlights, no voice. Its review stays closed until the Live-mode run starts. It counts as a no-coach game for the pre-coach baseline as long as the owner opens no review of it before then. Silent games feed family 1 fits and calibration before the first Live-mode game, so the refreshed baseline also comes with game logs.
+A silent game is a game played in the silent session mode ([spec.md](../spec.md#modes-and-policy)). It is captured and logged while the coach shows nothing: no advice, no Guides, no highlights, no voice. Silent games feed family 1 fits and calibration before the first Live-mode game, so the refreshed baseline also comes with game logs.
+
+- **Review lock.** The review of a silent game played before the Live-mode run starts is computed as usual but stays locked until `uv run tft-harness start-run`. The lock has no override, so a locked game always stays a no-coach game. Silent games played after the run starts get a normal review.
+- **Harness on locked games.** Before the run starts, `tft-harness eval` leaves per-decision content for locked games out of its report (advice diff rows and example moments) and keeps the aggregates: calibration curves, gates, flip rates and the gap share. Fits use locked games in full.
+- **Pre-coach baseline games.** The baseline is the last 50 ranked games (queue `1100`) of the set that have either no game log (the coach was not running) or a game log that stayed silent throughout. A game whose log reached Baseline or Live mode at any point is excluded. Match-API games are joined to game logs by game id: the match id `EUN1_<gameId>` against the League client API's game id, which the build confirms. Live-mode dev games before the run are excluded, but what the owner learns from them can still carry into later baseline games; no rule catches that.
 
 Data available before any game log exists: the owner's 100+ final boards (board power fit), public statistics (family 3) and the probe frames.
-
-How a session is set to silent, and how a silent game is flagged, is open: [Data refresh trigger and silent sessions](../../issues/033-data-refresh-trigger-and-silent-sessions.md).

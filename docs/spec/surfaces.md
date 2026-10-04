@@ -1,6 +1,6 @@
 # Advice surfaces
 
-Part of the [MVP spec](../spec.md). Sources: [Policy stance and feature modes](../../issues/008-policy-stance-and-modes.md), [Advice surface UX](../../issues/026-advice-surface-ux.md), [Stack and runtime](../../issues/025-stack-and-runtime.md), [Positioning decisions](../../issues/022-positioning-decisions.md), [Post-game review scope](../../issues/015-post-game-review-scope.md), [Evaluation harness](../../issues/027-evaluation-harness.md), [Opponent model from trait-only sightings](../../issues/030-opponent-model-from-trait-only-sightings.md).
+Part of the [MVP spec](../spec.md). Sources: [Policy stance and feature modes](../../issues/008-policy-stance-and-modes.md), [Advice surface UX](../../issues/026-advice-surface-ux.md), [Stack and runtime](../../issues/025-stack-and-runtime.md), [Positioning decisions](../../issues/022-positioning-decisions.md), [Post-game review scope](../../issues/015-post-game-review-scope.md), [Evaluation harness](../../issues/027-evaluation-harness.md), [Opponent model from trait-only sightings](../../issues/030-opponent-model-from-trait-only-sightings.md), [Data refresh trigger and silent sessions](../../issues/033-data-refresh-trigger-and-silent-sessions.md).
 
 The design was chosen from a prototype: variant D of `prototype/advice-surfaces/index.html` on the branch `prototype/advice-surface-ux`. Run `python -m http.server 8765` from the repository root on that branch and open `/prototype/advice-surfaces/index.html?variant=D`. All advice in it is mocked over real probe frames.
 
@@ -90,7 +90,9 @@ Advice that misses its budget still shows and is logged as late. Advice whose de
 
 ## Silent games
 
-During a silent game the overlay, second screen and voice show nothing, and the game's review stays closed until the Live-mode run starts ([review-and-harness.md](review-and-harness.md#silent-games)).
+During a silent game the overlay and voice show nothing, and no "Review ready" toast appears. The second screen shows only a status line, such as "Silent game · logging · capture OK", or the stale-field banner, so a dead coach can be told apart from a silent one; no game content appears. The tray icon shows the session mode. The review of a silent game played before the Live-mode run starts stays locked until the run starts ([review-and-harness.md](review-and-harness.md#silent-games)).
+
+The session mode is set from the second-screen window or the tray menu, never from the overlay, which keeps only the Line chip and the "Review ready" toast clickable.
 
 ## Post-game review layout
 

@@ -1,6 +1,6 @@
 # Data sources and refresh
 
-Part of the [MVP spec](../spec.md). Sources: [TFT stats data sources and their APIs](../../issues/004-stats-data-sources-and-apis.md), [Data source strategy](../../issues/010-data-source-strategy.md), [Augment decisions](../../issues/021-augment-decisions.md), [Register a Riot personal API key](../../issues/017-register-riot-personal-api-key.md), [Record the pre-coach baseline](../../issues/016-record-pre-coach-baseline.md), [Stack and runtime](../../issues/025-stack-and-runtime.md), [Patch-day and new-set workflow](../../issues/028-patch-day-and-new-set-workflow.md).
+Part of the [MVP spec](../spec.md). Sources: [TFT stats data sources and their APIs](../../issues/004-stats-data-sources-and-apis.md), [Data source strategy](../../issues/010-data-source-strategy.md), [Augment decisions](../../issues/021-augment-decisions.md), [Register a Riot personal API key](../../issues/017-register-riot-personal-api-key.md), [Record the pre-coach baseline](../../issues/016-record-pre-coach-baseline.md), [Stack and runtime](../../issues/025-stack-and-runtime.md), [Patch-day and new-set workflow](../../issues/028-patch-day-and-new-set-workflow.md), [Data refresh trigger and silent sessions](../../issues/033-data-refresh-trigger-and-silent-sessions.md).
 
 ## Sources
 
@@ -27,9 +27,8 @@ The statistics path stays in the design and switches on per augment once a sourc
 ## Data snapshots and refresh
 
 - A **data snapshot** is the statistics, Guides and static data fetched in one refresh. It is an immutable directory and never changes once written. A game uses the data snapshot it started with from start to end, and each game log records its patch label.
-- **When.** At app start and between games, never during a game. A refresh never blocks queueing; if a game starts first, the refresh finishes after it.
-- **What.** Each refresh checks every source's update timestamp and patch label, and pulls only data that has changed and is past its minimum age: 1 hour for statistics, 6 hours for Guides, and on patch change for static data.
-- "Stack and runtime" states the trigger as the core start plus the lobby or end-of-game phase, "if the data is older than 6 hours". Which rule governs is open: [Data refresh trigger and silent sessions](../../issues/033-data-refresh-trigger-and-silent-sessions.md).
+- **When.** At core start, and whenever the League client API reports the `Lobby` phase or the end of a game; never during a game. Every trigger runs the check below. There is no overall age gate on the data snapshot, because a flat gate would hold statistics back on patch day, when they move fastest. A refresh never blocks queueing; if a game starts first, the refresh finishes after it.
+- **What.** Each refresh checks every source's update timestamp and patch label, and pulls only data that has changed and is past its own minimum age: 1 hour for statistics, 6 hours for Guides, and on patch change for static data. The check costs a few small requests. A new data snapshot is written only when something was pulled.
 - **Patch day.** Each entity uses new-patch statistics once its sample passes about 500 boards. Below that it uses previous-patch statistics flagged stale. Entities the patch notes changed carry a separate "changed this patch" flag. Live mode lowers confidence on flagged entities.
 - **Breakage.** Every response is checked against an expected schema. On failure the coach keeps the last good snapshot, falls back to tactics.tools for unit, item and augment statistics, and shows a visible "data stale since" warning. The coach always runs.
 
@@ -44,5 +43,5 @@ The Riot API serves only the owner's own matches.
 - **No patch in match records.** `info.game_version` is the literal `TFT Unreal Version ?.?.?.?` for every Set 18 game. Match-API games are mapped to patches through `data/patches.toml` ([patch-workflow.md](patch-workflow.md#patch-keying)).
 - **Uses.**
   - The owner's final boards (about 800 boards from 100+ matches) for fitting board power's global weights.
-  - Refreshing the pre-coach baseline: `account-v1` by Riot ID for the PUUID, `tft-league-v1` for rank, `tft-match-v1` match ids and details filtered on `info.tft_set_number` and `info.queue_id`, paced at about one request per 1.25 s. A build session rewrites the throwaway script used on 2026-10-04. Raw match data stays in `$HOME\.config\tft-assistant\baseline-matches.json`; the repository holds no match ids and no PUUID.
+  - Refreshing the pre-coach baseline, done once by `uv run tft-harness start-run`, which then freezes it ([review-and-harness.md](review-and-harness.md#silent-games) gives which games count): `account-v1` by Riot ID for the PUUID, `tft-league-v1` for rank, `tft-match-v1` match ids and details filtered on `info.tft_set_number` and `info.queue_id`, paced at about one request per 1.25 s. A build session rewrites the throwaway script used on 2026-10-04. Raw match data stays in `$HOME\.config\tft-assistant\baseline-matches.json`; the repository holds no match ids and no PUUID.
   - Post-game review: final placement, elimination order and all eight final boards (units, stars, items, traits).
