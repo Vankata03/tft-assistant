@@ -1,6 +1,6 @@
 # Game log, post-game review and evaluation harness
 
-Part of the [MVP spec](../spec.md). Sources: [Game-state capture route](../../issues/009-game-state-capture-route.md), [Post-game review scope](../../issues/015-post-game-review-scope.md), [Evaluation harness](../../issues/027-evaluation-harness.md), [Stack and runtime](../../issues/025-stack-and-runtime.md), [Board and lobby strength heuristic](../../issues/019-board-and-lobby-strength-heuristic.md), [Positioning decisions](../../issues/022-positioning-decisions.md), [Advice surface UX](../../issues/026-advice-surface-ux.md), [Record the pre-coach baseline](../../issues/016-record-pre-coach-baseline.md).
+Part of the [MVP spec](../spec.md). Sources: [Game-state capture route](../../issues/009-game-state-capture-route.md), [Post-game review scope](../../issues/015-post-game-review-scope.md), [Evaluation harness](../../issues/027-evaluation-harness.md), [Stack and runtime](../../issues/025-stack-and-runtime.md), [Board and lobby strength heuristic](../../issues/019-board-and-lobby-strength-heuristic.md), [Positioning decisions](../../issues/022-positioning-decisions.md), [Advice surface UX](../../issues/026-advice-surface-ux.md), [Record the pre-coach baseline](../../issues/016-record-pre-coach-baseline.md), [Opponent model from trait-only sightings](../../issues/030-opponent-model-from-trait-only-sightings.md).
 
 ## Game log
 
@@ -54,7 +54,7 @@ The evaluation harness judges the Engine's advice quality across many game logs 
 
 ### What it judges
 
-- **Primary: predictions against outcomes.** At every decision point the Engine makes checkable predictions: `win_probability` per fight, damage per lost round, the probability of hitting the key units by a gold floor, the Line projection (gold, level and HP at the horizon) and the expected placement. The harness scores each against what happened. A game gives about 300 decision points and about 20 fights.
+- **Primary: predictions against outcomes.** At every decision point the Engine makes checkable predictions: `win_probability` per fight, damage per lost round, the probability of hitting the key units by a gold floor, the Line projection (gold, level and HP at the horizon), the expected placement and each opponent's inferred board (against their final board from the match API, for opponents scouted in their last stage alive). The harness scores each against what happened. A game gives about 300 decision points and about 20 fights.
 - **Change guard: advice diff.** The share of decision points whose advice changed between the accepted version and a candidate, with the largest changes listed.
 - **Report-only:** placement after followed against ignored advice (confounded, standard error about 0.5 placement over 50 games); the owner's disagree rate; calibration curves by stage; expected placement split by follow rate; the positioning residual (`win_probability` residual on fights where anti-dive or anti-AoE was active, split by followed and not followed); late and too-late advice shares per kind; and the capture gap share.
 - No source publishes round-by-round decisions of high-elo players, so comparing against them is not possible in v1. No gate uses the placement of the 50 Live-mode games.

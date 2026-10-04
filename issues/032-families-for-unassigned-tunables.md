@@ -25,3 +25,9 @@ Which tunable family does each tunable that "Evaluation harness" did not classif
 For each, decide its family, its starting value or how the starting value is found, and whether the evaluation harness reports on it. Also decide whether the prose-only tunables get names in the tunables file now or at build time.
 
 Raised by "Assemble the MVP spec" while compiling the tunables index. On resolution, update `docs/spec/tunables.md` and the spec's open items.
+
+## Comments
+
+### 2026-10-04 — claude-code
+
+Input from "Opponent model from trait-only sightings": one more unassigned tunable, `sighting_persistence_weight` and its fade (the prior boost for units on an opponent's previous inferred board). It is listed in the Opponent model table of `docs/spec/tunables.md`. The other new tunables there have families: `opponent_star_mix`, `emblem_count_prior` and `size_level_prior` are fitted (family 1), and `emblem_slack_max` is hand-set.

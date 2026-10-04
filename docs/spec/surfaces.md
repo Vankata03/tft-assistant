@@ -1,6 +1,6 @@
 # Advice surfaces
 
-Part of the [MVP spec](../spec.md). Sources: [Policy stance and feature modes](../../issues/008-policy-stance-and-modes.md), [Advice surface UX](../../issues/026-advice-surface-ux.md), [Stack and runtime](../../issues/025-stack-and-runtime.md), [Positioning decisions](../../issues/022-positioning-decisions.md), [Post-game review scope](../../issues/015-post-game-review-scope.md), [Evaluation harness](../../issues/027-evaluation-harness.md).
+Part of the [MVP spec](../spec.md). Sources: [Policy stance and feature modes](../../issues/008-policy-stance-and-modes.md), [Advice surface UX](../../issues/026-advice-surface-ux.md), [Stack and runtime](../../issues/025-stack-and-runtime.md), [Positioning decisions](../../issues/022-positioning-decisions.md), [Post-game review scope](../../issues/015-post-game-review-scope.md), [Evaluation harness](../../issues/027-evaluation-harness.md), [Opponent model from trait-only sightings](../../issues/030-opponent-model-from-trait-only-sightings.md).
 
 The design was chosen from a prototype: variant D of `prototype/advice-surfaces/index.html` on the branch `prototype/advice-surface-ux`. Run `python -m http.server 8765` from the repository root on that branch and open `/prototype/advice-surfaces/index.html?variant=D`. All advice in it is mocked over real probe frames.
 
@@ -35,7 +35,7 @@ Baseline mode's win chance per player-list row depends on opponent sightings, wh
 ## Opponents
 
 - The overlay marks a player-list row only when that opponent is due a scout: the sighting is 3 or more rounds old, or the opponent was never scouted, and the opponent is likely to be the next one (about 13 % or more). The mark is a small pulsing eye with the sighting age. It clears when the player scouts that opponent.
-- The second screen shows win chance, sighting age, traits and threat tags for every opponent. A freshness bar per opponent is green for a sighting from this or the last round, amber for 2 to 3 rounds, and red for 4 or more or never.
+- The second screen shows win chance, sighting age, traits, threat tags, the most likely units of the inferred board and its inference certainty for every opponent. A freshness bar per opponent is green for a sighting from this or the last round, amber for 2 to 3 rounds, and red for 4 or more or never.
 
 ## Lines
 

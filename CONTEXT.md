@@ -88,8 +88,12 @@ The statistics, Guides and static data fetched in one refresh. It never changes 
 _Avoid_: Data version, cache
 
 **Sighting**:
-What the coach learned of one opponent's board the last time the player scouted it, with its age in rounds. Confidence in a sighting fades as it ages.
+What the coach learned of one opponent's board the last time the player scouted it, with its age in rounds: the traits on the board with their unit counts, and the opponent's level. Confidence in a sighting fades as it ages.
 _Avoid_: Scout (the player's action), opponent snapshot
+
+**Inferred board**:
+The units the coach believes are on an opponent's board, each with a probability, inferred from a sighting's traits and level and from that opponent's earlier sightings. Star levels and items are never inferred; they are taken at typical values for the round.
+_Avoid_: Scouted board (the coach never sees the units), guessed board
 
 **Purchase tracking**:
 Knowing which units the player owns from what they bought, sold and were given, rather than from looking at the board.

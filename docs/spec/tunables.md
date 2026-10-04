@@ -59,6 +59,18 @@ Owner: [Board and lobby strength heuristic](../../issues/019-board-and-lobby-str
 | `classifier_weights` | Unassigned | Carry ×3, key units ×2, others ×1, bench at half weight |
 | `classifier_threshold` | Unassigned | Below it the label is "no comp" |
 
+## Opponent model
+
+Owner: [Opponent model from trait-only sightings](../../issues/030-opponent-model-from-trait-only-sightings.md).
+
+| Tunable | Family | Notes |
+| --- | --- | --- |
+| `opponent_star_mix` | 1 | Share of 1-, 2- and 3-star units by round and unit cost, fitted on the owner's own boards in game logs; a hand default table until logs exist |
+| `emblem_count_prior` | 1 | Fitted on match final boards, then on game logs |
+| `size_level_prior` | 1 | Distinct units against level; fitted like `emblem_count_prior` |
+| `emblem_slack_max` | Hand-set | 2; trait counts the solver may assign to emblems |
+| `sighting_persistence_weight` and its fade | Unassigned | Prior boost for units on the opponent's previous inferred board |
+
 ## Items
 
 Owner: [Item decisions](../../issues/020-item-decisions.md).

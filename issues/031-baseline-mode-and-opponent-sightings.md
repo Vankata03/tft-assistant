@@ -21,3 +21,9 @@ Two settled tickets disagree:
 Decide whether Baseline mode records and uses sightings, what its win chance is computed from if not, and how to state which Engine functions Baseline features may call during a game (the `live` package boundary from "Stack and runtime" stands either way).
 
 Raised by "Assemble the MVP spec" as a contradiction between settled tickets. On resolution, update `docs/spec.md` (modes and open items) and `docs/spec/surfaces.md`.
+
+## Comments
+
+### 2026-10-04 — claude-code
+
+Input from "Opponent model from trait-only sightings": a sighting now means the scouted trait panel (rows, unit counts, hidden-row count) and the opponent's level. Win chance comes from an inferred board: a solver over trait counts with priors, then an expected board power. If Baseline mode keeps win chance, it needs that solver and `opponent_star_mix` in-game, not only `win_probability`. Threat tags read traits alone and need no inference.

@@ -1,6 +1,6 @@
 # Game-state capture
 
-Part of the [MVP spec](../spec.md). Sources: [Automatic game-state capture options for TFT](../../issues/003-game-state-capture-options.md), [Probe live game data sources in a real TFT game](../../issues/013-probe-live-game-data.md), [Game-state capture route](../../issues/009-game-state-capture-route.md), [Benchmark open-source board recognition on probe frames](../../issues/024-benchmark-board-recognition.md), [Stack and runtime](../../issues/025-stack-and-runtime.md), [Advice surface UX](../../issues/026-advice-surface-ux.md).
+Part of the [MVP spec](../spec.md). Sources: [Automatic game-state capture options for TFT](../../issues/003-game-state-capture-options.md), [Probe live game data sources in a real TFT game](../../issues/013-probe-live-game-data.md), [Game-state capture route](../../issues/009-game-state-capture-route.md), [Benchmark open-source board recognition on probe frames](../../issues/024-benchmark-board-recognition.md), [Stack and runtime](../../issues/025-stack-and-runtime.md), [Advice surface UX](../../issues/026-advice-surface-ux.md), [Opponent model from trait-only sightings](../../issues/030-opponent-model-from-trait-only-sightings.md).
 
 Capture turns the game window into a [Snapshot](../../CONTEXT.md): every field with its last known value, its age and its source. Manual entry is never used.
 
@@ -26,7 +26,7 @@ Read as text (OCR):
 - HUD: stage and round, round timer, level and XP, the five shop-odds percentages, gold, streak count, and all eight players' names and HP.
 - Shop: each champion's name, traits and cost; a Wisp's name, cost and effect text; the shop's slot count (5, or 4 with a Wisp).
 - Augment cards: name, text, tier colour and each option's reroll button.
-- Item choice cards, carousel options (unit and item), the trait panel, and the scouted player's name.
+- Item choice cards, carousel options (unit and item), the trait panel, and the scouted player's name and level (the number on their tactician's nameplate). On a scouted board the trait panel shows at most 9 rows, active and inactive, each with its unit count, and an "N+" button counting the hidden rows; the coach reads the rows and N.
 
 Units on the board and bench are 3D models with no name label, star levels are pips and items are icons, so none of these is text. They come from purchase tracking and the board reader.
 
@@ -45,7 +45,7 @@ The own board and bench come from two sources, and neither is trusted alone.
   3. Add a Tactician's Cape template and fetch the component templates from CommunityDragon.
   4. Read bench slot 9, which TFT-COACH skips.
 - **Merging.** Purchase tracking fills any hex the reader leaves empty, without a position. When they disagree, the reader decides position, star level and items. Unit identity follows the reader above a confidence threshold and purchase tracking below it. Every disagreement is logged with a keyframe.
-- **Scouted boards give traits only in v1.** The reader does not read opponents (enemy units carry red bars). Opponent positions and items are not read. How the Engine models an opponent from traits alone is open: [Opponent model from trait-only sightings](../../issues/030-opponent-model-from-trait-only-sightings.md).
+- **Scouted boards give traits only in v1.** The reader does not read opponents (enemy units carry red bars). Opponent positions and items are not read. A sighting is the trait panel's rows with their unit counts, the hidden-row count and the opponent's level; the Engine infers the units from it ([engine.md](engine.md#opponent-model)).
 
 Augments are read from the screen in both modes. Held augments are tracked from the picks, because the Riot match record for Set 18 has no augments.
 
@@ -60,7 +60,7 @@ Augments are read from the screen in both modes. Held augments are tracked from 
 
 - Each field keeps its last known value with a timestamp and source.
 - Each sub-engine declares the fields it requires and a maximum age per field. Past that age the field counts as missing and the sub-engine stays silent. A route gap therefore disables specific advice, not the coach.
-- A failed read is never guessed. The only imputation is for opponents' board power ([engine.md](engine.md#partial-and-stale-opponent-data)).
+- A failed read is never guessed. The only imputation is for opponents' board power ([engine.md](engine.md#opponent-model)).
 - HUD-layout drift after a patch needs no special mode: fields that fail to read go stale and silence their sub-engine.
 
 Required fields per sub-engine:

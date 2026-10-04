@@ -1,6 +1,6 @@
 # The Engine
 
-Part of the [MVP spec](../spec.md). Sources: [Prior art for TFT decision engines and the train-vs-LLM question](../../issues/007-decision-engine-prior-art.md), [TFT econ, level and roll math and established theory](../../issues/006-econ-level-roll-theory.md), [Advice engine architecture](../../issues/011-advice-engine-architecture.md), [Transition and pivot domain model](../../issues/012-transition-and-pivot-model.md), [Econ, level and roll Line simulation](../../issues/018-econ-level-roll-line-simulation.md), [Board and lobby strength heuristic](../../issues/019-board-and-lobby-strength-heuristic.md).
+Part of the [MVP spec](../spec.md). Sources: [Prior art for TFT decision engines and the train-vs-LLM question](../../issues/007-decision-engine-prior-art.md), [TFT econ, level and roll math and established theory](../../issues/006-econ-level-roll-theory.md), [Advice engine architecture](../../issues/011-advice-engine-architecture.md), [Transition and pivot domain model](../../issues/012-transition-and-pivot-model.md), [Econ, level and roll Line simulation](../../issues/018-econ-level-roll-line-simulation.md), [Board and lobby strength heuristic](../../issues/019-board-and-lobby-strength-heuristic.md), [Opponent model from trait-only sightings](../../issues/030-opponent-model-from-trait-only-sightings.md).
 
 The sub-engines are in [sub-engines.md](sub-engines.md).
 
@@ -77,12 +77,10 @@ Comp fit is the expected placement if the player plays a comp from now on.
 
 There is no separate contest rule; contest acts only through hit probability.
 
-- Unit level: copies that opponents hold are removed from the pool, counted from each opponent's latest sighting (plus the bench, if the route exposed it).
-- Comp level: the number of opponents the classifier puts on the same comp, or who hold 2 or more copies of its carry.
+- Unit level: the pool loses each unit's expected copies on opponents' boards, from each opponent's inferred board: P(unit) × the expected copies at the unit's cost under `opponent_star_mix` for the round (1 for 1-star, 3 for 2-star, 9 for 3-star). Opponents' benches are never seen, so contest is underestimated, never overstated.
+- Comp level: the number of opponents whose label is the same comp. It is display and reason text only ("2 opponents on Ahri") and has no channel into hit odds, because opponents' future buys are not projected.
 - A sighting has full weight for about 2 rounds (tunable). After that its contested term fades and advice confidence drops.
 - With no opponent data there is no contested term. The coach never infers contest from the player's own shop.
-
-Sightings in v1 carry traits only, so the unit-level and comp-level counts above have no units to count. How they work from traits is open: [Opponent model from trait-only sightings](../../issues/030-opponent-model-from-trait-only-sightings.md).
 
 ### Transition
 
@@ -126,15 +124,44 @@ The **opponent growth curve** gives typical board power per round: the units a s
 
 ### Comp classifier
 
-The comp classifier serves Game plan inference, opponent labels and the contested count; it does not feed board power. Similarity is the weighted overlap between a board's units and a comp's final units: the carry ×3, other key units ×2, other units ×1, and the bench at half weight. Stars are ignored. It returns the top comps with their similarity; below a threshold the label is "no comp". Open plans read the top-k list. The contested count uses only labels above the threshold. Early boards rarely classify, which is correct.
+The comp classifier serves Game plan inference and opponent labels; it does not feed board power. Similarity is the weighted overlap between a board's units and a comp's final units: the carry ×3, other key units ×2, other units ×1, and the bench at half weight. Stars are ignored. It returns the top comps with their similarity; below a threshold the label is "no comp". Open plans read the top-k list. Early boards rarely classify, which is correct.
 
-### Partial and stale opponent data
+An opponent is labelled from their inferred board by expected similarity: each unit's weight times its probability, with no bench term, against the same threshold.
+
+### Opponent model
+
+A sighting gives the opponent's traits and level, never their units ([capture.md](capture.md#board-reading)). The Engine infers the units from the traits. Source: [Opponent model from trait-only sightings](../../issues/030-opponent-model-from-trait-only-sightings.md); measurements in `research/trait-vector-unit-inference.md` on branch `research/trait-vector-unit-inference`.
+
+**Inferred board.** A solver enumerates every set of distinct units from the set's roster whose trait counts reproduce the sighting's visible trait rows.
+
+- Rows hidden behind the panel's "N+" button count as N inactive traits, each below its first breakpoint.
+- Up to `emblem_slack_max` (2) trait counts may come from emblems instead of units. Opponents' items are not read, so emblems enter only through the prior.
+- Set-specific trait rules live in the per-patch static file, such as Set 18's Lux (Avatar plus 2 in one origin), Elder Dragon (2 Riftbeast) and Kha'Zix (any subset of his evolution traits). Duplicate units count once.
+- Each candidate set is weighted by a prior: each unit's play rate this patch from public statistics, times `emblem_count_prior`, times `size_level_prior` (distinct units against the opponent's level). Units on the opponent's previous inferred board get a persistence boost (`sighting_persistence_weight`), fading with that sighting's age.
+- The result is a probability per unit, the marginal over all candidate sets. Downstream uses read these probabilities, never a single "seen" set. Trait-identical pairs (Set 18: Ahri and Karma, Brambleback and Murkwolf, Rengar and an unevolved Kha'Zix) split by the prior.
+- Solve time measured 0.1 to 1 ms median and about 46 ms worst case in pure Python, inside the 100 ms budget.
+
+Measured on 767 final boards from the owner's matches: with emblems known and the full panel, the top set was exact on 95.0 % of boards with 99.1 % per-unit precision and recall. With unknown emblems the top set was exact on 85.9 %, at 98.3 % precision and 94.7 % recall. With the panel cut to 9 rows, exact sets fell to 70.6 % and per-unit precision and recall to about 94.5 %. 66 % of final boards have more than 9 traits. The combined case (unknown emblems and a cut panel) was not measured.
+
+**Opponent board power** is an expected value:
+
+- Trait term: exact, from the visible rows. Hidden rows are inactive and add nothing.
+- Unit term: Σ P(unit) × the expected unit-star power at that unit's cost under `opponent_star_mix` for the round.
+- Filler: the opponent's level minus Σ P(unit) slots, each at average power for that level's shop odds. Boards are assumed full.
+- Items: the stage-average generic item term.
+
+The same number feeds win chance, each opponent's start in the Line simulator, `placement` and the growth-curve correction. Board samples are not drawn inside rollouts.
+
+**Star levels** are never seen. `opponent_star_mix` gives the share of 1-, 2- and 3-star units by round and unit cost. It is fitted from the owner's own boards per round in game logs, where purchase tracking gives exact stars, and refitted between 10-game blocks. A hand default table serves until game logs exist. It assumes the owner's star pace matches the lobby's; fight-log calibration shows any bias.
+
+**Level** is read from the opponent's tactician nameplate at the sighting and advances along the standard level calendar until the next one.
+
+**Stale and missing data.**
 
 - Stale sightings advance along the growth curve.
-- Missing fields are imputed at the stage average, and nothing seen is replaced: unseen items become the stage-average item term, and empty slots below the opponent's level become average-power units for that level's shop odds. Each imputation lowers the confidence of the advice that depends on it.
 - An opponent never seen is the growth curve.
 
-This section assumes a sighting gives units and star levels. v1 sightings give traits only; see [Opponent model from trait-only sightings](../../issues/030-opponent-model-from-trait-only-sightings.md).
+**Confidence.** Each sighting has an inference certainty: the prior-weighted probability of its top candidate set. Advice that depends on opponent units (pool reduction, labels, board power, win chance) carries the sighting's age weight times its inference certainty. Uses that read traits alone (threat tags and the threat share in positioning) carry the age weight only. The second screen shows the inference certainty beside each opponent's freshness bar.
 
 ### Win chance
 
@@ -147,5 +174,6 @@ In order of availability:
 1. Final-board ranking on the owner's matches, available now: Spearman rank correlation of board power with placement, and mean absolute error of `placement()` against actual placement.
 2. Round fights from game logs: Brier score and log-loss of `win_probability`, with a calibration curve by stage.
 3. Damage from game logs: mean absolute error of predicted against actual HP lost per lost round.
+4. Opponent inference from game logs: for each opponent scouted in their last stage alive, the last inferred board against that opponent's final board from the match API. The metrics are per-unit precision and recall and the exact-set rate. The same data refits `emblem_count_prior` and `size_level_prior` between 10-game blocks.
 
 Gates on these metrics are in [review-and-harness.md](review-and-harness.md#evaluation-harness).
