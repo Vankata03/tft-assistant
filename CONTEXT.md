@@ -33,7 +33,7 @@ The opt-in mode in which the coach gives advice computed from the live game stat
 _Avoid_: Real-time mode, cheat mode
 
 **Baseline mode**:
-The mode in which the coach shows Guides, highlights and stage-keyed hints but never advice computed from the live game state.
+The mode in which the coach shows Guides, highlights and stage-keyed hints but never advice computed from the live game state, and never anything about opponents' boards during a game.
 _Avoid_: Compliant mode, safe mode
 
 **Guide**:
@@ -189,8 +189,16 @@ A single number for how strong a board is in combat, on one scale for every stag
 _Avoid_: Board score, board strength (as a number), rating
 
 **Win chance**:
-The probability that the player's board beats a given opponent's board in the next fight, derived from both boards' board power. Baseline mode shows it per opponent, as a number only.
+The probability that the player's board beats a given opponent's board in the next fight, derived from both boards' board power. It is a Live-mode figure during a game; post-game review shows it in both modes.
 _Avoid_: Win rate (a statistic of a comp or unit across many games), win odds
+
+**Par board**:
+The typical board for a round: the board power that the opponent growth curve gives for that round. It stands for no particular opponent.
+_Avoid_: Baseline board, average opponent
+
+**Par win chance**:
+The probability that the player's board beats the par board. It is Baseline mode's in-game number and uses no opponent data.
+_Avoid_: Stage win chance, baseline win chance
 
 **Unguided comp**:
 A comp that statistics sources know but that has no Guide. It is considered only when the player turns it on.

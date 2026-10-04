@@ -35,7 +35,13 @@ Logic lives in code. Every number and threshold lives in the per-patch tunables 
 
 ### Mode separation
 
-The Engine core always ships, because post-game review runs it in both modes. The Live advisor, the in-game loop that feeds live snapshots to the Engine and surfaces its advice, is the separable Live-mode component. In Baseline mode, in-game features are the Guide layer (static, stage-keyed), shop highlighting and the grey-zone hints. Which Engine functions those hints may call in-game is open: [Baseline mode and opponent sightings](../../issues/031-baseline-mode-and-opponent-sightings.md).
+The Engine core always ships, because post-game review runs it in both modes. The Live advisor, the in-game loop that feeds live snapshots to the Engine and surfaces its advice, is the separable Live-mode component. In Baseline mode, in-game features are the Guide layer (static, stage-keyed), shop highlighting and the grey-zone hints ([Baseline mode and opponent sightings](../../issues/031-baseline-mode-and-opponent-sightings.md)):
+
+- During a game in Baseline mode, the advice pipeline (Game plan, sub-engines, Line simulator, opponent model) never runs.
+- Baseline features may call only an allowlist of pure Engine functions over static data and the player's own state: own-board board power, `win_probability` and the opponent growth curve lookup by round. Par win chance is the only in-game user.
+- One Engine module exposes the allowlist. An import-linter contract keeps Baseline features off the rest of the Engine, beside the contract that keeps them off `live`.
+- Offline per-patch Engine output, such as the Wisp worth table, counts as static data, not in-game use.
+- The XP-aware leveling hint is arithmetic over the static XP table and the Guide, not an Engine function.
 
 ## Game plan
 
@@ -165,7 +171,9 @@ The same number feeds win chance, each opponent's start in the Line simulator, `
 
 ### Win chance
 
-Win chance is `win_probability` against each opponent the player could meet next (the lobby minus recently met players), from their last sighting. Baseline mode shows the number only, never an action drawn from it, as MetaTFT's approved app does. Its status in Baseline mode is open ([Baseline mode and opponent sightings](../../issues/031-baseline-mode-and-opponent-sightings.md)).
+Win chance is `win_probability` against each opponent the player could meet next (the lobby minus recently met players), from their last sighting. It is shown during a game in Live mode only. Post-game review shows it in both modes.
+
+**Par win chance** is Baseline mode's in-game number: `win_probability` of the player's board against the par board, the opponent growth curve's board power for the round. It uses no opponent data, and it is a number only, never an action ([Baseline mode and opponent sightings](../../issues/031-baseline-mode-and-opponent-sightings.md)).
 
 ### Error measurement
 

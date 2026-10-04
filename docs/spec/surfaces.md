@@ -16,14 +16,14 @@ Three surfaces follow the same mode rules ([spec.md](../spec.md#modes-and-policy
 
 | Phase | Overlay, Live mode | Overlay, Baseline mode | Second screen | Voice, Live mode |
 | --- | --- | --- | --- | --- |
-| Planning | Buy and Buy Wisp tags on shop slots, level chip, Line chip, target-layout arrows, scout eye | "In Guide" highlights on shop slots, Wisp worth tag, Guide plan chip, XP-aware leveling hint, win chance per player-list row | Cockpit; in Baseline mode the Guide, its layouts, win chance and opponents faced | Anti-dive or anti-AoE on, pivot call, the scout line tied to them |
+| Planning | Buy and Buy Wisp tags on shop slots, level chip, Line chip, target-layout arrows, scout eye | "In Guide" highlights on shop slots, Wisp worth tag, Guide plan chip, XP-aware leveling hint, par win chance chip | Cockpit; in Baseline mode the Guide, its layouts, par win chance and opponents faced | Anti-dive or anti-AoE on, pivot call, the scout line tied to them |
 | Roll-down | Roll-down tracker, Buy tags after every roll | "In Guide" highlights | Cockpit, with Lines held until the roll-down ends | "Roll down to N", once |
 | Augment selection | Placement delta on each card, Take on the best, Reroll on the options to reroll | Tier letter per card, "in Guide" tag | Augment comparison with deltas, or tiers in Baseline mode | "Take X", with the reroll note |
 | Carousel | Numbered rings 1 and 2 on units | Guide priority chip | Carousel reasons | "Carousel: take X" |
-| Combat | One chip previewing the next planning phase's call | The Guide's step for the next stage | Win chance against the current opponent | Silent |
+| Combat | One chip previewing the next planning phase's call | The Guide's step for the next stage | Win chance against the current opponent; par win chance in Baseline mode | Silent |
 | Game end | "Review ready" toast | "Review ready" toast | Post-game review | Silent |
 
-Baseline mode's win chance per player-list row depends on opponent sightings, which is open ([Baseline mode and opponent sightings](../../issues/031-baseline-mode-and-opponent-sightings.md)).
+Baseline mode shows nothing on player-list rows and no opponent data during a game. Its par win chance is one chip: the player's board against the par board for the round, with no opponent data ([Baseline mode and opponent sightings](../../issues/031-baseline-mode-and-opponent-sightings.md)). An unread own board pauses the chip with the grey dashed tag. Live mode does not show par win chance.
 
 ## Voice rules
 
@@ -33,6 +33,8 @@ Baseline mode's win chance per player-list row depends on opponent sightings, wh
 - The post-game review has no voice summary.
 
 ## Opponents
+
+Everything in this section is Live mode only. In Baseline mode the second screen lists only the opponents already faced, with names and results.
 
 - The overlay marks a player-list row only when that opponent is due a scout: the sighting is 3 or more rounds old, or the opponent was never scouted, and the opponent is likely to be the next one (about 13 % or more). The mark is a small pulsing eye with the sighting age. It clears when the player scouts that opponent.
 - The second screen shows win chance, sighting age, traits, threat tags, the most likely units of the inferred board and its inference certainty for every opponent. A freshness bar per opponent is green for a sighting from this or the last round, amber for 2 to 3 rounds, and red for 4 or more or never.

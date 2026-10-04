@@ -4,7 +4,7 @@ This is the build spec for v1 of the coach. It compiles the decisions recorded o
 
 Terms follow the glossary in [`CONTEXT.md`](../CONTEXT.md). Capitalised or domain terms such as Engine, Line, Comp fit, Board power, Snapshot and Game log mean exactly what the glossary says.
 
-Status: compiled 2026-10-04 for patch 18.3 of Set 18 (Enchanted Wilds) and read by the owner, who accepted the build order. Three gaps are open as tickets; see [Open items](#open-items).
+Status: compiled 2026-10-04 for patch 18.3 of Set 18 (Enchanted Wilds) and read by the owner, who accepted the build order. Two gaps are open as tickets; see [Open items](#open-items).
 
 ## Contents
 
@@ -45,7 +45,14 @@ Riot's policy forbids real-time prescriptive advice ("level now", "roll", "buy t
 The coach therefore has two modes over one Engine:
 
 - **Live mode** is the product. It gives advice computed from the live game state, including whatever the capture route knows of opponents' boards. It runs on the owner's main account; the owner accepts the Terms of Service risk. It is opt-in: one switch per session, off by default.
-- **Baseline mode** shows Guides, shop highlights and a few grey-zone hints, never advice computed from the live game state. It is compliant by the precedent of approved apps, not provably compliant. Its grey-zone hints are an XP-aware leveling hint, a win-chance estimate and the list of opponents already faced (names and results only).
+- **Baseline mode** shows Guides, shop highlights and a few grey-zone hints, never advice computed from the live game state. It is compliant by the precedent of approved apps, not provably compliant. Its grey-zone hints are an XP-aware leveling hint, par win chance and the list of opponents already faced (names and results only).
+
+Opponent-board data is Live mode only during a game, with no exception ([Baseline mode and opponent sightings](../issues/031-baseline-mode-and-opponent-sightings.md)):
+
+- Capture and the game log are the same in every mode, so Baseline mode logs raw sightings (trait rows, unit counts, hidden-row count, level). It never infers a board from them and never shows them during the game. Post-game review infers boards from the log in both modes.
+- Per-opponent win chance is Live mode only during a game. Baseline mode shows **par win chance** instead: `win_probability` of the player's board against the par board, the opponent growth curve's board power for the round. It uses no opponent data and is a number only, never an action.
+- The **XP-aware leveling hint** states the gap between the player's level and XP and the Guide's stage-keyed level target, counting passive XP up to the target round, for example "Guide: 8 at 4-2 · 3 XP buys (12 gold) short". It is a fact, never "level now", and is plain arithmetic over the static XP table.
+- During a game in Baseline mode, the advice pipeline (Game plan, sub-engines, Line simulator, opponent model) never runs. Baseline features may call only an allowlist of Engine functions: own-board board power, `win_probability` and the opponent growth curve lookup ([spec/engine.md](spec/engine.md#mode-separation)). Offline per-patch output, such as the Wisp worth table, counts as static data.
 
 Silent games are a third way to run a session: the coach captures and logs the game and shows nothing ([Evaluation harness](../issues/027-evaluation-harness.md)). How a session is set to silent is open ([Data refresh trigger and silent sessions](../issues/033-data-refresh-trigger-and-silent-sessions.md)).
 
@@ -68,9 +75,6 @@ What each mode shows per decision:
 Surfaces do not change the rules: Riot judges content, not surface, so the overlay, the second screen and voice follow the same mode rules. In Baseline mode voice reads only the Guide's step for the stage.
 
 Post-game review runs in both modes, because the policy encourages post-game analysis. The Engine core therefore always ships. The separable part of Live mode is the Live advisor, packaged as the `live` Python package plus a UI module. A public build omits both.
-
-Baseline mode's win chance is computed from opponent sightings, which conflicts with the rule that opponent-board data is Live mode only. That conflict is open: [Baseline mode and opponent sightings](../issues/031-baseline-mode-and-opponent-sightings.md).
-
 ## Architecture at a glance
 
 Sources: [Game-state capture route](../issues/009-game-state-capture-route.md), [Advice engine architecture](../issues/011-advice-engine-architecture.md), [Stack and runtime](../issues/025-stack-and-runtime.md), [Post-game review scope](../issues/015-post-game-review-scope.md).
@@ -131,7 +135,6 @@ Also deferred past v1 by individual tickets: free-form what-if editing of a Line
 
 These need a decision no ticket made, or sit between tickets that disagree. Each is a grilling ticket on the map.
 
-- [Baseline mode and opponent sightings](../issues/031-baseline-mode-and-opponent-sightings.md). Opponent-board data is Live mode only, yet Baseline mode's win chance is computed from sightings, and "the Engine runs only after a game ends" in Baseline mode conflicts with that in-game win chance.
 - [Families for unassigned tunables](../issues/032-families-for-unassigned-tunables.md). About 20 tunables have an owner but no family; see [spec/tunables.md](spec/tunables.md).
 - [Data refresh trigger and silent sessions](../issues/033-data-refresh-trigger-and-silent-sessions.md). Two refresh rules disagree (per-source minimum ages against a flat 6 hours), and no ticket says how a session is set to silent.
 

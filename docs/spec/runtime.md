@@ -18,7 +18,7 @@ Hardware: the owner's PC has an AMD Ryzen 7 7800X3D, 32 GB RAM and an AMD Radeon
 
 ## Live mode separation
 
-`live` is a separate Python package, and the UI has its own Live module. The core loads `live` only if it is installed and the session switch is on. The switch is per session and off by default. The Engine core, Baseline features (Guides, highlights, grey-zone hints), post-game review and the harness never import `live`; an import-linter contract enforces the direction. A public build ships without the package and the UI module.
+`live` is a separate Python package, and the UI has its own Live module. The core loads `live` only if it is installed and the session switch is on. The switch is per session and off by default. The Engine core, Baseline features (Guides, highlights, grey-zone hints), post-game review and the harness never import `live`; an import-linter contract enforces the direction. A second contract limits Baseline features to the Engine's in-game allowlist module ([engine.md](engine.md#mode-separation)). A public build ships without the package and the UI module.
 
 ## Background jobs
 
