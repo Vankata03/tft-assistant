@@ -140,6 +140,14 @@ How much better another comp's comp fit must be than the target comp's before th
 The strongest set of units the player owns that fits on the board at the current level. Transition advice is the difference between it and the current board.
 _Avoid_: Best board, optimal board
 
+**Target layout**:
+The hex each unit of the recommended board should stand on in the current planning phase: the Guide's positioning, filled in for units the Guide does not place and adjusted for the likely opponents' threats.
+_Avoid_: Positioning (as a noun for the advice), formation
+
+**Threat tag**:
+A kind of combat threat that a trait or unit poses, such as reaching the backline or dealing area damage. Live positioning reacts to the threat tags of the opponents the player may face next.
+_Avoid_: Counter, threat (alone)
+
 **Board power**:
 A single number for how strong a board is in combat, on one scale for every stage, so any two boards can be compared directly. Placement and fight odds are derived from board power; they are not board power.
 _Avoid_: Board score, board strength (as a number), rating

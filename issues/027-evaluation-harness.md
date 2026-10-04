@@ -18,3 +18,7 @@ Decide:
 - Which metrics the harness reports and their pass thresholds. Board power's metrics are already settled in "Board and lobby strength heuristic": final-board ranking (Spearman correlation and placement MAE) now; Brier score, log-loss and calibration by stage of `win_probability`, and damage MAE per lost round, once game logs exist.
 - How each tunable is tuned and how overfitting to the owner's few games is avoided. Tunables waiting on this: pivot margins, comp fit weights, the Line margin, the terminal HP weight, the opponent growth curve, the item tunables (class prior strength, component discount), the augment tunables (tier-to-delta map, comp-defining margin), the shop and Wisp tunables (board power buy minimum, Wisp buy margin) and `review_min_cost`.
 - What data the harness can use before the coach's own game logs exist, and how it treats games with capture gaps.
+
+### 2026-10-04 — claude-code
+
+Input from "Positioning decisions": positioning is rule-based and has no placement cost, so it never produces a moment. The harness reports the `win_probability` residual on fights where an anti-dive or anti-AoE adjustment was active, split by whether the player followed the target layout. The metric is report-only, never a pass gate. Tunables waiting on this ticket: `threat_share_on` (about 0.5), `threat_share_off` (about 0.3) and `board_settle_seconds` (about 2).

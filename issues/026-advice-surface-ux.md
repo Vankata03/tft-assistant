@@ -24,3 +24,7 @@ Decide, with a rough prototype to react to:
 ### 2026-10-04 — claude-code
 
 Input from "Post-game review scope": the review opens on demand in the second-screen window after a "review ready" notification at game end, with no voice. Its content is settled; its layout belongs here. The top of the review holds placement, estimated cost per category, follow rate, a Game plan timeline, a Line chart (actual against recommended and pinned Lines) and a fight strip (win chance against result). Below it come the top 5 moments as cards (round, category, the player's choice, the Engine's choice, estimated cost, template reason, shown-advice status, keyframe), each expanding to the options the Engine scored; the full round timeline; and a debug tab. A cross-game list shows each game's placement, total estimated cost and worst category.
+
+### 2026-10-04 — claude-code
+
+Input from "Positioning decisions": positioning advice is a target layout for the whole board, issued once per planning phase after the board has settled for about 2 s, and re-issued only when the recommended board changes or an anti-dive or anti-AoE adjustment turns on or off. Units whose current hex is known get a move arrow; a unit known only to purchase tracking shows its target hex without one. Each adjustment carries a template reason. Voice speaks only when an anti-dive or anti-AoE adjustment turns on. Baseline mode shows only the Guide's own final and interim layouts.
