@@ -66,3 +66,7 @@ Input posted to "Item decisions", "Augment decisions", "Shop, Wisp and carousel 
 ### 2026-10-04 — claude-code
 
 Input from "Econ, level and roll Line simulation": this amends the comp fit terms. For comps the econ, level and roll sub-engine simulates (the target comp, the Backup comp and the top challengers from an analytic screen), the best Line's simulated expected placement is the backbone of comp fit, and comp fit equals that value plus item fit plus augment fit. Owned progress, key-unit hit probability and Line feasibility are inside the simulated result and are not added again; they survive only as its reason decomposition. Comps that are only screened keep the additive form above.
+
+### 2026-10-04 — claude-code
+
+Input from "Board and lobby strength heuristic": the recommended board is scored with board power, an additive sum of unit, trait-breakpoint and generic item terms. Trait breakpoints make the sum non-additive across units, so picking the best subset of owned units within the unit cap needs a search. Exhaustive search over a full bench (about 48,000 subsets at level 9) is near the 100 ms budget, so the build should use greedy selection with swap improvement. That is a build detail, not a decision.

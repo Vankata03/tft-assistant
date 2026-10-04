@@ -101,6 +101,14 @@ How much better another comp's comp fit must be than the target comp's before th
 The strongest set of units the player owns that fits on the board at the current level. Transition advice is the difference between it and the current board.
 _Avoid_: Best board, optimal board
 
+**Board power**:
+A single number for how strong a board is in combat, on one scale for every stage, so any two boards can be compared directly. Placement and fight odds are derived from board power; they are not board power.
+_Avoid_: Board score, board strength (as a number), rating
+
+**Win chance**:
+The probability that the player's board beats a given opponent's board in the next fight, derived from both boards' board power. Baseline mode shows it per opponent, as a number only.
+_Avoid_: Win rate (a statistic of a comp or unit across many games), win odds
+
 **Unguided comp**:
 A comp that statistics sources know but that has no Guide. It is considered only when the player turns it on.
 

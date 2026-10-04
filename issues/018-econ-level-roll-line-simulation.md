@@ -51,3 +51,10 @@ Resolved by grilling with the owner. Sources: "Advice engine architecture", "Tra
 Glossary terms Gold floor, Rounds left to live, Line margin, Stabilize and Pinned Line added to `CONTEXT.md`, and Line sharpened.
 
 Input posted to "Board and lobby strength heuristic" (the interface), "Shop, Wisp and carousel decisions" (Wisp valuation through the simulator), "Probe live game data sources in a real TFT game" (rules facts to confirm), "Post-game review scope" (pinned Lines and projections) and "Transition and pivot domain model" (the comp fit amendment).
+
+### 2026-10-04 — claude-code
+
+Amendments from "Board and lobby strength heuristic", which defines the four interface functions:
+- Terminal strength holds items generic, not out: a flat value per finished item and component, the same for every comp. The player's items are fixed across Lines and comps, so the term cancels in comp comparisons, and item fit stays with "Item decisions".
+- `opponent_growth_curve` is computed from statistics (units by a standard level calendar × average unit-star power under shop odds, plus the stage-typical item term), not hand-typed. It is recomputed when statistics refresh.
+- `win_probability` = σ(k_stage · power gap); `placement` = 1 + Σ P(opponent outlasts the player), using `terminal_hp_weight` on the HP gap in lost rounds; `surviving_units` = the winner's unit count × σ(c_stage · gap).

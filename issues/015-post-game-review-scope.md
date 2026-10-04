@@ -29,3 +29,7 @@ Input from "Transition and pivot domain model": the Game plan is folded from the
 ### 2026-10-04 — claude-code
 
 Input from "Econ, level and roll Line simulation": in Live mode the player can pin a Line, and the Engine then follows the pin and only notes when another Line beats it by the line margin. The review should show pinned against recommended Lines, and each round's Line projection (gold, level, probability of having hit the key units, expected HP and expected placement) is available for replay. Free-form what-if editing of a Line was left for after v1, and the review is the natural place for it, because time is free there.
+
+### 2026-10-04 — claude-code
+
+Input from "Board and lobby strength heuristic": board power is measured three ways — final-board ranking on the owner's matches (Spearman correlation and placement MAE, available now), win-probability calibration from fight logs (Brier score, log-loss, calibration by stage), and damage MAE per lost round. Post-game review can show the per-fight win chance against the actual result, and that data feeds the second and third metrics.

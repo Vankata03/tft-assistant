@@ -29,3 +29,7 @@ Input from "Transition and pivot domain model": also screenshot one or two scout
 ### 2026-10-04 — claude-code
 
 Input from "Econ, level and roll Line simulation": during the probe game, also record rules facts the simulator currently takes as defaults: whether a PvE round keeps, breaks or ignores a win or loss streak; the gold that PvE orbs drop in each PvE round; and whether the Wisp's 4-champion shop alternates per round or per roll (and what the shop shows after a Wisp is bought). Each confirmed fact replaces a default in the per-patch static file.
+
+### 2026-10-04 — claude-code
+
+Input from "Board and lobby strength heuristic": during the probe game, also record the HP lost on a few lost rounds together with the number and star levels of the opponent's surviving units, so the per-unit damage rule in the static file can be confirmed for Set 18.

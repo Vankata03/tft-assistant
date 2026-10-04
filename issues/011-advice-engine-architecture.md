@@ -36,3 +36,7 @@ Resolved by grilling with the owner. Sources: "Prior art for TFT decision engine
 Glossary terms Engine, Game plan, Line and Live advisor added to `CONTEXT.md`.
 
 Graduated from the map's "Sub-engines" fog: "Econ, level and roll Line simulation", "Board and lobby strength heuristic", "Item decisions", "Augment decisions", "Positioning decisions", and "Shop, Wisp and carousel decisions". The Game plan layer is owned by "Transition and pivot domain model".
+
+### 2026-10-04 — claude-code
+
+Amendment from "Board and lobby strength heuristic": board strength is no longer comp-match-first. A board's strength is its board power: an additive sum of per-unit-star power (from tactics.tools star splits), a trait-breakpoint term and a generic item term, with three global weights fitted on the owner's own matches. The closest-comp match survives only as the comp classifier, for Game plan inference, opponent labels and the contested count. MetaTFT comp averages still reach comp fit through the Line simulator's terminal value and the analytic screen.

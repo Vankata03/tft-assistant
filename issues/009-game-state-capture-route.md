@@ -25,3 +25,7 @@ Input from "Advice engine architecture": the Engine runs on the CPU only, with a
 ### 2026-10-04 — claude-code
 
 Input from "Transition and pivot domain model": contest is counted from each opponent's latest board sighting, plus benches only if the route exposes them. A sighting has full weight for about 2 rounds, then fades and lowers confidence; with no opponent data there is no contested term. The owner accepts scouting every opponent's board each round if a screen-capture route reads scouted boards reliably.
+
+### 2026-10-04 — claude-code
+
+Input from "Board and lobby strength heuristic": the error metrics for board power need, per combat round, the opponent fought, the result, and the player's HP lost. Scouted boards should record items and star levels when visible, because missing fields are imputed at the stage average and lower advice confidence. A route that logs these lets `win_probability` and `surviving_units` be calibrated from fight logs.
