@@ -2,7 +2,7 @@
 id: 29
 title: "Assemble the MVP spec"
 labels: [wayfinder:task]
-status: open
+status: closed
 assignee: Ivan Terziev
 parent: 1
 blocked_by: []
@@ -41,3 +41,9 @@ Progress, not a resolution: the draft is committed and waits for the owner to re
 - **Build order** is a proposal for the owner, starting with capture and the game log so silent games log early.
 
 Remaining to resolve: the owner reads the spec and accepts, reorders or rejects the build order.
+
+### 2026-10-04 — claude-code (resolution)
+
+Resolved. The owner read the spec and accepted the build order as written: skeleton; capture and game log for silent games; board reader; data layer; board power and the first harness metrics; Engine core; remaining sub-engines; replay, review and the full harness; Baseline mode surfaces; Live advisor and Live surfaces; then the refreshed baseline and the 50 Live-mode games. `docs/spec.md` now records the order as accepted rather than proposed.
+
+Every gap the spec found is a ticket on the map: "Opponent model from trait-only sightings", "Baseline mode and opponent sightings", "Families for unassigned tunables" and "Data refresh trigger and silent sessions". Each one's resolution updates the spec's open items and the affected area files.

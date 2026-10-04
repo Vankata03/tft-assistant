@@ -4,7 +4,7 @@ This is the build spec for v1 of the coach. It compiles the decisions recorded o
 
 Terms follow the glossary in [`CONTEXT.md`](../CONTEXT.md). Capitalised or domain terms such as Engine, Line, Comp fit, Board power, Snapshot and Game log mean exactly what the glossary says.
 
-Status: draft compiled 2026-10-04 for patch 18.3 of Set 18 (Enchanted Wilds). Four gaps are open as tickets; see [Open items](#open-items).
+Status: compiled 2026-10-04 for patch 18.3 of Set 18 (Enchanted Wilds) and read by the owner, who accepted the build order. Four gaps are open as tickets; see [Open items](#open-items).
 
 ## Contents
 
@@ -94,9 +94,9 @@ Between games: data refresh writes a new immutable data snapshot
 - The Python core and the Electron UI are two processes joined by a versioned JSON WebSocket.
 - The game log is the source of truth for review and the evaluation harness. Both read the replay records produced by replaying it through the Engine.
 
-## Build order (proposal)
+## Build order
 
-This is a proposal for the owner to accept, reorder or reject. No ticket decided it. It aims to get silent games logging early, because silent games feed the pre-coach baseline and give the evaluation harness game logs before the first Live-mode game.
+The owner accepted this order on 2026-10-04, when closing [Assemble the MVP spec](../issues/029-assemble-mvp-spec.md). It aims to get silent games logging early, because silent games feed the pre-coach baseline and give the evaluation harness game logs before the first Live-mode game.
 
 1. **Skeleton.** The uv workspace (`engine`, `capture`, `live`, `review`, `harness`), the Electron shell that starts and supervises the core, the versioned WebSocket with generated schemas, the tray app and the League client API phase watcher. Exit: the shell starts the core and shows the gameflow phase.
 2. **Capture and game log, for silent games.** Name lists from Data Dragon and CommunityDragon for OCR matching, WGC capture with change checks, digit templates and RapidOCR for the HUD, shop, Wisps, augments, carousel, trait panel and player list, purchase tracking, fight results, the JSONL game log with keyframes, the SQLite index, crash re-attach, and the silent session. Exit: the owner plays ranked silent games and each leaves a complete game log. From here every ranked game counts toward the refreshed baseline and feeds the harness.
