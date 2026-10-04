@@ -79,3 +79,7 @@ Glossary terms Snapshot and Data snapshot added to `CONTEXT.md`. Inputs passed t
 ### 2026-10-04 — claude-code
 
 Input from "Evaluation harness": the CLI has two commands. `uv run tft-harness eval` replays every game log and writes a Markdown report beside the logs (gates, calibration curves, the advice diff, flip rates and the capture gap share), always compared against the latest committed tunables file. `uv run tft-harness fit` writes a candidate tunables file, which the owner accepts by committing it to `data/`. The game index records each Live-mode game's 10-game block beside its engine version, and the review store holds the owner's moment tags.
+
+### 2026-10-04 — claude-code
+
+Input from "Patch-day and new-set workflow": two more commands and a flag. `uv run tft-data new-patch <patch>` creates `data/<patch>/` from the previous patch's static and tunables files, refreshes the CommunityDragon and Data Dragon fields, adds the patch to `data/patches.toml` (the patch calendar, one EUNE live date per patch) and writes a patch-day diff report: changed fields, new and removed ids, and the threat-tag diff. `uv run tft-train` fine-tunes the board reader's classifier on the CPU from labelled game-log crops. `uv run tft-harness fit --priors` recomputes the family 3 priors. Every static-file field carries a `source` tag that the schema checks. Board-reader model files live under `%LOCALAPPDATA%\tft-assistant\models\`, outside git, with the accepted version pointer committed in the repo.

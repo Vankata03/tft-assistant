@@ -42,3 +42,7 @@ Two facts for later tickets:
 ### 2026-10-04 — claude-code
 
 Input from "Evaluation harness": the coach can run silent games, capturing and logging a game while showing nothing (no advice, no Guides, no highlights). A silent game counts as a no-coach game for the pre-coach baseline as long as the owner opens no review of it before the Live-mode run starts. Playing the baseline's ranked games as silent games gives the evaluation harness game logs to fit and calibrate against before the first Live-mode game.
+
+### 2026-10-04 — claude-code
+
+Input from "Patch-day and new-set workflow": match-API games are keyed to patches through the hand-kept calendar `data/patches.toml`, one EUNE live date per patch; games within one day of a boundary are marked uncertain. The 50 Live-mode games must finish within Set 18. If they cannot, the run restarts in the new set with a fresh pre-coach baseline.

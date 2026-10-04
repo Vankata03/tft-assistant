@@ -233,6 +233,10 @@ The player's gold management: interest, streaks, and when to spend versus save.
 Set 18's set mechanic: a one-shot effect (gold, XP, rerolls, units, items or a combat buff) sold for gold in the rightmost slot of every other shop, at most one per round. "Buy Wisp" is the recurring decision of whether its effect is worth its gold against the econ, level and roll plan.
 _Avoid_: Charm (the Set 12 predecessor)
 
+**Set mechanic**:
+The mechanic unique to one TFT set, such as Set 18's Wisp. It is replaced when a new set ships, so the decisions it creates are rebuilt each set.
+_Avoid_: Gimmick, set feature
+
 **Pre-coach baseline**:
 The owner's average placement over the last 50 ranked games played without the coach or as silent games, in the same set as the Live-mode games it is compared against. It is refreshed just before the first Live-mode game.
 _Avoid_: Baseline (alone, it collides with Baseline mode), control group
