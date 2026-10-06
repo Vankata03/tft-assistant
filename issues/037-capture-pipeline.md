@@ -21,3 +21,9 @@ WGC/BitBlt capture, fractional HUD anchors and UI scale, OCR/template matching a
 Implement all referenced requirements. Verify through the approved public seams in [implementation contract](../docs/agents/implementation.md). Record platform checks separately; keep unmet acceptance explicit.
 
 ## Comments
+
+### 2026-10-06 — codex (capture preflight)
+
+The existing shell/core checks pass on macOS. Primary WGC binding documentation is at <https://github.com/NiiightmareXD/windows-capture/blob/main/windows-capture-python/README-Python.md>. `WindowsCapture(cursor_capture=False, draw_border=False, window_name="TFT")` uses event callbacks with `Frame.frame_buffer`, `on_closed`, and a capture control. Verify Python 3.14 Windows wheel availability and exact binding API during implementation. Do not use a desktop capture as proof that WGC excludes the overlay.
+
+The committed probe JPEGs are available in `probe/screenshots/2026-10-04/`; the full 1,112-frame benchmark dataset and research branches referenced in planning tickets are absent from this checkout and origin. Keep calibration, recognition accuracy and Windows live-game checks explicit. Pinned upstream reader source was fetched read-only to the ignored `worktrees/references/tft-coach/` at commit `bf22ac92010aef321b9e67d6f125bb2109c41cf4` for ticket 38.
