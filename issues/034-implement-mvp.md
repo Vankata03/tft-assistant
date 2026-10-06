@@ -31,6 +31,7 @@ Source: [MVP spec](../docs/spec.md), its area files, and the resolved planning t
 
 - 2026-10-06: Stage 1 verified in current `main`; Vault state predates its merge.
 - 2026-10-06: Owner approved public test seams. Runtime checks on Windows remain distinct from macOS verification.
+- 2026-10-06: [Ticket 46](046-data-contracts.md) closed after merge `dfa6be8`; immutable data contracts and capture name/icon lists passed 59 macOS integration tests, both import contracts, and schema drift verification. Full data workflows remain in open ticket 36.
 
 ## Comments
 
