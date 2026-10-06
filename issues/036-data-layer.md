@@ -3,7 +3,7 @@ id: 36
 title: Validated patch data and immutable refresh snapshots
 labels: [implementation:task]
 status: open
-assignee:
+assignee: codex-data-layer
 parent: 34
 blocked_by: []
 ---
