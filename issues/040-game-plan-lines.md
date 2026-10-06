@@ -3,7 +3,7 @@ id: 40
 title: Game plan, transitions and seeded Line simulation
 labels: [implementation:task]
 status: open
-assignee:
+assignee: implement/ticket-40
 parent: 34
 blocked_by: [39]
 ---
