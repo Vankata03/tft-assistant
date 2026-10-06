@@ -45,7 +45,8 @@ tft-live = { workspace = true }
 tft-review = { workspace = true }
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "packages"]
+addopts = "--import-mode=importlib"
 
 [tool.importlinter]
 root_packages = [
