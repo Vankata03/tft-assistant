@@ -8,6 +8,7 @@ dependencies = [
     "pillow>=12",
     "websockets>=15",
     "tft-capture",
+    "tft-data",
     "tft-engine",
     "tft-harness",
     "tft-review",
@@ -38,17 +39,20 @@ members = ["packages/*"]
 
 [tool.uv.sources]
 tft-capture = { workspace = true }
+tft-data = { workspace = true }
 tft-engine = { workspace = true }
 tft-harness = { workspace = true }
 tft-live = { workspace = true }
 tft-review = { workspace = true }
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "packages"]
+addopts = "--import-mode=importlib"
 
 [tool.importlinter]
 root_packages = [
     "tft_core",
+    "tft_data",
     "tft_engine",
     "tft_capture",
     "tft_live",
@@ -61,6 +65,7 @@ name = "Nothing outside live imports live"
 type = "forbidden"
 source_modules = [
     "tft_core",
+    "tft_data",
     "tft_engine",
     "tft_capture",
     "tft_review",

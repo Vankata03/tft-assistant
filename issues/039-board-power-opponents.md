@@ -5,7 +5,7 @@ labels: [implementation:task]
 status: open
 assignee:
 parent: 34
-blocked_by: [36]
+blocked_by: [46]
 ---
 
 # Board power, classification and trait-only opponent inference
