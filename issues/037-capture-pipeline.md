@@ -5,7 +5,7 @@ labels: [implementation:task]
 status: open
 assignee:
 parent: 34
-blocked_by: [35, 36]
+blocked_by: [35, 46]
 ---
 
 # Automatic screen capture and purchase tracking
