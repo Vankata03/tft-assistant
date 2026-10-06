@@ -141,6 +141,18 @@
       "additionalProperties": false,
       "description": "The session mode the core holds; sent on connect and on every change.",
       "properties": {
+        "available_modes": {
+          "default": [
+            "silent",
+            "baseline",
+            "live"
+          ],
+          "items": {
+            "$ref": "#/$defs/SessionMode"
+          },
+          "title": "Available Modes",
+          "type": "array"
+        },
         "mode": {
           "$ref": "#/$defs/SessionMode"
         },
@@ -160,7 +172,8 @@
       "required": [
         "v",
         "type",
-        "mode"
+        "mode",
+        "available_modes"
       ],
       "title": "SessionModeState",
       "type": "object"

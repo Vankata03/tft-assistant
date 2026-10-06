@@ -17,6 +17,7 @@ import threading
 from tft_capture.lcu import GameflowWatcher
 from tft_core.messages import SCHEMA_VERSION
 from tft_core.server import CoreServer
+from tft_core.storage import SessionStore
 
 log = logging.getLogger("tft_core")
 
@@ -33,7 +34,7 @@ def _stdin_closed(loop: asyncio.AbstractEventLoop) -> asyncio.Event:
 
 
 async def run(token: str) -> None:
-    server = CoreServer(token)
+    server = CoreServer(token, sessions=SessionStore.default())
     async with server.listen() as ws_server:
         port = ws_server.sockets[0].getsockname()[1]
         print(json.dumps({"event": "ready", "port": port, "v": SCHEMA_VERSION}), flush=True)
