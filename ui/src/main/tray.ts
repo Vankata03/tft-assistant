@@ -1,8 +1,7 @@
 // The tray icon shows the session mode; the tray menu sets it.
 import { Menu, Tray } from 'electron'
 import type { SessionMode } from '../shared/protocol'
-import { SESSION_MODES } from '../shared/protocol'
-import { describeCore, describeGameflow, MODE_LABELS, type ShellState } from '../shared/state'
+import { canSelectMode, describeCore, describeGameflow, MODE_LABELS, type ShellState } from '../shared/state'
 import { trayIcon } from './icons'
 
 export interface TrayActions {
@@ -32,11 +31,11 @@ export class CoachTray {
         { label: `Gameflow: ${gameflow}`, enabled: false },
         { type: 'separator' },
         { label: 'Session mode', enabled: false },
-        ...SESSION_MODES.map((m) => ({
+        ...(state.availableModes ?? []).map((m) => ({
           label: MODE_LABELS[m],
           type: 'radio' as const,
           checked: state.mode === m,
-          enabled: connected,
+          enabled: canSelectMode(state, m),
           click: () => this.actions.setMode(m),
         })),
         { type: 'separator' },

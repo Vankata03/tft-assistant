@@ -15,9 +15,13 @@ export interface ShellState {
   gameflow: GameflowState | null
   /** Null while the core is not connected. */
   mode: SessionMode | null
+  /** Authoritative modes supplied by the connected core; absent means unknown. */
+  availableModes?: readonly SessionMode[]
+  /** Latest actionable error reported by the core. */
+  error?: string | null
 }
 
-export const INITIAL_STATE: ShellState = { core: 'starting', gameflow: null, mode: null }
+export const INITIAL_STATE: ShellState = { core: 'starting', gameflow: null, mode: null, availableModes: [], error: null }
 
 export function describeGameflow(state: ShellState): string {
   if (state.core !== 'running' || state.gameflow === null) return 'Unknown (core not connected)'
@@ -39,4 +43,11 @@ export const MODE_LABELS: Record<SessionMode, string> = {
   silent: 'Silent',
   baseline: 'Baseline',
   live: 'Live',
+}
+
+export function canSelectMode(state: ShellState, mode: SessionMode): boolean {
+  if (state.core !== 'running' || state.mode === null || !state.availableModes?.includes(mode)) return false
+  const inGame = ['InProgress', 'Reconnect', 'PreEndOfGame'].includes(state.gameflow?.phase ?? '')
+  const ranks = { silent: 0, baseline: 1, live: 2 }
+  return !inGame || ranks[mode] <= ranks[state.mode]
 }

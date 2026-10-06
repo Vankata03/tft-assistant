@@ -52,6 +52,7 @@ export interface Gameflow {
  * via the `definition` "SessionModeState".
  */
 export interface SessionModeState {
+  available_modes: SessionMode[]
   mode: SessionMode
   type: 'session_mode'
   v: 1
