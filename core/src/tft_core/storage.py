@@ -192,7 +192,7 @@ class SessionStore:
             self.active_game_id = None
             self._mode = self.default_mode
             _atomic_json(self.config_root / "session.json", {"mode": self._mode.value})
-            self.rebuild_index()
+            self.enforce_media_cap()
 
     def rebuild_index(self) -> None:
         """Recreate the disposable index only from logs and the frozen run."""
@@ -220,11 +220,13 @@ class SessionStore:
             games.sort(key=lambda g: (g["date"], int(g["game_id"])))
             number = 0
             for game in games:
-                if (run and game["finished"] and game["mode"] == "live" and
+                if (run and game["mode"] == "live" and
                     datetime.fromisoformat(game["date"].replace("Z", "+00:00")) >= datetime.fromisoformat(run["started_at"].replace("Z", "+00:00"))
                     and game["set_id"] == run["set_id"] and number < 50):
-                    number += 1
-                    game.update(pinned=True, block=(number - 1) // 10 + 1, run_number=number)
+                    game["pinned"] = True
+                    if game["finished"]:
+                        number += 1
+                        game.update(block=(number - 1) // 10 + 1, run_number=number)
             temporary = self.root / "index.rebuild.sqlite3"
             temporary.unlink(missing_ok=True)
             with closing(sqlite3.connect(temporary)) as connection:
@@ -313,7 +315,7 @@ class SessionStore:
             total = sum(path.stat().st_size for path in files if path.is_file())
             deleted = []
             for game in sorted(games, key=lambda game: (game["date"], int(game["game_id"]))):
-                if game["pinned"] or game["game_id"] == self.active_game_id:
+                if game["pinned"]:
                     continue
                 for path in sorted((self.logs / game["game_id"] / "media").glob("*"), key=lambda p: p.stat().st_mtime):
                     if total <= cap_bytes:
