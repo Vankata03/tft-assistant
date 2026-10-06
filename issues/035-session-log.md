@@ -3,7 +3,7 @@ id: 35
 title: Durable sessions and crash-safe game logs
 labels: [implementation:task]
 status: open
-assignee:
+assignee: codex-session-log
 parent: 34
 blocked_by: []
 ---
