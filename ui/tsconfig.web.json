@@ -2,7 +2,11 @@
   "compilerOptions": {
     "composite": true,
     "target": "ES2023",
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
@@ -13,5 +17,10 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src/renderer/**/*", "src/shared/**/*", "src/preload/*.d.ts"]
+  "include": [
+    "src/renderer/**/*",
+    "src/shared/**/*",
+    "src/preload/*.d.ts",
+    "test/**/*.test.tsx"
+  ]
 }
