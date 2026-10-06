@@ -1,7 +1,9 @@
-"""The Engine functions Baseline features may call during a game.
+"""The only Engine calls available to Baseline features during a game.
 
-Baseline features import this module and nothing else from the Engine; an
-import-linter contract in core/pyproject.toml enforces it. The allowlist is
-own-board board power, `win_probability` and the opponent growth curve lookup
-(docs/spec/engine.md, "Mode separation"). Build stage 5 fills it in.
+These functions consume static data and the player's own board only. They
+have no access to history, sightings, opponent inference or live advice.
 """
+from .power import strength, win_probability
+from .growth import growth_curve_lookup
+
+__all__ = ['strength', 'win_probability', 'growth_curve_lookup']

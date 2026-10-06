@@ -53,7 +53,8 @@ Owner: [Board and lobby strength heuristic](../../issues/019-board-and-lobby-str
 | `win_scale_by_stage` | 1 | Per-stage k, split from the pooled value past about 150 fights at a stage |
 | `survivor_scale_by_stage` | 1 | c in `surviving_units` |
 | `cost_star_baseline` | 3 | Fallback unit-star power for thin samples |
-| `unit_prior_strength` | 3 | Shrinkage sample size for unit power |
+| `unit_prior_strength` | 3 | Binomial prior sample size for unit-star power; shrink the observed top-4 rate toward the cost-star prior before applying the logit |
+| `trait_prior_strength` | 3 | Binomial prior sample size for trait-breakpoint power, centered on the lobby top-4 rate; fit separately from the unit prior |
 | `item_values` | Hand-set | Shape of the item term only: finished item 1.0, component 0.35, and 0.25 more per finished item on a unit of cost 3 or more. `item_weight` is the fitted scale |
 | `classifier_weights` | Hand-set | Carry ×3, key units ×2, others ×1, bench at half weight |
 | `classifier_threshold` | Hand-set | 0.5 on normalized similarity; below it the label is "no comp" |
