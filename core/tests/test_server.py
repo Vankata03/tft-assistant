@@ -130,3 +130,26 @@ def test_session_start_pins_supplied_data_and_model_metadata(tmp_path):
     assert header["data_snapshot_id"] == "immutable-a"
     assert header["model_version"] == "reader-a"
     assert header["previous_patch"] is True
+
+
+def test_metadata_failure_is_visible_and_gameflow_keeps_running(tmp_path):
+    from tft_core.storage import SessionStore
+
+    async def test():
+        storage = SessionStore(tmp_path / "app", tmp_path / "config", live_installed=True)
+        def unavailable(game_id):
+            raise ValueError("validated static data is missing")
+        server = CoreServer(TOKEN, sessions=storage, game_metadata=unavailable)
+        async with server.listen() as listening:
+            async with connect(f"ws://127.0.0.1:{listening.sockets[0].getsockname()[1]}") as ws:
+                await ws.send(dump(Hello(token=TOKEN)))
+                await _recv(ws)
+                await _recv(ws)
+                server.publish_gameflow(GameflowUpdate(True, "InProgress", "901"))
+                error = await _recv(ws)
+                assert error["code"] == "session_storage_error"
+                assert "validated static data is missing" in error["message"]
+                assert (await _recv(ws))["phase"] == "InProgress"
+                assert storage.active_game_id is None
+
+    asyncio.run(test())

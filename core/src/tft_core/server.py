@@ -55,19 +55,23 @@ class CoreServer:
     def publish_gameflow(self, update: GameflowUpdate) -> None:
         self._gameflow = update
         if self.sessions:
-            if update.phase in {"InProgress", "Reconnect"}:
-                if update.game_id:
-                    metadata = {}
-                    if self.sessions.active_game_id != update.game_id and not self.sessions.read_events(update.game_id):
-                        metadata = self._game_metadata(update.game_id)
-                    self.sessions.start_game(update.game_id, **metadata)
-                else:
-                    broadcast(self._clients, dump(ErrorMessage(code="missing_game_id", message="LCU has not supplied a game id; capture cannot log this game yet")))
-            elif update.phase in {"EndOfGame", "WaitingForStats"}:
-                self.sessions.end_game()
-            elif update.phase in {"Lobby", "None"} and self.sessions.active_game_id:
-                self.sessions.append_event("capture_gap", {"reason": "game_ended_without_stats"})
-                self.sessions.end_game()
+            try:
+                if update.phase in {"InProgress", "Reconnect"}:
+                    if update.game_id:
+                        metadata = {}
+                        if self.sessions.active_game_id != update.game_id and not self.sessions.read_events(update.game_id):
+                            metadata = self._game_metadata(update.game_id)
+                        self.sessions.start_game(update.game_id, **metadata)
+                    else:
+                        broadcast(self._clients, dump(ErrorMessage(code="missing_game_id", message="LCU has not supplied a game id; capture cannot log this game yet")))
+                elif update.phase in {"EndOfGame", "WaitingForStats"}:
+                    self.sessions.end_game()
+                elif update.phase in {"Lobby", "None"} and self.sessions.active_game_id:
+                    self.sessions.append_event("capture_gap", {"reason": "game_ended_without_stats"})
+                    self.sessions.end_game()
+            except Exception as error:
+                log.error("Session logging failed: %s", error)
+                broadcast(self._clients, dump(ErrorMessage(code="session_storage_error", message=f"Game logging is blocked: {error}")))
             if self._mode != self.sessions.mode:
                 self._mode = self.sessions.mode
                 broadcast(self._clients, dump(self._mode_message()))

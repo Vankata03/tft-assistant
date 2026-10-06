@@ -6,7 +6,7 @@ import { createWriteStream, mkdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { SESSION_MODES, type SessionMode } from '../shared/protocol'
-import { describeGameflow, INITIAL_STATE, type ShellState } from '../shared/state'
+import { canSelectMode, describeGameflow, INITIAL_STATE, type ShellState } from '../shared/state'
 import { CoreLink } from './coreLink'
 import { CoreSupervisor } from './coreSupervisor'
 import { CoachTray } from './tray'
@@ -68,7 +68,7 @@ function startCore(): CoreSupervisor {
   })
   supervisor.on('status', (core) => {
     if (core !== 'running') link.close()
-    setState(core === 'running' ? { core } : { core, gameflow: null, mode: null })
+    setState(core === 'running' ? { core } : { core, gameflow: null, mode: null, availableModes: [], error: null })
   })
   supervisor.on('ready', ({ port, token }) => link.connect(port, token))
 
@@ -79,10 +79,11 @@ function startCore(): CoreSupervisor {
         log(`gameflow: ${describeGameflow(state)}`)
         break
       case 'session_mode':
-        setState({ mode: message.mode })
+        setState({ mode: message.mode, availableModes: message.available_modes })
         log(`session mode: ${message.mode}`)
         break
       case 'error':
+        setState({ error: message.message })
         log(`core rejected a message: ${message.code}: ${message.message}`)
         break
     }
@@ -93,11 +94,11 @@ function startCore(): CoreSupervisor {
 
   ipcMain.handle('get-state', () => state)
   ipcMain.on('set-mode', (_event, mode: unknown) => {
-    if (SESSION_MODES.includes(mode as SessionMode)) link.setMode(mode as SessionMode)
+    if (SESSION_MODES.includes(mode as SessionMode) && canSelectMode(state, mode as SessionMode)) link.setMode(mode as SessionMode)
   })
 
   tray = new CoachTray({
-    setMode: (mode) => link.setMode(mode),
+    setMode: (mode) => { if (canSelectMode(state, mode)) link.setMode(mode) },
     showStatus,
     restartCore: () => supervisor.restartNow(),
     quit: () => app.quit(),
