@@ -3,7 +3,7 @@ id: 39
 title: Board power, classification and trait-only opponent inference
 labels: [implementation:task]
 status: open
-assignee:
+assignee: implement/ticket-39
 parent: 34
 blocked_by: [46]
 ---
