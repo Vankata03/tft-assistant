@@ -1,11 +1,15 @@
 """Public immutable data contracts. Source payloads are never Engine inputs."""
+
 from __future__ import annotations
+
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from types import MappingProxyType
-from typing import Any, Literal, Mapping
+from typing import Any, Literal
 
-SourceTag = Literal['cdragon', 'ddragon', 'patch-notes', 'carried', 'default', 'owner']
+SourceTag = Literal["cdragon", "ddragon", "patch-notes", "carried", "default", "owner"]
+
 
 class DataError(ValueError):
     """Invalid or unavailable data; callers retain their last good snapshot."""
@@ -31,14 +35,22 @@ def plain(value: Any) -> Any:
 class TaggedValue:
     value: Any
     source: SourceTag
-    citation: str = ''
-    family: str = ''
+    citation: str = ""
+    family: str = ""
+
     def __post_init__(self):
-        if self.source not in {'cdragon', 'ddragon', 'patch-notes', 'carried', 'default', 'owner'}:
-            raise DataError(f'Unknown source tag: {self.source}')
-        if self.source == 'patch-notes' and not self.citation:
-            raise DataError('Patch-note values require a citation')
-        object.__setattr__(self, 'value', freeze(self.value))
+        if self.source not in {
+            "cdragon",
+            "ddragon",
+            "patch-notes",
+            "carried",
+            "default",
+            "owner",
+        }:
+            raise DataError(f"Unknown source tag: {self.source}")
+        if self.source == "patch-notes" and not self.citation:
+            raise DataError("Patch-note values require a citation")
+        object.__setattr__(self, "value", freeze(self.value))
 
 
 @dataclass(frozen=True)
@@ -48,12 +60,15 @@ class Entity:
     name: str
     cost: int = 0
     traits: tuple[str, ...] = ()
-    text: str = ''
-    icon: str = ''
+    text: str = ""
+    icon: str = ""
     values: Mapping[str, TaggedValue] = field(default_factory=dict)
     threat_tags: tuple[str, ...] = ()
+
     def __post_init__(self):
-        object.__setattr__(self, 'values', freeze(self.values))
+        object.__setattr__(self, "values", freeze(self.values))
+        object.__setattr__(self, "traits", tuple(self.traits))
+        object.__setattr__(self, "threat_tags", tuple(self.threat_tags))
 
 
 @dataclass(frozen=True)
@@ -70,6 +85,34 @@ class Statistic:
     item_id: str | None = None
     comp_id: str | None = None
     variance: float | None = None
+    top4_rate: float | None = None
+    play_rate: float | None = None
+    breakpoint: int | None = None
+    positioning: tuple[float, ...] = ()
+
+    def __post_init__(self):
+        import math
+
+        if (
+            not isinstance(self.sample_count, int)
+            or isinstance(self.sample_count, bool)
+            or self.sample_count < 0
+        ):
+            raise DataError("Statistic sample_count must be a nonnegative integer")
+        if (
+            not math.isfinite(self.average_placement)
+            or not 1 <= self.average_placement <= 8
+        ):
+            raise DataError("Statistic average_placement must be in [1,8]")
+        for rate in (self.top4_rate, self.play_rate):
+            if rate is not None and (not math.isfinite(rate) or not 0 <= rate <= 1):
+                raise DataError("Statistic rates must be in [0,1]")
+        if self.positioning and (
+            len(self.positioning) != 28
+            or any(not math.isfinite(v) or v < 0 for v in self.positioning)
+        ):
+            raise DataError("Positioning requires 28 nonnegative cell weights")
+        object.__setattr__(self, "positioning", tuple(self.positioning))
 
 
 @dataclass(frozen=True)
@@ -86,9 +129,31 @@ class Guide:
     carousel: tuple[str, ...] = ()
     alternatives: tuple[str, ...] = ()
     line: tuple[Mapping[str, Any], ...] = ()
-    source: str = 'tftacademy'
+    source: str = "tftacademy"
+    key_ids: tuple[str, ...] = ()
+    early_items: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    alternative_builds: tuple[Mapping[str, Any], ...] = ()
+    cluster_id: str | None = None
+
     def __post_init__(self):
-        for key in ('items', 'positions', 'stage_tips', 'augment_tiers', 'line'):
+        for key in (
+            "units",
+            "early_units",
+            "carry_ids",
+            "carousel",
+            "alternatives",
+            "key_ids",
+        ):
+            object.__setattr__(self, key, tuple(getattr(self, key)))
+        for key in (
+            "items",
+            "early_items",
+            "alternative_builds",
+            "positions",
+            "stage_tips",
+            "augment_tiers",
+            "line",
+        ):
             object.__setattr__(self, key, freeze(getattr(self, key)))
 
 
@@ -99,6 +164,10 @@ class SourceState:
     updated_at: datetime
     fetched_at: datetime
     kind: str
+    filters: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        object.__setattr__(self, "filters", freeze(self.filters))
 
 
 @dataclass(frozen=True)
@@ -114,16 +183,36 @@ class DataSnapshot:
     sources: Mapping[str, SourceState] = field(default_factory=dict)
     warnings: tuple[str, ...] = ()
     changed_ids: tuple[str, ...] = ()
+    lobby_top4_rate: float | None = None
+    positioning: Mapping[str, tuple[float, ...]] = field(default_factory=dict)
+    augment_tiers: Mapping[str, str] = field(default_factory=dict)
+    comp_augment_tiers: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+
     def __post_init__(self):
-        for key in ('static', 'tunables', 'entities', 'guides', 'sources'):
+        for key in ("statistics", "warnings", "changed_ids"):
+            object.__setattr__(self, key, tuple(getattr(self, key)))
+        for key in (
+            "static",
+            "tunables",
+            "entities",
+            "guides",
+            "sources",
+            "positioning",
+            "augment_tiers",
+            "comp_augment_tiers",
+        ):
             object.__setattr__(self, key, freeze(getattr(self, key)))
+
     def value(self, name: str) -> Any:
         return self.static[name].value
+
     def tunable(self, name: str) -> Any:
         return self.tunables[name].value
+
     @property
     def names(self) -> Mapping[str, str]:
         return freeze({id: e.name for id, e in self.entities.items()})
+
     @property
     def icons(self) -> Mapping[str, str]:
         return freeze({id: e.icon for id, e in self.entities.items() if e.icon})
@@ -135,3 +224,4 @@ class RefreshResult:
     changed: bool = False
     warnings: tuple[str, ...] = ()
     deferred: bool = False
+    error: str | None = None
