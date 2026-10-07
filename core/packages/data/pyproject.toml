@@ -3,7 +3,7 @@ name = "tft-data"
 version = "0.1.0"
 description = "Validated immutable patch data and source adapters."
 requires-python = ">=3.14,<3.15"
-dependencies = ["pydantic>=2.12", "tomli-w>=1.2"]
+dependencies = ["pydantic>=2.12", "tomli-w>=1.2", "json5>=0.12"]
 
 [project.scripts]
 tft-data = "tft_data.cli:main"
