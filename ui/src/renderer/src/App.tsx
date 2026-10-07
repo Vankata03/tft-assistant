@@ -1,8 +1,8 @@
 // Status window: a placeholder for the second screen. Shows the core, the
 // gameflow phase and the session mode, and sets the mode.
 import { useEffect, useState } from 'react'
-import { SESSION_MODES } from '../../shared/protocol'
-import { describeCore, describeGameflow, INITIAL_STATE, MODE_LABELS, type ShellState } from '../../shared/state'
+import type { SessionMode } from '../../shared/protocol'
+import { canSelectMode, describeCore, describeGameflow, INITIAL_STATE, MODE_LABELS, type ShellState } from '../../shared/state'
 
 const styles = {
   body: { fontFamily: 'system-ui, sans-serif', margin: 16, fontSize: 14 },
@@ -18,10 +18,9 @@ export function App(): React.JSX.Element {
     return window.coach.onState(setState)
   }, [])
 
-  const connected = state.core === 'running' && state.mode !== null
-
   return (
     <main style={styles.body}>
+      {state.error && <p role="alert">{state.error}</p>}
       <div style={styles.row}>
         <span style={styles.label}>Core</span>
         <span>{describeCore(state.core)}</span>
@@ -32,19 +31,28 @@ export function App(): React.JSX.Element {
       </div>
       <div style={styles.row}>
         <span style={styles.label}>Session mode</span>
-        <select
-          value={state.mode ?? ''}
-          disabled={!connected}
-          onChange={(event) => window.coach.setMode(event.target.value as (typeof SESSION_MODES)[number])}
-        >
-          {state.mode === null && <option value="">unknown</option>}
-          {SESSION_MODES.map((mode) => (
-            <option key={mode} value={mode}>
-              {MODE_LABELS[mode]}
-            </option>
-          ))}
-        </select>
+        <SessionModeSelector state={state} onChange={(mode) => window.coach.setMode(mode)} />
       </div>
     </main>
+  )
+}
+
+export function SessionModeSelector({ state, onChange }: { state: ShellState; onChange(mode: SessionMode): void }): React.JSX.Element {
+  return (
+    <select
+      value={state.mode ?? ''}
+      disabled={state.core !== 'running' || state.mode === null}
+      onChange={(event) => {
+        const mode = event.target.value as SessionMode
+        if (canSelectMode(state, mode)) onChange(mode)
+      }}
+    >
+      {state.mode === null && <option value="">unknown</option>}
+      {(state.availableModes ?? []).map((mode) => (
+        <option key={mode} value={mode} disabled={!canSelectMode(state, mode)}>
+          {MODE_LABELS[mode]}
+        </option>
+      ))}
+    </select>
   )
 }

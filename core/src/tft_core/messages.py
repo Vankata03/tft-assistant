@@ -71,6 +71,7 @@ class SessionModeState(_Message):
 
     type: Literal["session_mode"] = "session_mode"
     mode: SessionMode
+    available_modes: tuple[SessionMode, ...] = tuple(SessionMode)
 
 
 class ErrorMessage(_Message):

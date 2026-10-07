@@ -5,7 +5,7 @@ labels: [implementation:task]
 status: open
 assignee:
 parent: 34
-blocked_by: [37]
+blocked_by: [47]
 ---
 
 # Own-board recognition and crop training
@@ -22,3 +22,7 @@ Integrate pinned MIT TFT-COACH reader, CPU inference, four specified recognition
 Implement all referenced requirements. Verify through the approved public seams in [implementation contract](../docs/agents/implementation.md). Record platform checks separately; keep unmet acceptance explicit.
 
 ## Comments
+
+### 2026-10-06 — codex (asset preflight)
+
+The required upstream commit resolves to `bf22ac92010aef321b9e67d6f125bb2109c41cf4`. Primary repository: <https://github.com/mallangmallang0619/TFT-COACH>. The pinned model assets include both `.onnx` and external `.onnx.data` files, plus JSON metadata; downloading only `.onnx` is insufficient. Unit weights total about 16 MB and star weights about 6 MB. Upstream configuration skips zero-based bench slot 8 via `UNSAFE_BENCH_SLOTS`; ticket 38 must read all nine. Unit/star inference requests `CPUExecutionProvider`. The full historical benchmark dataset is unavailable here; do not claim equivalent recognition or retraining evidence from the nine committed JPEGs.

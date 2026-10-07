@@ -184,3 +184,30 @@ def test_watcher_rediscovers_after_client_exits():
         GameflowUpdate(True, "Reconnect"),
         GameflowUpdate(True, "InProgress"),
     ]
+
+
+def test_watcher_carries_client_game_id_for_crash_reattachment():
+    class Client(FakeLcu):
+        async def get_game_id(self):
+            return "123456"
+
+    lcu = Client(polls=["InProgress"], events=["Reconnect"])
+    updates = asyncio.run(_watch([CREDENTIALS], [lcu], expected=2))
+    assert [update.game_id for update in updates] == ["123456", "123456"]
+
+
+def test_lcu_reads_game_id_from_client_session_response():
+    import httpx
+    from tft_capture.lcu import LcuConnection
+
+    async def test():
+        def client_response(request):
+            if request.url.path == "/lol-gameflow/v1/session":
+                return httpx.Response(200, json={"gameData": {"gameId": 123456}})
+            return httpx.Response(200, json="InProgress")
+
+        async with LcuConnection(CREDENTIALS, transport=httpx.MockTransport(client_response)) as client:
+            assert await client.get_phase() == "InProgress"
+            assert await client.get_game_id() == "123456"
+
+    asyncio.run(test())

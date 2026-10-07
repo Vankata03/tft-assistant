@@ -5,6 +5,7 @@ description = "The coach's Python core process: the WebSocket to the shell, the 
 requires-python = ">=3.14,<3.15"
 dependencies = [
     "pydantic>=2.12",
+    "pillow>=12",
     "websockets>=15",
     "tft-capture",
     "tft-data",
@@ -45,7 +46,8 @@ tft-live = { workspace = true }
 tft-review = { workspace = true }
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "packages"]
+addopts = "--import-mode=importlib"
 
 [tool.importlinter]
 root_packages = [
