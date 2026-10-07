@@ -7,12 +7,12 @@ import os
 import re
 import shutil
 import tempfile
+import tomllib
 import urllib.request
 from datetime import datetime
 from pathlib import Path
 
 import tomli_w
-import tomllib
 
 from .adapters import CommunityDragon, DataDragon, merge_entities
 from .config import load_patch
@@ -50,7 +50,7 @@ def new_patch(
     target = data_dir / patch
     if target.exists():
         raise DataError(f"Patch already exists: {target}")
-    when = datetime.fromisoformat(live_at.replace("Z", "+00:00"))
+    when = datetime.fromisoformat(live_at)
     if when.tzinfo is None:
         raise DataError("Confirmed live date needs EUNE timezone offset")
     _old_patch, old_set, _, _, old_entities, _ = load_patch(old)
@@ -281,7 +281,7 @@ def prepare_new_set(
     for row in tunables["fields"].values():
         if row.get("family") == "3":
             row["source"] = "carried"
-    when = datetime.fromisoformat(live_at.replace("Z", "+00:00"))
+    when = datetime.fromisoformat(live_at)
     if when.tzinfo is None:
         raise DataError("Confirmed EUNE live time needs a timezone offset")
     with tempfile.TemporaryDirectory() as temporary:

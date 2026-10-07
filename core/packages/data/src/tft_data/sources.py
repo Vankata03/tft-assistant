@@ -3,7 +3,7 @@
 import json
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from .models import DataError, freeze
@@ -122,12 +122,10 @@ class HTTPSource:
                     raw.get("patch")
                     or raw["region_patch_adjustment"]["global_patch"]["patch"]
                 )
-                updated = datetime.fromtimestamp(raw["updated"] / 1000, timezone.utc)
+                updated = datetime.fromtimestamp(raw["updated"] / 1000, UTC)
             else:
                 patch = raw["patch"]
-                updated = datetime.fromisoformat(
-                    raw["updated_at"].replace("Z", "+00:00")
-                )
+                updated = datetime.fromisoformat(raw["updated_at"])
             if updated.tzinfo is None:
                 raise ValueError("timestamp needs timezone")
             filters = raw.get("filters", raw.get("aperture", {}))
@@ -240,7 +238,7 @@ class TacticsSource(HTTPSource):
             return {
                 "patch": patch,
                 "updated_at": datetime.fromtimestamp(
-                    data["lastUpdated"], timezone.utc
+                    data["lastUpdated"], UTC
                 ).isoformat(),
                 "statsData": data,
                 "aperture": raw["props"]["pageProps"]["aperture"],

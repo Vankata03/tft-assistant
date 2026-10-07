@@ -2,7 +2,7 @@
 
 import argparse
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .models import DataError
@@ -177,7 +177,7 @@ def main(argv=None, *, riot_client=None):
                     ) from None
                 options["computations"] = {"opponent_growth_curve": growth_curve}
         result = DataStore(args.snapshots).refresh(
-            args.patch_dir, now=datetime.now(timezone.utc), **options
+            args.patch_dir, now=datetime.now(UTC), **options
         )
         for warning in result.warnings:
             print(warning)

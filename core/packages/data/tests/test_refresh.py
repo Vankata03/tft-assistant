@@ -1,9 +1,9 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from tft_data import DataStore
 
-NOW = datetime(2026, 10, 6, tzinfo=timezone.utc)
+NOW = datetime(2026, 10, 6, tzinfo=UTC)
 
 
 def test_missing_patch_does_not_invent_game_data(tmp_path):
@@ -317,14 +317,15 @@ def test_new_patch_cli_carries_sources_and_marks_calendar_boundary(tmp_path):
     result = DataStore(tmp_path / "snapshots").refresh(tmp_path / "test.2", now=NOW)
     assert result.snapshot.static["shop_odds"].source == "carried"
     calendar = PatchCalendar.load(tmp_path / "patches.toml")
-    boundary = calendar.at(datetime(2026, 10, 10, 8, tzinfo=timezone.utc))
+    boundary = calendar.at(datetime(2026, 10, 10, 8, tzinfo=UTC))
     assert boundary.patch == "test.2"
     assert boundary.uncertain
 
 
 def test_empty_economy_table_rejects_snapshot_and_preserves_last_good(tmp_path):
-    import tomli_w
     import tomllib
+
+    import tomli_w
 
     path = patch_files(tmp_path / "patch")
     store = DataStore(tmp_path / "snapshots")
@@ -520,6 +521,18 @@ def test_shared_npcs_are_catalogued_without_entering_playable_unit_pool(tmp_path
                         "cost": 1,
                         "traits": [],
                     },
+                    {
+                        "apiName": "TFT5_EmblemArmoryKey",
+                        "name": "Tome of Traits",
+                        "cost": 8,
+                        "traits": [],
+                    },
+                    {
+                        "apiName": "TFT6_MercenaryChest",
+                        "name": "Mercenary Chest",
+                        "cost": 11,
+                        "traits": [],
+                    },
                 ],
                 "traits": [],
             }
@@ -531,6 +544,8 @@ def test_shared_npcs_are_catalogued_without_entering_playable_unit_pool(tmp_path
     )
     assert result.snapshot.entities["TFT_BlueGolem"].kind == "npc"
     assert result.snapshot.entities["DA_18_Ornn"].kind == "unit"
+    assert result.snapshot.entities["TFT5_EmblemArmoryKey"].kind == "npc"
+    assert result.snapshot.entities["TFT6_MercenaryChest"].kind == "npc"
 
 
 def test_avatar_forms_share_base_pool_and_stay_out_of_independent_shop_choices(
@@ -557,6 +572,12 @@ def test_avatar_forms_share_base_pool_and_stay_out_of_independent_shop_choices(
                         "cost": 5,
                         "traits": [],
                     },
+                    {
+                        "apiName": "DA_18_Lux_Coven",
+                        "name": "Lux (Coven)",
+                        "cost": 5,
+                        "traits": [],
+                    },
                 ],
                 "traits": [],
             }
@@ -573,13 +594,16 @@ def test_avatar_forms_share_base_pool_and_stay_out_of_independent_shop_choices(
     form = result.snapshot.entities["DA_Lux18_Blackthorn"]
     assert form.kind == "unit_form"
     assert form.values["pool_id"].value == "DA_Lux18_Base"
+    legacy_form = result.snapshot.entities["DA_18_Lux_Coven"]
+    assert legacy_form.kind == "unit_form"
+    assert legacy_form.values["pool_id"].value == "DA_Lux18_Base"
 
 
 def test_new_set_cli_archives_overrides_and_drops_set_specific_margin(tmp_path):
     import json
+    import tomllib
 
     import tomli_w
-    import tomllib
     from tft_data.cli import main
 
     old = patch_files(tmp_path / "test.1")

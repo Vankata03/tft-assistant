@@ -1,10 +1,9 @@
 """Owner overrides survive patches; stale IDs are warnings, never load failures."""
 
 import re
+import tomllib
 from dataclasses import replace
 from pathlib import Path
-
-import tomllib
 
 from .models import DataError, TaggedValue
 

@@ -87,15 +87,12 @@ class CommunityDragon:
                             "npc"
                             if kind == "unit"
                             and self.set_number == 18
-                            and id.startswith("TFT_")
-                            or kind == "unit"
-                            and self.set_number == 18
-                            and id.startswith("TFT9_")
+                            and id.startswith("TFT")
                             else kind
                         )
                         if (
                             kind == "unit"
-                            and id.startswith("DA_Lux18_")
+                            and id.startswith(("DA_Lux18_", "DA_18_Lux_"))
                             and id != "DA_Lux18_Base"
                         ):
                             entity_kind = "unit_form"

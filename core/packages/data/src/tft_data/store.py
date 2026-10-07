@@ -7,7 +7,7 @@ import json
 import os
 import tempfile
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .adapters import guides, merge_entities, statistics
@@ -70,7 +70,7 @@ class DataStore:
         can_publish=None,
         defer_publication=False,
     ):
-        now = now or datetime.now(timezone.utc)
+        now = now or datetime.now(UTC)
         if (
             in_game
             or (can_publish is not None and not can_publish())

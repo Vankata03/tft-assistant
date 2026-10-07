@@ -1,10 +1,9 @@
 """Owner-confirmed EUNE patch boundaries; nearby API matches are uncertain."""
 
-from dataclasses import dataclass
-from datetime import datetime, timedelta
-from pathlib import Path
-
 import tomllib
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from .models import DataError
 
@@ -25,11 +24,7 @@ class PatchCalendar:
             rows = tomllib.loads(Path(path).read_text()).get("patches", {})
             parsed = []
             for patch, date in rows.items():
-                when = (
-                    datetime.fromisoformat(date.replace("Z", "+00:00"))
-                    if isinstance(date, str)
-                    else date
-                )
+                when = datetime.fromisoformat(date) if isinstance(date, str) else date
                 if when.tzinfo is None:
                     raise DataError("Patch boundary must carry EUNE timezone offset")
                 parsed.append((patch, when))
@@ -41,11 +36,7 @@ class PatchCalendar:
 
     def at(self, when):
         if isinstance(when, (int, float)):
-            from datetime import timezone
-
-            when = datetime.fromtimestamp(
-                when / 1000 if when > 10**11 else when, timezone.utc
-            )
+            when = datetime.fromtimestamp(when / 1000 if when > 10**11 else when, UTC)
         if when.tzinfo is None:
             raise DataError("Match time must be timezone-aware")
         patch = None

@@ -34,7 +34,7 @@ def http_transport(url, headers):
     except HTTPError as exc:
         # An API error body is never surfaced: it may include account identifiers.
         return HTTPResponse(exc.code, dict(exc.headers), None)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         raise DataError(
             "Riot API unavailable; check connectivity and local key status"
         ) from None
@@ -247,7 +247,7 @@ class RiotClient:
                     raise TypeError()
             if any("units" not in row or "traits" not in row for row in participants):
                 raise ValueError()
-        except (KeyError, TypeError, ValueError):
+        except KeyError, TypeError, ValueError:
             raise DataError("Riot match schema changed or owner absent") from None
         return raw
 

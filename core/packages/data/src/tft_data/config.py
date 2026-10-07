@@ -1,9 +1,8 @@
 """Fail-closed, source-tagged TOML contracts; no invented patch defaults."""
 
 import json
-from pathlib import Path
-
 import tomllib
+from pathlib import Path
 
 from .models import DataError, Entity, TaggedValue
 

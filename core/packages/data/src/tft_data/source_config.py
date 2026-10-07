@@ -1,9 +1,8 @@
 """Configurable external source routes; unsupported cohorts fail visibly."""
 
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-
-import tomllib
 
 from .models import DataError
 from .sources import AcademySource, HTTPSource, TacticsSource
