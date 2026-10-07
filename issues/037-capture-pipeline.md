@@ -35,3 +35,9 @@ The committed probe JPEGs are available in `probe/screenshots/2026-10-04/`; the 
 ### 2026-10-06 — codex (freshness integration constraint)
 
 A successful capture of an unchanged region must confirm its previously read fields as fresh without rerunning OCR. Otherwise the change-only cadence would make every unchanged field stale after two seconds. A failed or unavailable region must preserve the original read timestamp, allowing normal stale-field silence. Keep the originating OCR/reader source and confidence when confirming unchanged pixels. Test this through successive public snapshots, including a failed-frame span.
+
+### 2026-10-07 — codex-capture (prerequisite delivered; full capture remains open)
+
+Ticket47 supplies the tested transport/OCR/log boundary and [visual-reader contract](../docs/agents/capture-boundary.md). The generic JSON snapshot decodes into the merged Engine GameSnapshot contract. Own-view identity must be confirmed on the same frame before own units or inventory are emitted. OCR cannot identify 3D carousel units or item icons.
+
+Still pending: ticket38 reader integration; carousel, choice and item visual fields; complete player HP and alive rows; copy/sell/pick/gift reconciliation and conflict keyframes; fight signals/outcomes; production lifecycle/calibration/video wiring in ticket45; genuine game-font templates; full HUD calibration across aspect ratios/locales/window modes; Windows WGC/BitBlt, overlay exclusion and live latency. The nine committed probe images support bounded software checks; the full historical benchmark dataset is unavailable. The transport currently supplies full in-memory RGB frames; region-only copy optimization and live budgets remain unqualified.
