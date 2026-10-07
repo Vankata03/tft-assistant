@@ -15,8 +15,8 @@ Source: [MVP spec](../docs/spec.md), its area files, and the resolved planning t
 
 - [35: Durable sessions and crash-safe game logs](035-session-log.md); blocked by nothing.
 - [36: Validated patch data and immutable refresh snapshots](036-data-layer.md); blocked by nothing.
-- [37: Automatic screen capture and purchase tracking](037-capture-pipeline.md); blocked by [35, 46].
-- [38: Own-board recognition and crop training](038-board-reader-training.md); blocked by [37].
+- [37: Automatic screen capture and purchase tracking](037-capture-pipeline.md); blocked by [47, 38].
+- [38: Own-board recognition and crop training](038-board-reader-training.md); blocked by [47].
 - [39: Board power, classification and trait-only opponent inference](039-board-power-opponents.md); blocked by [46].
 - [40: Game plan, transitions and seeded Line simulation](040-game-plan-lines.md); blocked by [39].
 - [41: Shop, Wisp, item, augment, carousel and positioning advice](041-decision-sub-engines.md); blocked by [40].
@@ -26,6 +26,7 @@ Source: [MVP spec](../docs/spec.md), its area files, and the resolved planning t
 - [45: End-to-end runtime, refresh/review jobs and run workflows](045-runtime-run.md); blocked by [38, 42, 44].
 
 - [46: Immutable data contracts and capture name lists](046-data-contracts.md); blocked by nothing.
+- [47: Capture transport, OCR, tracking and visual-reader contract](047-capture-contracts.md); blocked by [35, 46].
 
 ## Decisions so far
 

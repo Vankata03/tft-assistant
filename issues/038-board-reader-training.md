@@ -5,7 +5,7 @@ labels: [implementation:task]
 status: open
 assignee:
 parent: 34
-blocked_by: [37]
+blocked_by: [47]
 ---
 
 # Own-board recognition and crop training

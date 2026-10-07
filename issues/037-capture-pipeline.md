@@ -5,7 +5,7 @@ labels: [implementation:task]
 status: open
 assignee: codex-capture
 parent: 34
-blocked_by: [35, 46]
+blocked_by: [47, 38]
 ---
 
 # Automatic screen capture and purchase tracking
@@ -21,6 +21,10 @@ WGC/BitBlt capture, fractional HUD anchors and UI scale, OCR/template matching a
 Implement all referenced requirements. Verify through the approved public seams in [implementation contract](../docs/agents/implementation.md). Record platform checks separately; keep unmet acceptance explicit.
 
 ## Comments
+
+### 2026-10-07 — codex (dependency split)
+
+Ticket 47 extracts the transport, OCR, tracking and reader contract. Ticket 38 depends on 47; this ticket then consumes the completed reader. This removes the former dependency cycle while keeping full automatic capture acceptance open.
 
 ### 2026-10-06 — codex (capture preflight)
 
