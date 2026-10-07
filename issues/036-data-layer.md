@@ -2,7 +2,7 @@
 id: 36
 title: Validated patch data and immutable refresh snapshots
 labels: [implementation:task]
-status: open
+status: closed
 assignee: codex-data-layer
 parent: 34
 blocked_by: []
@@ -23,6 +23,10 @@ Named and typed data contracts, source-tagged TOML static/tunables/overrides, na
 Implement all referenced requirements. Verify through the approved public seams in [implementation contract](../docs/agents/implementation.md). Record platform checks separately; keep unmet acceptance explicit.
 
 ## Comments
+
+### 2026-10-07 — codex (software closure and qualification split)
+
+The software boundary merged as `b2bcc3e`. Integration passed 122 Python tests, including 18 data/CLI seam tests, 26 UI tests, both import contracts, schema/type drift checks, TypeScript checking, lock validation and data Ruff checks. Ticket 48 now owns the concrete first-patch candidate and the production qualification requirements recorded below. This closure does not claim current rule files, statistical fits, EUNE calendar boundaries or richer provider payloads are qualified.
 
 ### 2026-10-07 — codex (primary-source bootstrap verification)
 

@@ -3,7 +3,7 @@ id: 43
 title: Baseline Guides and permitted hints
 labels: [implementation:task]
 status: open
-assignee:
+assignee: codex-baseline
 parent: 34
 blocked_by: [36, 39]
 ---
