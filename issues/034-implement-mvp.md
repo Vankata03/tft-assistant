@@ -30,6 +30,8 @@ Source: [MVP spec](../docs/spec.md), its area files, and the resolved planning t
 
 ## Decisions so far
 
+- 2026-10-07: [Ticket 47](047-capture-contracts.md) closed after merge `4414d29`; the capture and visual-reader contract passed 107 Python tests, 26 UI tests, import/schema/type checks and lock validation. Reader integration remains in open tickets 38 and 37; Windows and live-game qualification remain separate.
+
 - 2026-10-06: Stage 1 verified in current `main`; Vault state predates its merge.
 - 2026-10-06: Owner approved public test seams. Runtime checks on Windows remain distinct from macOS verification.
 - 2026-10-06: [Ticket 46](046-data-contracts.md) closed after merge `dfa6be8`; immutable data contracts and capture name/icon lists passed 59 macOS integration tests, both import contracts, and schema drift verification. Full data workflows remain in open ticket 36.
