@@ -3,7 +3,7 @@ id: 38
 title: Own-board recognition and crop training
 labels: [implementation:task]
 status: open
-assignee:
+assignee: codex-board-reader
 parent: 34
 blocked_by: [47]
 ---
