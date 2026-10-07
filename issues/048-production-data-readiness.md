@@ -25,3 +25,11 @@ Keep software checks separate from owner review, external-service qualification 
 ## Context
 
 See ticket 36's first-install bootstrap command and qualification record. Checked source payloads are cached read-only under ignored `worktrees/references/cdragon/`; `data/sources.toml` contains the source manifest. Current source observations are dated in ticket 36. The canonical software specification remains `docs/spec/data.md`, `patch-workflow.md` and `tunables.md`.
+
+## Comments
+
+### 2026-10-07 — codex (bounded source checks)
+
+Riot's [18.2 patch notes](https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-2/) confirm level 7→8 requires 56 XP; the September 14 update restores 8→9 and 9→10 to 68 XP. These observations support those entries only, not an otherwise unchecked complete table.
+
+Current CommunityDragon set-18 trait `DA_18_LuxUniqueTrait` explicitly says an Avatar's chosen trait counts twice. Each sourced Lux form therefore needs its Origin grant of two and Avatar grant of one in the explicit trait rules. Form aliases share `DA_Lux18_Base` pool identity; they are not independent pool types. The source payload is `latest-en_us.json` in the cache named above.
