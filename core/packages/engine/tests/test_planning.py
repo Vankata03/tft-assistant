@@ -224,6 +224,72 @@ def test_fixed_generic_items_and_item_state_pairs_follow_the_line_spec_amendment
     assert gain>0 and error>=0
     assert all(left.seed==right.seed for left,right in zip(before,after))
 
+
+@pytest.mark.parametrize('locked',(False,True))
+def test_choice_hook_values_gold_on_the_current_plan_and_original_random_tape_without_recursion(locked):
+    from tft_engine import Advice, DomainHook, FitTerm, SimulationEffects, best_choice_fit, evaluate, simulate_lines
+    data=patch()
+    controls={'comp_lock':'A','pinned_line':{'id':'hold','levels':{},'rolls':{}}} if locked else {}
+    previous=snapshot('3-1',**controls)
+    state=snapshot('3-2',choice_offers=('gold',),gold=30,**controls)
+    inspected=[]
+    def choice(context):
+        unchanged,baseline=best_choice_fit(context,{},hooks=(hook,))
+        score,result=best_choice_fit(context,{'gold':31},hooks=(hook,))
+        inspected.append((context,unchanged,baseline,score,result))
+        return (Advice('choice','Take gold','act_this_phase',.5,'choice_fit',numbers={'fit':score},payload={'target':result.plan.target}),)
+    hook=DomainHook('choice',('gold','choice_offers'),fit=lambda comp,context:FitTerm(0,'synthetic_choice_term'),advice=choice)
+    report=evaluate(state,GameHistory((previous,)),data,'review',hooks=(hook,))
+    assert len(inspected)==1 # Counterfactual evaluation never calls choice advice.
+    context,unchanged,baseline,score,result=inspected[0]
+    assert baseline.plan==context.plan
+    assert baseline.comp_fits==context.comp_fits
+    assert baseline.line_results==context.line_results
+    assert unchanged==min(f.score for f in context.comp_fits.values() if f.simulated)
+    assert result.plan.target==context.plan.target=='A'
+    assert result.plan.backup==context.plan.backup=='B'
+    assert result.plan.line==context.plan.line
+    changed=replace(state,fields=dict(state.fields)|{'gold':FieldValue(31,NOW,'choice',1)})
+    direct=simulate_lines(changed,context.history,context.data,'A',tuple(r.line for r in result.line_results['A']),
+        seed=context.seed,backup_id=result.plan.backup)
+    assert result.line_results['A']==direct
+    effect_pair=simulate_lines(context.snapshot,context.history,context.data,'A',tuple(r.line for r in result.line_results['A']),
+        effects=SimulationEffects(gold_delta=1),seed=context.seed,backup_id=result.plan.backup)
+    assert direct==effect_pair
+    assert all(r.seed==context.seed for values in result.line_results.values() for r in values)
+    assert score==min(f.score for f in result.comp_fits.values() if f.simulated)
+    assert score!=unchanged
+    assert context.snapshot==state and context.snapshot.field('gold')==30
+    assert report.plan==context.plan
+    if locked:
+        assert report.plan.line.id=='hold'
+    assert not any(a.decision=='choice' for a in result.advice)
+    repeat_score,repeat=best_choice_fit(context,{'gold':31},hooks=(hook,))
+    assert repeat_score==score and repeat==result and len(inspected)==1
+
+
+def test_choice_fit_suppresses_unavailable_simulation_and_missing_hook_fields():
+    from tft_engine import Advice, DomainHook, best_choice_fit, evaluate
+    data=patch(); inspected=[]
+    state=snapshot(choice_offers=('gold',))
+    state=replace(state,fields=dict(state.fields)|{'xp':FieldValue(0,NOW-timedelta(seconds=10),'ocr')})
+    def choice(context):
+        score,result=best_choice_fit(context,{'gold':31},hooks=(hook,))
+        inspected.append((score,result))
+        return (Advice('choice','Choice paused','information',0,'unavailable',payload={'paused':score is None}),)
+    hook=DomainHook('choice',('gold','choice_offers'),advice=choice)
+    report=evaluate(state,GameHistory((snapshot('3-1',comp_lock='A'),)),data,'review',hooks=(hook,))
+    assert len(inspected)==1
+    score,result=inspected[0]
+    assert score is None and not result.comp_fits and not result.line_results
+    assert result.plan.target=='A'
+    assert next(a for a in result.advice if a.decision=='econ').payload['missing']==('xp',)
+    assert next(a for a in report.advice if a.decision=='choice').urgency=='information'
+    missing=replace(state,fields={k:v for k,v in state.fields.items() if k!='choice_offers'})
+    blocked=evaluate(missing,GameHistory(),data,'review',hooks=(hook,))
+    assert len(inspected)==1
+    assert next(a for a in blocked.advice if a.decision=='choice').payload['missing']==('choice_offers',)
+
 def test_a_roll_line_buys_key_copies_stops_at_the_floor_and_reports_hit_odds():
     from tft_engine import evaluate
     data=patch()

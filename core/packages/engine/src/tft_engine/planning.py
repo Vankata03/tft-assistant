@@ -411,5 +411,9 @@ def best_choice_fit(context,changes,*,hooks=None):
         from .registry import default_hooks
         hooks=default_hooks()
     fit_hooks=tuple(replace(hook,advice=None) for hook in hooks)
-    result=evaluate(changed,context.history,context.data,'review',hooks=fit_hooks,seed=context.seed,backup_id=previous.backup)
-    return min((fit.score for fit in result.comp_fits.values()),default=None),result
+    result=evaluate(changed,context.history,context.data,'review',hooks=fit_hooks,seed=context.seed)
+    available=bool(result.line_results) and not any(a.decision=='econ' and a.payload.get('paused') for a in result.advice)
+    if not available:
+        # Preserved history fits describe an earlier state, not this choice.
+        result=replace(result,comp_fits={},line_results={})
+    return min((fit.score for fit in result.comp_fits.values() if fit.simulated),default=None),result
