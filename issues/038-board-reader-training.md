@@ -2,7 +2,7 @@
 id: 38
 title: Own-board recognition and crop training
 labels: [implementation:task]
-status: open
+status: closed
 assignee: codex-board-reader
 parent: 34
 blocked_by: [47]
@@ -24,6 +24,10 @@ Implement and verify the software fixes, calibration workflow and fail-closed tr
 Implement all referenced requirements. Verify through the approved public seams in [implementation contract](../docs/agents/implementation.md). Record platform checks separately; keep unmet acceptance explicit.
 
 ## Comments
+
+### 2026-10-10 — codex (integration resolution)
+
+Reader implementation `9c739b5` and guarded-promotion fix `a719c98` are integrated through merges `5a74f06` and `c833058` on `implement/mvp`. Root inspection identified the unchecked star-bundle and compared-byte gaps before closure; the fix now rejects both through the public acceptance workflow. Final combined macOS verification passed 154 Python tests with the explicit offline training group and no skips, 31 UI tests, both import contracts, schema/lock/type/build checks and diff checks. All commands exited 0; two existing ONNX-export deprecation warnings remain. This closes the software boundary only. Actual owner-data training, measured calibration, Windows accuracy and target latency remain open in ticket 49; full capture and runtime integration remain in tickets 37 and 45.
 
 ### 2026-10-06 — codex (asset preflight)
 
