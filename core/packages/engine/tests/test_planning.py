@@ -99,6 +99,67 @@ def test_transition_keeps_a_strong_interim_until_the_guides_roll_down_deadline()
     assert second.recommended_board.units[0].unit_id=='a'
     assert next(a for a in second.advice if a.decision=='transition').payload['swap_in']==('a',)
 
+
+def test_transition_holds_backup_keys_and_sells_bottom_priority_bench_overflow():
+    from tft_engine import evaluate
+    data=patch()
+    data=replace(data,static=dict(data.static)|{'bench_size':tag(1)})
+    owned=Board((Unit('a',2),Unit('b')),(Unit('c'),Unit('d')))
+    state=snapshot('3-2',board=owned,bench=owned.bench,level=2,comp_lock='A',
+        pinned_line={'id':'hold','levels':{},'rolls':{}})
+    report=evaluate(state,GameHistory(),data,'review')
+    hold=next(a for a in report.advice if a.option_id=='transition:hold')
+    sell=next(a for a in report.advice if a.option_id=='transition:sell')
+    assert hold.payload['hold']==('c',)
+    assert sell.payload['sell']==('d',)
+    assert sell.payload['reason']=='bench_overflow'
+
+
+def test_batched_lines_match_individual_rollouts_with_combat_death_floors_and_effect_pairs():
+    from tft_engine import Line, SimulationEffects, simulate_lines, paired_value
+    data=patch()
+    data=replace(data,static=dict(data.static)|{'round_types':tag({r:'combat' for r in data.static['round_order'].value})})
+    owned=Board((Unit('a'),),(Unit('a'),Unit('d')))
+    state=snapshot(board=owned,bench=owned.bench,level=1,gold=18,hp=9,streak=-3,
+        shop=({'unit_id':'a','cost':1},))
+    lines=(Line('hold'),Line('floor10',rolls={'3-2':10}),Line('allin',rolls={'3-2':0}),
+        Line('stabilize',rolls={'3-2':0},stabilize=True),Line('level',levels={'3-2':3}))
+    effects=SimulationEffects(gold_delta=3,xp_delta=4,free_rolls=2,one_round_power_bonus=2)
+    for effect in (None,effects):
+        batched=simulate_lines(state,GameHistory(),data,'A',lines,effects=effect,rollouts=32)
+        individual=tuple(simulate_lines(state,GameHistory(),data,'A',(line,),effects=effect,rollouts=32)[0] for line in lines)
+        assert [r.to_dict() for r in batched]==[r.to_dict() for r in individual]
+        assert any(r.death_probability>0 for r in batched)
+        assert any(r.standard_error>0 for r in batched)
+    gain,error,before,after=paired_value(state,GameHistory(),data,'A',lines,SimulationEffects(),rollouts=32)
+    assert gain==error==0
+    assert before==after
+
+
+def test_growth_lookup_reuses_refresh_table_but_recomputation_ignores_old_values():
+    from tft_engine import growth_curve, growth_curve_lookup
+    data=patch()
+    computed=growth_curve(data)
+    data=replace(data,tunables=dict(data.tunables)|{'opponent_growth_curve':tag(computed)})
+    assert growth_curve_lookup('3-2',data)==computed['3-2']
+    changed=replace(data,tunables=dict(data.tunables)|{'unit_weight':tag(2)})
+    assert growth_curve_lookup('3-2',changed)==computed['3-2']
+    assert growth_curve(changed)['3-2']==2*computed['3-2']
+
+
+def test_stabilize_finishes_an_interim_pair_outside_target_key_goals():
+    from tft_engine import Line, simulate_lines
+    data=patch()
+    priors={cost:dict(values) for cost,values in data.tunables['cost_star_baseline'].value.items()}
+    priors['3']['2']=8
+    data=replace(data,tunables=dict(data.tunables)|{'cost_star_baseline':tag(priors)})
+    data=replace(data,guides=dict(data.guides)|{'A':replace(data.guides['A'],line=({'round':'4-2','level':2,'roll_floor':10},))})
+    owned=Board((Unit('a',2),Unit('c')),(Unit('c'),))
+    state=snapshot(board=owned,bench=owned.bench,level=2,gold=13,
+        shop=({'unit_id':'c','cost':3},))
+    result=simulate_lines(state,GameHistory(),data,'A',(Line('stabilize',rolls={'3-2':10},stabilize=True),),backup_id='B')[0]
+    assert result.projections[0].planned_gold==10
+
 def test_a_roll_line_buys_key_copies_stops_at_the_floor_and_reports_hit_odds():
     from tft_engine import evaluate
     data=patch()
@@ -219,3 +280,144 @@ def test_roll_gold_includes_sales_below_backup_priority_and_preserves_backup_key
     assert selling.projections[0].hit_probability>0
     assert holding.projections[0].hit_probability==0
     assert holding.projections[0].gold==18 # 11 +5 base +1 interest +1 streak.
+
+
+def test_ignored_pivot_reverts_after_one_phase_and_requires_the_extra_margin_to_return():
+    from tft_engine import evaluate, DomainHook, FitTerm
+    data=patch()
+    initial=snapshot('2-2',board=Board((Unit('a',2),)),bench=(),gold=0)
+    pivot=snapshot('2-3',board=Board((Unit('a',2),)),bench=(),gold=0,augments=('buff',))
+    hook=DomainHook('augment',(),fit=lambda comp,ctx:FitTerm(-4 if comp=='B' and ctx.snapshot.field('augments') else 0,'augment_fit'))
+    called=evaluate(pivot,GameHistory((initial,)),data,'review',hooks=(hook,))
+    assert called.plan.target=='B'
+    assert called.plan.pivot_to=='B'
+    ignored=snapshot('2-4',board=Board((Unit('a',2),)),bench=(),gold=0,augments=('buff',))
+    adopted=evaluate(ignored,GameHistory((initial,pivot)),data,'review',hooks=(hook,))
+    assert adopted.plan.target=='A'
+    assert adopted.plan.rejected_target=='B'
+    assert not any(a.decision=='pivot' for a in adopted.advice)
+
+
+def test_history_hooks_see_only_the_consumed_prefix_and_future_rounds_are_ignored():
+    from tft_engine import evaluate, DomainHook, FitTerm
+    seen=[]
+    hook=DomainHook('inspect',(),fit=lambda comp,ctx:seen.append((ctx.snapshot.round_id,tuple(s.round_id for s in ctx.history.snapshots))) or FitTerm(0,'inspect'))
+    early=snapshot('2-1',gold=0); middle=snapshot('2-2',gold=0); future=snapshot('3-1',gold=0)
+    evaluate(snapshot('2-3',gold=0),GameHistory((future,middle,early)),patch(),'review',hooks=(hook,))
+    assert seen
+    assert all(prefix==() for round_id,prefix in seen if round_id=='2-1')
+    assert all(prefix==('2-1',) for round_id,prefix in seen if round_id=='2-2')
+    assert all('3-1' not in prefix for _,prefix in seen)
+
+
+def test_eliminated_rollouts_do_not_buy_shops_or_receive_income_or_xp():
+    from tft_engine import simulate_lines, Line
+    state=snapshot('3-7',board=Board((Unit('a'),)),bench=(),hp=0,gold=30,level=1,xp=0)
+    result=simulate_lines(state,GameHistory(),patch(),'A',(Line('hold'),))[0]
+    assert all(p.gold==30 for p in result.projections)
+    assert all(p.level==1 for p in result.projections)
+    assert all(p.hit_probability==0 for p in result.projections)
+
+
+def test_stabilize_keeps_rolling_for_board_power_after_the_target_carry_is_hit():
+    from tft_engine import simulate_lines, Line
+    # B is a strong one-star interim, and the already-hit A carry must not stop stabilization.
+    data=patch()
+    entities=dict(data.entities); entities['b']=replace(entities['b'],values={'play_rate':tag(.5),'top4_rate_1':tag(.99),'sample_count_1':tag(1000)})
+    data=replace(data,entities=entities)
+    state=snapshot('3-2',board=Board((Unit('a',2),)),bench=(),gold=30,level=2)
+    results=simulate_lines(state,GameHistory(),data,'A',(Line('target',rolls={'3-2':10}),Line('stabilize',rolls={'3-2':10},stabilize=True)),rollouts=128)
+    assert results[1].projections[0].gold<results[0].projections[0].gold
+
+
+def test_simulation_inputs_can_price_xp_free_rolls_and_one_round_power_on_the_same_tape():
+    from tft_engine import simulate_lines, paired_value, SimulationEffects, Line
+    state=snapshot('3-2',board=Board((Unit('a'),)),bench=(Unit('a'),Unit('b')),gold=1,level=1,xp=0)
+    lines=(Line('hold'),)
+    data=patch()
+    more_xp=simulate_lines(state,GameHistory(),data,'A',lines,effects=SimulationEffects(xp_delta=4))[0]
+    base=simulate_lines(state,GameHistory(),data,'A',lines)[0]
+    assert more_xp.projections[0].level>base.projections[0].level
+    free=simulate_lines(state,GameHistory(),data,'A',lines,effects=SimulationEffects(free_rolls=2))[0]
+    assert free.projections[0].hit_probability>base.projections[0].hit_probability
+    combat=replace(data,static=dict(data.static)|{'round_types':tag({r:'combat' for r in data.static['round_order'].value})})
+    gain,error,before,after=paired_value(state,GameHistory(),combat,'A',lines,SimulationEffects(one_round_power_bonus=10),rollouts=128)
+    assert gain>0
+    assert after[0].projections[0].hp>=before[0].projections[0].hp
+    assert error>=0
+
+
+def test_refresh_default_line_shapes_support_unguided_comps_and_qualify_their_advice():
+    from tft_engine import evaluate
+    data=patch()
+    comp=Entity('cluster','comp','Unguided',values={'units':tag(('a','b')),'carry_ids':tag(('a',))})
+    data=replace(data,entities=dict(data.entities)|{'cluster':comp},
+        tunables=dict(data.tunables)|{'default_lines_by_carry_cost':tag({'1':{'line':[{'round':'3-2','level':5,'roll_floor':10}]}})})
+    state=snapshot(include_unguided=True,comp_lock='cluster')
+    report=evaluate(state,GameHistory(),data,'review')
+    assert report.plan.target=='cluster'
+    assert all(not a.payload.get('paused') for a in report.advice)
+    assert all(a.confidence<=data.tunables['confidence_medium_min'].value for a in report.advice)
+    fallback=replace(data,tunables=dict(data.tunables)|{'default_lines_by_carry_cost':tag({'1':{'roll_level':5}})})
+    report=evaluate(state,GameHistory(),fallback,'review')
+    assert all(not a.payload.get('paused') for a in report.advice)
+    assert any(r.line.id=='guide:cluster' for r in report.line_results['cluster'])
+
+
+def test_simulated_comp_fit_exposes_hit_and_death_reason_costs_without_adding_them_twice():
+    from tft_engine import evaluate
+    owned=Board((Unit('a'),),(Unit('a'),))
+    report=evaluate(snapshot('3-2',board=owned,bench=owned.bench,gold=0,level=1,comp_lock='A'),GameHistory(),patch(),'review')
+    fit=report.comp_fits['A']
+    simulation=fit.terms['simulation']
+    assert fit.score==simulation.delta
+    assert 'owned_progress' not in fit.terms
+    assert simulation.numbers['hit_placement_cost']>0
+    assert simulation.numbers['death_placement_cost']==0
+    assert simulation.numbers['key_arrival_counterfactual']=='keys_at_main_roll_down_without_shop_uncertainty'
+
+
+def test_current_captured_key_offer_is_bought_without_a_roll_and_key_prices_can_cross_the_floor():
+    from tft_engine import simulate_lines, Line
+    owned=Board((Unit('a'),),(Unit('a'),))
+    state=snapshot('3-2',board=owned,bench=owned.bench,gold=10,level=1,
+        shop=({'slot':0,'unit_id':'a','cost':1},))
+    result=simulate_lines(state,GameHistory(),patch(),'A',(Line('roll',rolls={'3-2':10}),))[0]
+    assert result.projections[0].hit_probability==1
+    assert result.projections[0].planned_gold==9
+    assert result.projections[0].gold==15 # 9 +5 base +0 interest +1 streak.
+
+
+def test_new_backup_priority_matches_the_line_roll_gold_and_sale_advice():
+    from tft_engine import evaluate
+    data=patch()
+    data=replace(data,guides=dict(data.guides)|{'A':replace(data.guides['A'],line=({'round':'3-2','level':1,'roll_floor':10},))})
+    owned=Board((Unit('a'),),(Unit('a'),Unit('c')))
+    state=snapshot('3-2',board=owned,bench=owned.bench,gold=11,level=1,slot_count=1,comp_lock='A',
+        pinned_line={'id':'pin','levels':{},'rolls':{'3-2':10}})
+    result=evaluate(state,GameHistory(),data,'review')
+    assert result.plan.backup=='B'
+    econ=next(a for a in result.advice if a.decision=='econ')
+    assert econ.payload['sell_before_roll']==()
+    assert econ.payload['projections']['pin'][0]['hit_probability']==0
+
+
+def test_active_forms_preserve_double_trait_grants_and_share_one_shop_pool():
+    from tft_engine import evaluate, strength
+    data=patch()
+    extra={'lux':Entity('lux','unit','Lux',1,('avatar',),values={'play_rate':tag(.5)}),
+        'lux_fire':Entity('lux_fire','unit_form','Lux fire',1,('avatar','fire'),values={'pool_id':tag('lux'),'canonical_id':tag('lux')}),
+        'lux_ice':Entity('lux_ice','unit_form','Lux ice',1,('avatar','ice'),values={'pool_id':tag('lux'),'canonical_id':tag('lux')}),
+        'avatar':Entity('avatar','trait','Avatar',values={'breakpoints':tag([1]),'top4_rate_1':tag(.5)}),
+        'ice':Entity('ice','trait','Ice',values={'breakpoints':tag([2]),'top4_rate_2':tag(.5)})}
+    rules={'lux':{'replace':[{'avatar':1,'fire':2},{'avatar':1,'ice':2}]}}
+    guide=Guide('luxguide','A',('lux_fire','b'),carry_ids=('lux_fire',),line=({'round':'3-1','level':2,'roll_floor':10},))
+    data=replace(data,entities=dict(data.entities)|extra,static=dict(data.static)|{'trait_rules':tag(rules)},guides=dict(data.guides)|{'luxguide':guide})
+    owned=Board((Unit('lux_fire',2),),(Unit('lux_fire'),))
+    state=snapshot(board=owned,bench=owned.bench,level=2,comp_lock='luxguide')
+    result=evaluate(state,GameHistory(),data,'review')
+    assert all(not a.payload.get('paused') for a in result.advice)
+    assert result.plan.target=='luxguide'
+    assert strength(owned,2,data)==strength(Board(owned.units,owned.bench,{'avatar':1,'fire':2}),2,data)
+    assert result.recommended_board.units[0].unit_id=='lux_fire'
+    assert strength(owned,2,data)>0

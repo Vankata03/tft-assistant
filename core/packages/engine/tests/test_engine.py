@@ -237,3 +237,30 @@ def test_mixed_trait_variants_count_distinct_unit_sets_once_and_budget_fallback_
     estimate=estimate_opponent(sighting,bounded,'2-1',snapshot)
     assert estimate.confidence==0
     assert any('state cap' in warning for warning in estimate.warnings)
+
+
+def test_unreferenced_source_trait_without_a_breakpoint_does_not_block_inference():
+    from dataclasses import replace
+    from tft_data.models import Entity, DataError
+    from tft_engine import infer_opponent, TraitSighting
+    snapshot=data()
+    snapshot=replace(snapshot,entities=dict(snapshot.entities)|{'unused':Entity('unused','trait','Unused',values={'breakpoints':tagged([None])})})
+    assert infer_opponent(TraitSighting('enemy','2-1',3,{'fire':1}),snapshot).candidate_count==2
+    with pytest.raises(DataError,match='Unknown sighting trait'):
+        infer_opponent(TraitSighting('enemy','2-1',3,{'unused':1}),snapshot)
+
+
+def test_form_power_prefers_its_sampled_star_statistics_while_pool_identity_stays_shared():
+    from dataclasses import replace
+    from math import isfinite
+    from tft_data.models import Entity, Statistic
+    from tft_engine import estimate_strength
+    snapshot=data()
+    form=Entity('a_form','unit_form','A form',1,('fire',),values={'pool_id':tagged('a'),'canonical_id':tagged('a')})
+    stats=(Statistic('a','unit',4.5,100,'test','tactics.tools',unit_star=3,top4_rate=0),
+           Statistic('a_form','unit',1,24,'test','tactics.tools',unit_star=3,top4_rate=1))
+    snapshot=replace(snapshot,entities=dict(snapshot.entities)|{'a_form':form},statistics=stats)
+    active=estimate_strength(Board((Unit('a_form',3),)),1,snapshot)
+    base=estimate_strength(Board((Unit('a',3),)),1,snapshot)
+    assert isfinite(active.power)
+    assert active.unit_term>base.unit_term

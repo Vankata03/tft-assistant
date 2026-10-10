@@ -98,9 +98,9 @@ def infer_opponent(sighting: TraitSighting, data, *, previous: InferredBoard | N
     for entity in data.entities.values():
         if entity.kind == 'trait':
             value = entity.values.get('breakpoints')
-            if value is None or not value.value:
-                raise DataError(f'Missing trait breakpoints: {entity.id}')
-            first_breakpoint[entity.id] = min(map(int, value.value))
+            points=tuple(int(n) for n in value.value if n is not None and int(n)>0) if value else ()
+            if points:
+                first_breakpoint[entity.id]=min(points)
     for trait in visible:
         if trait not in first_breakpoint:
             raise DataError(f'Unknown sighting trait: {trait}')

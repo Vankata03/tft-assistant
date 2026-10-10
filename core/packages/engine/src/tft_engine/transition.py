@@ -1,6 +1,6 @@
 """Greedy strongest-owned selection followed by strict swap improvement."""
 from .models import Board, Advice
-from .power import strength, tunable, estimate_strength
+from .power import strength, tunable, static, estimate_strength
 from .lines import guide_line
 from .opponents import round_index
 from .shop_math import canonical_id
@@ -47,6 +47,7 @@ def strongest_owned_board(board,level,data,*,target=None,round_id=None):
         selected.append(chosen[2])
     # Strict progress-or-power improvement keeps the search finite and deterministic.
     seen={tuple(sorted(selected))}
+    best_power=score(selected)
     while selected:
         current=score(selected); current_progress=progress(selected)
         best=None
@@ -61,13 +62,13 @@ def strongest_owned_board(board,level,data,*,target=None,round_id=None):
                 if key in seen:
                     continue
                 value=score(proposal); towards=progress(proposal)
-                if value>current+tolerance or (value>=current-tolerance and towards>current_progress):
+                if value>current+tolerance or (value>=best_power-tolerance and towards>current_progress):
                     choice=(towards if value>=current-tolerance else -1,value,key,proposal)
                     if best is None or choice[:3]>best[:3]:
                         best=choice
         if best is None:
             break
-        selected=best[3]; seen.add(tuple(sorted(selected)))
+        selected=best[3]; best_power=max(best_power,best[1]); seen.add(tuple(sorted(selected)))
     return candidate(selected)
 
 
@@ -77,7 +78,22 @@ def transition_advice(snapshot,recommended,plan,data):
     for unit in tuple(old):
         if unit in new:
             old.remove(unit); new.remove(unit)
-    if not old and not new:
-        return ()
     value=estimate_strength(recommended,int(snapshot.field('level')),data)
-    return (Advice('transition','Swap owned units','act_this_phase',value.confidence,'strongest_owned_board',{'power':value.power},('board','bench','round'),decision_id=f'{snapshot.snapshot_id}:transition',option_id='transition',payload={'swap_out':[u.unit_id for u in old],'swap_in':[u.unit_id for u in new],'board':recommended.to_dict()},validity_state={'round':snapshot.round_id,'board':current.to_dict()}),)
+    validity={'round':snapshot.round_id,'board':current.to_dict()}
+    advice=[]
+    if old or new:
+        advice.append(Advice('transition','Swap owned units','act_this_phase',value.confidence,'strongest_owned_board',{'power':value.power},('board','bench','round'),decision_id=f'{snapshot.snapshot_id}:transition',option_id='transition',payload={'swap_out':[u.unit_id for u in old],'swap_in':[u.unit_id for u in new],'board':recommended.to_dict()},validity_state=validity))
+    from .bench import bench_priority, roll_sale_indices
+    priorities=bench_priority(recommended,data,target=plan.target,backup=plan.backup,recommended=recommended)
+    capacity=int(static(data,'bench_size'))
+    kept={index for _,_,index in priorities[:capacity]}
+    sales={index for _,_,index in priorities[capacity:]}
+    rolling=bool(plan.line and snapshot.round_id in plan.line.rolls)
+    if rolling:
+        sales.update(roll_sale_indices(recommended,data,target=plan.target,backup=plan.backup))
+    holds=tuple(recommended.bench[index].unit_id for category,_,index in priorities if index in kept and index not in sales and category<4)
+    if holds:
+        advice.append(Advice('transition','Hold flexible bench units','information',value.confidence,'bench_priority',{},('board','bench','round'),decision_id=f'{snapshot.snapshot_id}:transition:hold',option_id='transition:hold',payload={'hold':holds},validity_state=validity))
+    if sales:
+        advice.append(Advice('transition','Sell bench units, roll' if rolling else 'Sell bench overflow','act_this_phase',value.confidence,'bench_priority',{},('board','bench','round'),decision_id=f'{snapshot.snapshot_id}:transition:sell',option_id='transition:sell',payload={'sell':tuple(recommended.bench[i].unit_id for i in sorted(sales)),'reason':'roll_gold' if rolling else 'bench_overflow'},validity_state=validity))
+    return tuple(advice)

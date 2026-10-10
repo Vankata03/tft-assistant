@@ -47,7 +47,7 @@ def rounds_left_to_live(snapshot,data,opponents=()):
     return float(snapshot.field('hp'))/loss if loss>0 else float('inf')
 
 
-def screen_comp(snapshot,data,guide,context,domain_terms,*,opponents=()):
+def screen_comp(snapshot,data,guide,context,domain_terms,*,opponents=(),rounds_left=None):
     line=guide_line(guide,data)
     owned=owned_copies(context.recommended_board,data)
     goals=key_goals(guide,data)
@@ -93,8 +93,9 @@ def screen_comp(snapshot,data,guide,context,domain_terms,*,opponents=()):
     hp_map=alive_lobby(snapshot)
     health=tuple(hp_map.values())
     by_id={o.opponent_id:o.power for o in opponents}
-    opposing=tuple(by_id.get(id,growth_curve_lookup(snapshot.round_id,data)) for id in hp_map)
-    ideal=Board(tuple(Unit(id,2 if id in goals else 1) for id in guide.units[:int(snapshot.field('level'))]))
+    opposing=tuple(by_id[id] if id in by_id else growth_curve_lookup(snapshot.round_id,data) for id in hp_map)
+    from .shop_math import canonical_id
+    ideal=Board(tuple(Unit(id,3 if goals.get(canonical_id(id,data),0)>=9 else 2 if canonical_id(id,data) in goals else 1) for id in guide.units[:int(snapshot.field('level'))]))
     ideal_power=strength(ideal,int(snapshot.field('level')),data)
     missing_power=strength(snapshot.field('board'),int(snapshot.field('level')),data)
     divisor=damage_divisor(snapshot.round_id,data)
@@ -105,7 +106,7 @@ def screen_comp(snapshot,data,guide,context,domain_terms,*,opponents=()):
     statistics=[s for s in data.statistics if s.kind=='comp' and (s.entity_id in (cluster,guide.id) or s.comp_id==cluster)]
     base=statistics[0].average_placement if statistics else ideal_placement
     confidence=1.0 if statistics and not statistics[0].stale and not statistics[0].changed else float(tunable(data,'confidence_medium_min'))
-    left=rounds_left_to_live(snapshot,data,opponents)
+    left=rounds_left_to_live(snapshot,data,opponents) if rounds_left is None else rounds_left
     survival=exp(-wait/left) if left>0 else 0.0
     last=1+len(health)
     terms={'baseline':FitTerm(base,'comp_statistics' if statistics else 'modeled_placement_without_comp_statistics',confidence=confidence),

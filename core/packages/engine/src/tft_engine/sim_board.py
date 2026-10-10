@@ -9,6 +9,7 @@ from .shop_math import owned_copies, canonical_id
 class RolloutBoard:
     def __init__(self,board,data,guide):
         self.data=data
+        self._power_cache={}
         self.ids=tuple(sorted(id for id,e in data.entities.items() if e.kind=='unit'))
         forms={}
         for unit in board.units+board.bench:
@@ -63,6 +64,21 @@ class RolloutBoard:
         return result
 
     def power(self,copies,level,*,forced=False):
+        # Identical owned-copy/level states have identical greedy outcomes. Memoize
+        # them within this request; individual shops, fights and HP still vary.
+        packed=np.ascontiguousarray(np.column_stack((copies,level)))
+        signature=packed.view(np.dtype((np.void,packed.dtype.itemsize*packed.shape[1]))).reshape(-1)
+        _,indices,inverse=np.unique(signature,return_index=True,return_inverse=True)
+        states=packed[indices]
+        keys=[(state.tobytes(),forced) for state in states]
+        missing=[i for i,key in enumerate(keys) if key not in self._power_cache]
+        if missing:
+            fresh=states[missing]
+            values=self._power(fresh[:,:-1],fresh[:,-1],forced=forced)
+            self._power_cache.update((keys[i],float(value)) for i,value in zip(missing,values))
+        return np.array([self._power_cache[key] for key in keys])[inverse]
+
+    def _power(self,copies,level,*,forced=False):
         n=len(copies); rows=np.arange(n)
         # Auto-combines are exact: nine ->3-star, remaining threes ->2-star, remainder ->1-star.
         high=copies//9; rest=copies%9; middle=rest//3; low=rest%3

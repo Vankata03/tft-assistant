@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Mapping
 from tft_data.models import DataError, Guide, freeze
-from .models import Advice, ScoredOption, Board, Unit, rank_advice
+from .models import Advice, ScoredOption, Board, Unit, rank_advice, _encode
 from .power import tunable, estimate_strength
 from .lines import Line, guide_line, simulate_lines, candidate_lines, concrete_lines, snapshot_seed
 from .opponents import opponents_from_history, round_index
@@ -28,6 +28,8 @@ class GamePlan:
     planning_round: str | None = None
     target_similarity: float = 0.0
     pivot_round: str | None = None
+    def to_dict(self):
+        return _encode(self)
 
 @dataclass(frozen=True)
 class EngineEvaluation:
@@ -36,9 +38,11 @@ class EngineEvaluation:
     line_results: Mapping = field(default_factory=dict)
     recommended_board: Board | None = None
     advice: tuple[Advice,...] = ()
+    workload: Mapping = field(default_factory=dict)
     def __post_init__(self):
         object.__setattr__(self,'comp_fits',freeze(self.comp_fits))
         object.__setattr__(self,'line_results',freeze(self.line_results))
+        object.__setattr__(self,'workload',freeze(self.workload))
 
 @dataclass(frozen=True)
 class EngineContext:
@@ -51,9 +55,11 @@ class EngineContext:
     recommended_board: Board | None
     seed: int = 0
     opponents: tuple = ()
+    workload: Mapping = field(default_factory=dict)
     def __post_init__(self):
         object.__setattr__(self,'comp_fits',freeze(self.comp_fits))
         object.__setattr__(self,'line_results',freeze(self.line_results))
+        object.__setattr__(self,'workload',freeze(self.workload))
 
 
 def paused(reason, *, missing=(), domain='status'):
@@ -213,8 +219,9 @@ def _step(snapshot,history,data,previous,hooks,*,seed=None):
     ids=tuple(alive_lobby(snapshot))
     opponents=opponents_from_history(history,snapshot.round_id,data,opponent_ids=ids)
     context=EngineContext(snapshot,history,data,previous,{}, {},board,snapshot_seed(snapshot) if seed is None else seed,opponents)
+    left=rounds_left_to_live(snapshot,data,opponents)
     terms={id:domain_fit(hooks,id,context) for id in data.guides}
-    fits={id:screen_comp(snapshot,data,guide,context,terms[id],opponents=opponents) for id,guide in data.guides.items()}
+    fits={id:screen_comp(snapshot,data,guide,context,terms[id],opponents=opponents,rounds_left=left) for id,guide in data.guides.items()}
     order=sorted(fits,key=lambda id:(fits[id].score,id))
     if previous.status=='open':
         selected=order[:int(tunable(data,'open_candidate_count'))]
@@ -229,33 +236,45 @@ def _step(snapshot,history,data,previous,hooks,*,seed=None):
     if trigger and trigger not in selected:
         selected.append(trigger)
     results={}
-    left=rounds_left_to_live(snapshot,data,opponents)
+    backups={}
     count=int(tunable(data,'rollouts_reroll' if snapshot.field('roll_down') else 'rollouts_full'))
-    for id in selected:
+    workload={'simulation_passes':0,'simulated_concrete_lines':0,'reason_counterfactual_lines':0,'rollouts_per_line':count}
+    def score(id,backup):
         lines=list(candidate_lines(snapshot,data,data.guides[id],rounds_left=left))
-        pin=snapshot.field('pinned_line') if id==(lock or previous.target or order[0]) else None
+        pin=snapshot.field('pinned_line')
         if isinstance(pin,Mapping):
             lines.append(Line.from_dict(pin))
         if previous.target==id and previous.line:
             lines.append(previous.line)
         unique={l.id:l for l in concrete_lines(lines)}
-        scored=simulate_lines(snapshot,history,data,id,tuple(unique.values()),rollouts=count,opponents=opponents,seed=context.seed,backup_id=previous.backup)
-        results[id]=scored
+        scored=simulate_lines(snapshot,history,data,id,tuple(unique.values()),rollouts=count,opponents=opponents,seed=context.seed,backup_id=backup)
+        results[id]=scored; backups[id]=backup
         best=min(scored,key=lambda r:r.expected_placement)
+        ideal=simulate_lines(snapshot,history,data,id,(best.line,),rollouts=count,opponents=opponents,seed=context.seed,backup_id=backup,assume_keys_on_time=True)[0]
+        workload['simulation_passes']+=1
+        workload['simulated_concrete_lines']+=len(scored)
+        workload['reason_counterfactual_lines']+=1
         domain=dict(terms[id])
-        domain['simulation']=FitTerm(best.expected_placement,'line_simulated_placement',{'hit_probability':best.hit_probability,'death_probability':best.death_probability,'standard_error':best.standard_error},best.confidence)
+        domain['simulation']=FitTerm(best.expected_placement,'line_simulated_placement',{'hit_probability':best.hit_probability,'death_probability':best.death_probability,'standard_error':best.standard_error,'hit_placement_cost':best.expected_placement-ideal.expected_placement,'death_placement_cost':best.death_placement_cost,'key_arrival_counterfactual':'keys_at_main_roll_down_without_shop_uncertainty'},best.confidence)
         fits[id]=CompFit(id,sum(t.delta for t in domain.values()),True,domain,min([best.confidence]+[t.confidence for t in terms[id].values()]),best.hit_probability,best.death_probability)
+    for id in selected:
+        backup=previous.backup if id==previous.target and previous.backup in fits else next((other for other in order if other!=id),None)
+        score(id,backup)
     plan=_choose_plan(snapshot,data,previous,fits)
-    # Any comp selected by a commitment trigger must have its Lines scored, not a screen-only pivot.
-    if plan.target not in results:
-        lines=concrete_lines(candidate_lines(snapshot,data,data.guides[plan.target],rounds_left=left))
-        results[plan.target]=simulate_lines(snapshot,history,data,plan.target,lines,rollouts=count,opponents=opponents,seed=context.seed,backup_id=previous.backup)
-        best=min(results[plan.target],key=lambda r:r.expected_placement)
-        domain=dict(terms[plan.target]); domain['simulation']=FitTerm(best.expected_placement,'line_simulated_placement',confidence=best.confidence)
-        fits[plan.target]=CompFit(plan.target,sum(t.delta for t in domain.values()),True,domain,best.confidence,best.hit_probability,best.death_probability)
+    # The current Backup changes sale gold. Reconcile its target simulation and
+    # rerank until the plan is consistent; repeated pairs are explicit unavailable
+    # states rather than an arbitrary iteration or timing-dependent cutoff.
+    seen=set()
+    while plan.target not in results or backups[plan.target]!=plan.backup:
+        pair=(plan.target,plan.backup)
+        if pair in seen:
+            raise DataError('Comp and Backup sale priorities did not converge')
+        seen.add(pair)
+        score(plan.target,plan.backup)
+        plan=_choose_plan(snapshot,data,previous,fits)
     plan=_line_choice(snapshot,data,previous,plan,results.get(plan.target,()))
     recommended=strongest_owned_board(board,int(snapshot.field('level')),data,target=plan.target if plan.status=='committed' else None,round_id=snapshot.round_id)
-    context=EngineContext(snapshot,history,data,plan,fits,results,recommended,context.seed,opponents)
+    context=EngineContext(snapshot,history,data,plan,fits,results,recommended,context.seed,opponents,workload)
     return context
 
 
@@ -288,7 +307,8 @@ def _econ_advice(context):
     gap=chosen.expected_placement-best.expected_placement
     from .bench import roll_sale_indices
     selling=tuple(owned_board(snapshot).bench[i].unit_id for i in roll_sale_indices(owned_board(snapshot),data,target=plan.target,backup=plan.backup)) if floor is not None else ()
-    payload={'planned_gold':chosen.projections[0].planned_gold,'gold_floor':floor,'sell_before_roll':selling,'line_id':chosen.line.id,'line':chosen.line.to_dict(),'projections':projections,'pinned':bool(snapshot.field('pinned_line')),'pin_alternative':best.line.id if gap>float(tunable(data,'line_margin')) else None,'pin_gap':gap}
+    workload=dict(context.workload)|{'schedule_families':len({r.line.family_id or r.line.id for r in results}),'concrete_lines':len(results),'simulated_comps':len(context.line_results),'total_concrete_lines':sum(len(v) for v in context.line_results.values())}
+    payload={'game_plan':plan.to_dict(),'workload':workload,'planned_gold':chosen.projections[0].planned_gold,'gold_floor':floor,'sell_before_roll':selling,'line_id':chosen.line.id,'line':chosen.line.to_dict(),'projections':projections,'pinned':bool(snapshot.field('pinned_line')),'pin_alternative':best.line.id if gap>float(tunable(data,'line_margin')) else None,'pin_gap':gap}
     return (Advice('econ',action,'act_this_phase',chosen.confidence,'line_selected',{'expected_placement':chosen.expected_placement,'analytic_hit':hit,'death_probability':chosen.death_probability},('gold','shop','round','board'),decision_id=f'{snapshot.snapshot_id}:econ',option_id=chosen.line.id,payload=payload,options=options,validity_state={'round':snapshot.round_id,'gold':snapshot.field('gold'),'board':snapshot.field('board').to_dict()}),)
 
 
@@ -366,9 +386,12 @@ def evaluate(snapshot,history,data,mode,*,hooks=None,seed=None):
             context=_step(snapshot,prefix,data,plan,hooks,seed=seed)
         items=_pivot_advice(context)+_econ_advice(context)+transition_advice(snapshot,context.recommended_board,context.plan,data)+_hook_advice(hooks,context)
         ranked=rank_advice(items)
+        guide=data.guides[context.plan.target]
+        if guide.source=='metatft' and guide.tier=='unrated':
+            ranked=tuple(replace(a,confidence=min(a.confidence,float(tunable(data,'confidence_medium_min')))) for a in ranked)
         # A pivot is the first call for the new plan even if another action estimates greater gain.
         ranked=tuple(a for a in ranked if a.decision=='pivot')+tuple(a for a in ranked if a.decision!='pivot')
-        return EngineEvaluation(context.plan,context.comp_fits,context.line_results,context.recommended_board,ranked)
+        return EngineEvaluation(context.plan,context.comp_fits,context.line_results,context.recommended_board,ranked,context.workload)
     except (DataError,KeyError,ValueError,TypeError) as error:
         context=EngineContext(snapshot,history,data,plan,{}, {},owned_board(snapshot),snapshot_seed(snapshot) if seed is None else seed)
         return EngineEvaluation(plan,advice=rank_advice((paused(str(error),domain='econ'),)+_hook_advice(hooks,context)))
