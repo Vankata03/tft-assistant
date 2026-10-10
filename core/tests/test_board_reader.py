@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from PIL import Image
 from tft_capture.ocr import TextLine
 from tft_capture.pipeline import CapturePipeline
@@ -320,7 +321,7 @@ def test_split_cli_keeps_whole_games_and_keyframes_out_of_training(tmp_path, cap
     assert json.loads(split.read_text()) == first
 
 
-def _constant_onnx(directory, labels, choice):
+def _constant_onnx(directory, labels, choice, *, strength=10):
     import json
 
     import numpy as np
@@ -337,7 +338,7 @@ def _constant_onnx(directory, labels, choice):
         "expand_axes": np.array([1], dtype=np.int64),
         "zero": np.array(0, dtype=np.float32),
         "logits": np.array(
-            [10 if label == choice else 0 for label in labels], dtype=np.float32
+            [strength if label == choice else 0 for label in labels], dtype=np.float32
         ),
     }
     nodes = [
@@ -888,13 +889,14 @@ def test_accept_cli_promotes_only_recomputed_complete_heldout_bundle(tmp_path, c
     from tft_capture.training import main
 
     _constant_onnx(tmp_path / "current", ["red", "blue"], "red")
-    _constant_onnx(tmp_path / "candidate", ["red", "blue"], "red")
+    _constant_onnx(tmp_path / "candidate", ["red", "blue"], "red", strength=20)
     _constant_onnx(tmp_path / "stars", ["1", "2", "3"], "1")
     for suffix in (".json", ".onnx", ".onnx.data"):
-        shutil.copy2(
-            tmp_path / "stars" / ("unit_classifier" + suffix),
-            tmp_path / "candidate" / ("star_level_classifier" + suffix),
-        )
+        for folder in ("current", "candidate"):
+            shutil.copy2(
+                tmp_path / "stars" / ("unit_classifier" + suffix),
+                tmp_path / folder / ("star_level_classifier" + suffix),
+            )
     rows = []
     for label in ("red", "blue"):
         for index in range(20):
@@ -954,6 +956,13 @@ def test_accept_cli_promotes_only_recomputed_complete_heldout_bundle(tmp_path, c
         == 0
     )
     manifest = json.loads(pointer.read_text())
+    report = json.loads((tmp_path / "report.json").read_text())
+    assert (
+        report["current_files"]["unit_classifier.onnx"]
+        != report["candidate_files"]["unit_classifier.onnx"]
+    )
+    assert report["star_bundle_changed"] is False
+    assert report["accepted"] is True
     assert len(manifest["files"]) == 6
     assert manifest["dataset_fingerprint"] == split["dataset_fingerprint"]
     assert all(
@@ -1018,3 +1027,234 @@ def test_inventory_reader_omits_competing_item_templates(tmp_path):
         "items": [],
         "complete": False,
     }
+
+
+def _promotion_workflow(tmp_path):
+    import hashlib
+    import json
+    import shutil
+
+    import numpy as np
+    from tft_capture.model_validation import fingerprint
+
+    _constant_onnx(tmp_path / "current", ["red"], "red")
+    _constant_onnx(tmp_path / "candidate", ["red"], "red")
+    _constant_onnx(tmp_path / "stars", ["1", "2", "3"], "1")
+    for folder in ("current", "candidate"):
+        for suffix in (".json", ".onnx", ".onnx.data"):
+            shutil.copy2(
+                tmp_path / "stars" / ("unit_classifier" + suffix),
+                tmp_path / folder / ("star_level_classifier" + suffix),
+            )
+    rows = []
+    for index in range(21):
+        name = f"crop-{index}.png"
+        Image.fromarray(
+            np.random.default_rng(index).integers(0, 255, (16, 16, 3), dtype=np.uint8)
+        ).save(tmp_path / name)
+        rows.append(
+            {
+                "id": name,
+                "file": name,
+                "sha256": hashlib.sha256((tmp_path / name).read_bytes()).hexdigest(),
+                "game_id": f"game-{index}",
+                "keyframe": name,
+                "label": "red",
+                "label_source": "owner_reviewed",
+            }
+        )
+    split = {"v": 1, "train": rows[:1], "heldout": rows[1:]}
+    split["dataset_fingerprint"] = fingerprint(
+        {key: split[key] for key in ("train", "heldout")}
+    )
+    (tmp_path / "split.json").write_text(json.dumps(split))
+    (tmp_path / "models.json").write_text('{"version":"last-good"}')
+    (tmp_path / "cache").mkdir()
+    (tmp_path / "cache/last-good.txt").write_text("retained cache")
+    return [
+        "accept",
+        "--current",
+        str(tmp_path / "current"),
+        "--candidate",
+        str(tmp_path / "candidate"),
+        "--split",
+        str(tmp_path / "split.json"),
+        "--report",
+        str(tmp_path / "report.json"),
+        "--pointer",
+        str(tmp_path / "models.json"),
+        "--cache",
+        str(tmp_path / "cache"),
+    ]
+
+
+def test_accept_cli_rejects_changed_star_bundle_without_star_qualification(
+    tmp_path, capsys
+):
+    import json
+
+    from tft_capture.training import main
+
+    args = _promotion_workflow(tmp_path)
+    (tmp_path / "candidate/star_level_classifier.onnx.data").write_bytes(
+        b"unqualified changed stars"
+    )
+    assert main(args) == 2
+    report = json.loads((tmp_path / "report.json").read_text())
+    assert (
+        report["qualified"] is True
+    )  # The unit gate passes; it does not qualify star weights.
+    assert report["star_bundle_changed"] is True
+    assert json.loads((tmp_path / "models.json").read_text()) == {
+        "version": "last-good"
+    }
+    assert {path.name for path in (tmp_path / "cache").iterdir()} == {"last-good.txt"}
+
+
+@pytest.mark.parametrize("changed_model", ["current", "candidate"])
+def test_accept_cli_rejects_model_bytes_changed_during_external_inference(
+    tmp_path, monkeypatch, changed_model
+):
+    import json
+
+    import onnxruntime as ort
+    import pytest
+    from tft_capture.training import main
+
+    args = _promotion_workflow(tmp_path)
+    runtime_session = ort.InferenceSession
+    mutated = False
+
+    class MutatingRuntime:
+        def __init__(self, session):
+            self.session = session
+
+        def __getattr__(self, name):
+            return getattr(self.session, name)
+
+        def run(self, *run_args, **run_kwargs):
+            nonlocal mutated
+            values = self.session.run(*run_args, **run_kwargs)
+            if not mutated:
+                metadata = tmp_path / changed_model / "unit_classifier.json"
+                value = json.loads(metadata.read_text())
+                value["changed_after_session_loaded"] = True
+                metadata.write_text(json.dumps(value))
+                mutated = True
+            return values
+
+    monkeypatch.setattr(
+        ort,
+        "InferenceSession",
+        lambda *session_args, **session_kwargs: MutatingRuntime(
+            runtime_session(*session_args, **session_kwargs)
+        ),
+    )
+    with pytest.raises(ValueError, match="changed during held-out comparison"):
+        main(args)
+    assert mutated
+    assert json.loads((tmp_path / "models.json").read_text()) == {
+        "version": "last-good"
+    }
+    assert {path.name for path in (tmp_path / "cache").iterdir()} == {"last-good.txt"}
+    assert not (tmp_path / "report.json").exists()
+
+
+def test_accept_cli_rejects_candidate_changed_after_report_publication(
+    tmp_path, monkeypatch
+):
+    import json
+    import os
+
+    import pytest
+    from tft_capture.training import main
+
+    args = _promotion_workflow(tmp_path)
+    publish = os.replace
+    mutated = False
+
+    def mutate_published_report(source, destination):
+        nonlocal mutated
+        publish(source, destination)
+        if Path(destination) == tmp_path / "report.json":
+            metadata = tmp_path / "candidate/unit_classifier.json"
+            values = json.loads(metadata.read_text())
+            values["changed_after_comparison"] = True
+            metadata.write_text(json.dumps(values))
+            mutated = True
+
+    monkeypatch.setattr(os, "replace", mutate_published_report)
+    with pytest.raises(ValueError, match="changed after held-out comparison"):
+        main(args)
+    assert mutated
+    assert json.loads((tmp_path / "models.json").read_text()) == {
+        "version": "last-good"
+    }
+    assert {path.name for path in (tmp_path / "cache").iterdir()} == {"last-good.txt"}
+
+
+def test_accept_cli_rejects_current_changed_while_candidate_is_copied(
+    tmp_path, monkeypatch
+):
+    import json
+    import shutil
+
+    import pytest
+    from tft_capture.training import main
+
+    args = _promotion_workflow(tmp_path)
+    copy = shutil.copy2
+    mutated = False
+
+    def mutate_during_copy(source, destination, *copy_args, **copy_kwargs):
+        nonlocal mutated
+        result = copy(source, destination, *copy_args, **copy_kwargs)
+        if not mutated:
+            metadata = tmp_path / "current/unit_classifier.json"
+            values = json.loads(metadata.read_text())
+            values["changed_during_cache_copy"] = True
+            metadata.write_text(json.dumps(values))
+            mutated = True
+        return result
+
+    monkeypatch.setattr(shutil, "copy2", mutate_during_copy)
+    with pytest.raises(ValueError, match="changed after held-out comparison"):
+        main(args)
+    assert mutated
+    assert json.loads((tmp_path / "models.json").read_text()) == {
+        "version": "last-good"
+    }
+    assert {path.name for path in (tmp_path / "cache").iterdir()} == {"last-good.txt"}
+
+
+def test_accept_cli_rolls_back_new_cache_if_current_changes_before_pointer_publication(
+    tmp_path, monkeypatch
+):
+    import json
+    import os
+
+    import pytest
+    from tft_capture.training import main
+
+    args = _promotion_workflow(tmp_path)
+    publish = os.replace
+    mutated = False
+
+    def mutate_new_cache(source, destination):
+        nonlocal mutated
+        publish(source, destination)
+        if Path(destination).parent == tmp_path / "cache":
+            metadata = tmp_path / "current/unit_classifier.json"
+            values = json.loads(metadata.read_text())
+            values["changed_before_pointer_publication"] = True
+            metadata.write_text(json.dumps(values))
+            mutated = True
+
+    monkeypatch.setattr(os, "replace", mutate_new_cache)
+    with pytest.raises(ValueError, match="changed after held-out comparison"):
+        main(args)
+    assert mutated
+    assert json.loads((tmp_path / "models.json").read_text()) == {
+        "version": "last-good"
+    }
+    assert {path.name for path in (tmp_path / "cache").iterdir()} == {"last-good.txt"}
