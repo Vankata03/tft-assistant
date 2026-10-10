@@ -32,6 +32,8 @@ Source: [MVP spec](../docs/spec.md), its area files, and the resolved planning t
 
 ## Decisions so far
 
+- 2026-10-10: [Ticket 43](043-baseline-surfaces.md) integrated in `19e28abe` and its software boundary is closed. Combined verification passed 148 Python tests with the offline training group, 31 UI tests and the import/schema/lock/type/build gates. The [Baseline boundary](../docs/agents/baseline-boundary.md) supplies the interfaces for tickets 44 and 45; production data and Windows/device qualification remain in tickets 48 and 49. Reader ticket 38 is also integrated but remains open while promotion review fixes are completed.
+
 - 2026-10-10: Ticket 49 retains owner-data and Windows/device qualification after the reader, capture and planning software boundaries. Passing macOS software tests does not close those conditions or this parent specification.
 
 - 2026-10-07: Ticket 36's software boundary closed after merge `b2bcc3e` and 122 Python/26 UI integration tests. Production data preparation and qualification remain open in ticket 48; no current rules, fits or live calendar were fabricated.
