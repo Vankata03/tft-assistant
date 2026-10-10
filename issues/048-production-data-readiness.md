@@ -33,3 +33,7 @@ See ticket 36's first-install bootstrap command and qualification record. Checke
 Riot's [18.2 patch notes](https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-2/) confirm level 7→8 requires 56 XP; the September 14 update restores 8→9 and 9→10 to 68 XP. These observations support those entries only, not an otherwise unchecked complete table.
 
 Current CommunityDragon set-18 trait `DA_18_LuxUniqueTrait` explicitly says an Avatar's chosen trait counts twice. Each sourced Lux form therefore needs its Origin grant of two and Avatar grant of one in the explicit trait rules. Form aliases share `DA_Lux18_Base` pool identity; they are not independent pool types. The source payload is `latest-en_us.json` in the cache named above.
+
+### 2026-10-10 — codex (mid-patch source refresh)
+
+The checked [Riot 18.4 notes](https://teamfighttactics.leagueoflegends.com/en-gb/news/game-updates/teamfight-tactics-patch-18-4/) now include an October 7 B-patch. Search Party costs 1/0 gold instead of 3/1, and Three Me costs 10 instead of 9. Future Focused grants 5 instead of 8 gold; Heroic Grab Bag starts with 6 instead of 4 gold. Heart of Steel is temporarily disabled. The candidate must account for these updates and the affected availability rules, rather than assuming the October 6 payloads already reflect them. This source check does not establish the EUNE live boundary or qualify the complete static tables.
