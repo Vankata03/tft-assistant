@@ -19,6 +19,8 @@ blocked_by: [47]
 
 Integrate pinned MIT TFT-COACH reader, CPU inference, four specified recognition fixes, merge purchase tracking and reader by confidence with disagreements logged, keyframe crop labeling and held-out training acceptance.
 
+Implement and verify the software fixes, calibration workflow and fail-closed training/promotion gate here. Actual owner-labeled recognition/training acceptance, measured per-champion calibration and Windows accuracy/latency remain in [ticket 49](049-capture-device-qualification.md); a software closure does not claim that evidence.
+
 Implement all referenced requirements. Verify through the approved public seams in [implementation contract](../docs/agents/implementation.md). Record platform checks separately; keep unmet acceptance explicit.
 
 ## Comments

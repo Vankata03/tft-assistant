@@ -28,8 +28,11 @@ Source: [MVP spec](../docs/spec.md), its area files, and the resolved planning t
 - [46: Immutable data contracts and capture name lists](046-data-contracts.md); blocked by nothing.
 - [47: Capture transport, OCR, tracking and visual-reader contract](047-capture-contracts.md); blocked by [35, 46].
 - [48: First sourced patch-data candidate and qualification](048-production-data-readiness.md); blocked by [36, 40, 41].
+- [49: Recognition, capture and target hardware qualification](049-capture-device-qualification.md); blocked by [37, 38, 40, 45].
 
 ## Decisions so far
+
+- 2026-10-10: Ticket 49 retains owner-data and Windows/device qualification after the reader, capture and planning software boundaries. Passing macOS software tests does not close those conditions or this parent specification.
 
 - 2026-10-07: Ticket 36's software boundary closed after merge `b2bcc3e` and 122 Python/26 UI integration tests. Production data preparation and qualification remain open in ticket 48; no current rules, fits or live calendar were fabricated.
 
