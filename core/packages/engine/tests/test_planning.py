@@ -160,6 +160,70 @@ def test_stabilize_finishes_an_interim_pair_outside_target_key_goals():
     result=simulate_lines(state,GameHistory(),data,'A',(Line('stabilize',rolls={'3-2':10},stabilize=True),),backup_id='B')[0]
     assert result.projections[0].planned_gold==10
 
+
+@pytest.mark.parametrize('held_item',(False,True))
+def test_line_fights_use_swap_improvement_when_greedy_misses_a_trait_breakpoint(held_item):
+    from tft_engine import Line, simulate_lines, evaluate, strength, placement, growth_curve_lookup
+    data=patch()
+    units=dict(data.entities)
+    units['a']=replace(units['a'],cost=3,traits=())
+    units['c']=replace(units['c'],cost=1)
+    units['fire']=replace(units['fire'],values={'breakpoints':tag([2]),'top4_rate_2':tag(.95)})
+    units['finished']=Entity('finished','item','Finished',values={'component':tag(False)})
+    guide=replace(data.guides['A'],units=('b','c'),carry_ids=('b',),line=({'round':'3-1','level':2},))
+    rules=dict(data.static['rules_flags'].value)|{'passive_xp':0}
+    data=replace(data,entities=units,guides={'A':guide},static=dict(data.static)|{'rules_flags':tag(rules)},
+        tunables=dict(data.tunables)|{'terminal_gold_weight':tag(0)})
+    owned=Board((Unit('a'),Unit('b',items=('finished',) if held_item else ())), (Unit('c'),))
+    state=snapshot(board=owned,bench=owned.bench,level=2,gold=0)
+    recommended=evaluate(state,GameHistory(),data,'review').recommended_board
+    assert {u.unit_id for u in recommended.units}=={'b','c'}
+    expected=placement(strength(recommended,2,data),(growth_curve_lookup('3-2',data),)*2,60,(60,60),8,data)
+    result=simulate_lines(state,GameHistory(),data,'A',(Line('hold'),),rollouts=4)[0]
+    assert result.projections[0].expected_placement==pytest.approx(expected)
+
+
+def test_line_deadline_forces_target_carry_with_the_transition_membership_order():
+    from tft_engine import Line, simulate_lines, evaluate, strength, placement, growth_curve_lookup
+    data=patch()
+    guide=replace(data.guides['A'],units=('a','c'),line=({'round':'3-2','level':1,'roll_floor':10},))
+    data=replace(data,guides={'A':guide},static=dict(data.static)|{'rules_flags':tag(dict(data.static['rules_flags'].value)|{'passive_xp':0})},
+        tunables=dict(data.tunables)|{'terminal_gold_weight':tag(0)})
+    owned=Board((Unit('c'),),(Unit('a'),))
+    state=snapshot(board=owned,bench=owned.bench,level=1,gold=0,comp_lock='A')
+    recommended=evaluate(state,GameHistory(),data,'review').recommended_board
+    assert recommended.units[0].unit_id=='a'
+    expected=placement(strength(recommended,1,data),(growth_curve_lookup('3-2',data),)*2,60,(60,60),8,data)
+    result=simulate_lines(state,GameHistory(),data,'A',(Line('hold'),),rollouts=4)[0]
+    assert result.projections[0].expected_placement==pytest.approx(expected)
+
+
+def test_fixed_generic_items_and_item_state_pairs_follow_the_line_spec_amendment():
+    from tft_engine import Line, SimulationEffects, simulate_lines, paired_value, evaluate, strength, placement, growth_curve_lookup
+    data=patch()
+    entities=dict(data.entities)|{'finished':Entity('finished','item','Finished',values={'component':tag(False)})}
+    guide=replace(data.guides['A'],units=('a',),line=({'round':'3-2','level':1,'roll_floor':10},))
+    data=replace(data,entities=entities,guides={'A':guide},static=dict(data.static)|{'rules_flags':tag(dict(data.static['rules_flags'].value)|{'passive_xp':0})},
+        tunables=dict(data.tunables)|{'terminal_gold_weight':tag(0)})
+    owned=Board((Unit('c',items=('finished',)),),(Unit('a'),))
+    state=snapshot(board=owned,bench=owned.bench,level=1,gold=0,comp_lock='A')
+    lines=(Line('hold'),Line('roll',rolls={'3-2':10}))
+    recommended=evaluate(state,GameHistory(),data,'review').recommended_board
+    assert recommended.units[0].unit_id=='a'
+    assert recommended.units[0].items==() # No physical item transfer is inferred.
+    # The amended Line model keeps its initial generic term across subsets:
+    # finished1 + high-cost-holder bonus0.25, independently of item fit.
+    expected=placement(strength(recommended,1,data)+1.25,(growth_curve_lookup('3-2',data),)*2,60,(60,60),8,data)
+    results=simulate_lines(state,GameHistory(),data,'A',lines,rollouts=16)
+    assert all(r.projections[0].expected_placement==pytest.approx(expected) for r in results)
+    gain,error,before,after=paired_value(state,GameHistory(),data,'A',lines,SimulationEffects(item_state=owned),rollouts=16)
+    assert gain==error==0 and before==after
+    unbuilt=Board((Unit('c'),),(Unit('a'),))
+    gain,error,before,after=paired_value(snapshot(board=unbuilt,bench=unbuilt.bench,level=1,gold=0),GameHistory(),data,'A',lines,
+        SimulationEffects(item_state=owned),rollouts=16)
+    assert gain>0 and error>=0
+    assert all(left.seed==right.seed for left,right in zip(before,after))
+
 def test_a_roll_line_buys_key_copies_stops_at_the_floor_and_reports_hit_odds():
     from tft_engine import evaluate
     data=patch()

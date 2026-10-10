@@ -1,4 +1,4 @@
-"""Prepared absolute power tables and vectorized greedy board selection for rollouts."""
+"""Prepared power tables and cached greedy-plus-swap selection for rollouts."""
 from dataclasses import dataclass
 import numpy as np
 from tft_data.models import DataError
@@ -83,6 +83,7 @@ class RolloutBoard:
         # Auto-combines are exact: nine ->3-star, remaining threes ->2-star, remainder ->1-star.
         high=copies//9; rest=copies%9; middle=rest//3; low=rest%3
         available=np.stack((low,middle,high),axis=2).copy()
+        selected=np.zeros_like(available)
         counts=np.zeros((n,len(self.traits)),dtype=int)
         seen=np.zeros((n,len(self.ids)),dtype=bool)
         total=np.full(n,self.items)
@@ -104,6 +105,14 @@ class RolloutBoard:
             preference=np.where(within,self.progress[None,:],-np.inf)
             priorities=preference.max(axis=1)
             chosen=np.argmax(np.where(within&(preference==priorities[:,None]),scores,-np.inf),axis=1)
+            if forced:
+                # The deadline forces target members in carry/key/other order,
+                # matching transition's initial forced subset before greedy fill.
+                forced_progress=np.where(preferred,self.progress[None,:],-np.inf)
+                priority=forced_progress.max(axis=1)
+                solo=unit_values+self.traits_power(self.contributions)[None,:]
+                forced_choice=np.argmax(np.where(preferred&(forced_progress==priority[:,None]),solo,-np.inf),axis=1)
+                chosen=np.where(preferred.any(axis=1),forced_choice,chosen)
             valid=(slot<level)&exists.any(axis=1)
             tier=best_tier[rows,chosen]
             total+=np.where(valid,scores[rows,chosen],0)
@@ -111,4 +120,60 @@ class RolloutBoard:
             counts+=add[:,None]*self.contributions[chosen]
             seen[rows,chosen]|=valid
             available[rows,chosen,tier]-=valid
-        return total
+            selected[rows,chosen,tier]+=valid
+        return self._refine(selected,available,forced=forced)
+
+    def _refine(self,selected,available,*,forced):
+        """Batch every one-unit swap; reuse the transition's strict improvement rule."""
+        n=len(selected); rows=np.arange(n)
+        tolerance=float(tunable(self.data,'transition_tolerance'))
+        seen=[{state.tobytes()} for state in selected]
+        def score():
+            present=selected.sum(axis=2)>0
+            return (selected*self.powers[None,:,:]).sum(axis=(1,2))+self.traits_power(present@self.contributions)+self.items
+        current=score(); anchor=current.copy()
+        while True:
+            quantities=selected.sum(axis=2)
+            counts=(quantities>0)@self.contributions
+            progress=(quantities*self.progress).sum(axis=1)
+            tiers=np.argmax(np.where(available>0,self.powers[None,:,:],-np.inf),axis=2)
+            new_power=np.take_along_axis(np.broadcast_to(self.powers,(n,)+self.powers.shape),tiers[:,:,None],axis=2)[:,:,0]
+            exists=available.sum(axis=2)>0
+            best_priority=np.full(n,-np.inf); best_value=np.full(n,-np.inf)
+            old_choice=np.full(n,-1); old_tier=np.zeros(n,dtype=int); new_choice=np.zeros(n,dtype=int)
+            for old,tier in np.argwhere(selected.any(axis=0)):
+                if forced and self.target[old]:
+                    continue
+                removing=selected[:,old,tier]>0
+                after=counts-(quantities[:,old]==1)[:,None]*self.contributions[old]
+                remaining=quantities.copy(); remaining[:,old]-=1
+                proposed=after[:,None,:]+(remaining==0)[:,:,None]*self.contributions[None,:,:]
+                values=current[:,None]-self.powers[old,tier]+new_power+self.traits_power(proposed)-self.traits_power(counts)[:,None]
+                towards=progress[:,None]-self.progress[old]+self.progress[None,:]
+                improves=(values>current[:,None]+tolerance)|((values>=anchor[:,None]-tolerance)&(towards>progress[:,None]))
+                eligible=removing[:,None]&exists&improves
+                priorities=np.where(values>=current[:,None]-tolerance,towards,-1)
+                priorities=np.where(eligible,priorities,-np.inf)
+                maximum=priorities.max(axis=1)
+                chosen=np.argmax(np.where(eligible&(priorities==maximum[:,None]),values,-np.inf),axis=1)
+                candidate_value=values[rows,chosen]
+                better=(maximum>best_priority)|((maximum==best_priority)&(candidate_value>best_value))
+                better&=eligible[rows,chosen]
+                for row in np.flatnonzero(better):
+                    proposal=selected[row].copy(); proposal[old,tier]-=1; proposal[chosen[row],tiers[row,chosen[row]]]+=1
+                    if proposal.tobytes() in seen[row]:
+                        better[row]=False
+                best_priority=np.where(better,maximum,best_priority)
+                best_value=np.where(better,candidate_value,best_value)
+                old_choice=np.where(better,old,old_choice)
+                old_tier=np.where(better,tier,old_tier)
+                new_choice=np.where(better,chosen,new_choice)
+            changing=np.flatnonzero(old_choice>=0)
+            if not len(changing):
+                return current
+            for row in changing:
+                old=old_choice[row]; tier=old_tier[row]; new=new_choice[row]; incoming=tiers[row,new]
+                selected[row,old,tier]-=1; available[row,old,tier]+=1
+                selected[row,new,incoming]+=1; available[row,new,incoming]-=1
+                seen[row].add(selected[row].tobytes())
+            current=score(); anchor=np.maximum(anchor,current)
