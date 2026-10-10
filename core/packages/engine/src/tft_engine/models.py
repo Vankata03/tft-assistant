@@ -106,6 +106,7 @@ class TraitSighting:
     level: int
     traits: Mapping[str, int]
     hidden_traits: int = 0
+    read_at: datetime | None = None
     def __post_init__(self):
         if self.level < 1 or self.hidden_traits < 0 or any(v < 1 for v in self.traits.values()):
             raise ValueError('Invalid trait sighting')
@@ -114,6 +115,9 @@ class TraitSighting:
         return _encode(self)
     @classmethod
     def from_dict(cls, value):
+        value=dict(value)
+        if isinstance(value.get('read_at'),str):
+            value['read_at']=datetime.fromisoformat(value['read_at'])
         return cls(**value)
 
 

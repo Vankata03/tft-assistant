@@ -218,3 +218,22 @@ def test_trait_endpoint_rates_use_their_own_explicit_neutral_prior():
     # n=prior=100, lobby prior0.5 and observed1 gives posterior0.75.
     assert estimate.trait_term == pytest.approx(1.09861228866811)
     assert estimate.confidence <= 0.5
+
+
+def test_mixed_trait_variants_count_distinct_unit_sets_once_and_budget_fallback_has_no_posterior():
+    from dataclasses import replace
+    from tft_engine import infer_opponent, TraitSighting, estimate_opponent
+    snapshot=data()
+    snapshot=replace(snapshot,static=dict(snapshot.static)|{'trait_rules':tagged({'a':{'replace':[{'fire':1},{'fire':1}]}})})
+    sighting=TraitSighting('enemy','2-1',3,{'fire':1})
+    exact=infer_opponent(sighting,snapshot)
+    assert exact.candidate_count==2
+    assert exact.probabilities['a']==pytest.approx(0.75)
+    bounded=infer_opponent(sighting,with_tunables(snapshot,opponent_inference_state_cap=1))
+    assert bounded.candidate_count==0
+    assert bounded.probabilities=={}
+    assert bounded.certainty==0
+    assert 'state cap' in bounded.fallback_reason
+    estimate=estimate_opponent(sighting,bounded,'2-1',snapshot)
+    assert estimate.confidence==0
+    assert any('state cap' in warning for warning in estimate.warnings)
