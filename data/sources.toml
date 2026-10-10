@@ -1,0 +1,36 @@
+schema_version = 1
+
+[statistics]
+minimum_rank = "DIAMOND"
+regions = "all"
+
+[refresh]
+sources = ["metatft_units", "tactics_units", "academy_guides", "metatft_augment_tiers"]
+fallback = "tactics_units"
+
+[sources.metatft_units]
+provider = "metatft"
+kind = "statistics"
+url = "https://api-hc.metatft.com/tft-comps-api/unit_items_processed"
+timeout = 15
+
+[sources.tactics_units]
+provider = "tactics.tools"
+kind = "statistics"
+url = "https://tactics.tools/units"
+timeout = 15
+[sources.tactics_units.expected_filters]
+rankGroup = 1
+
+[sources.academy_guides]
+provider = "tftacademy"
+kind = "guides"
+url = "https://tftacademy.com/tierlist/comps"
+timeout = 15
+
+[sources.metatft_augment_tiers]
+provider = "metatft"
+kind = "enrichment"
+url = "https://api-hc.metatft.com/tft-stat-api/augments_tiers"
+metadata_url = "https://api-hc.metatft.com/tft-comps-api/unit_items_processed"
+timeout = 15
