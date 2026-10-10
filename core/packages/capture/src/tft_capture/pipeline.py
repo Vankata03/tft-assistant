@@ -31,7 +31,7 @@ class EventSink(Protocol):
 
 class CapturePipeline:
     def __init__(self, game_id: str, *, ocr: OCR, sink: EventSink, regions: dict[str, tuple] | None = None,
-                 catalog: NameCatalog | None = None, layout: HudLayout | None = None, visual_reader: VisualReader | None = None, own_player_name: str | None = None):
+                 catalog: NameCatalog | None = None, layout: HudLayout | None = None, visual_reader: VisualReader | None = None, own_player_name: str | None = None, tracking_events=()):
         self.game_id, self.ocr, self.sink = str(game_id), ocr, sink
         self.regions = regions
         self.layout = layout or HudLayout()
@@ -41,6 +41,9 @@ class CapturePipeline:
         self._vision_digest = None
         self._vision_result = None
         self.tracker = PurchaseTracker()
+        self.tracker.restore(tracking_events)
+        self._last_disagreements = None
+        self._last_board_read = None
         self.catalog = catalog or NameCatalog()
         self.fields: dict[str, dict] = {}
         self._hashes: dict[str, bytes] = {}
@@ -77,7 +80,7 @@ class CapturePipeline:
                              for name, rectangle in rectangles.items()}
             # Read the viewed player's label before allowing any own-board read.
             for name in rectangles:
-                if name not in {"shop", "board"}:
+                if name not in {"shop", "board", "bench", "item_bench", "carousel"}:
                     self._read_region(name, frame.crop(pixel_regions[name]), frame, now)
             if self.visual_reader:
                 self._read_vision(frame, pixel_regions, now)
@@ -140,7 +143,7 @@ class CapturePipeline:
         viewed_field = self.fields.get("scouted_player", {})
         viewed = viewed_field.get("value") if viewed_field.get("read_at") == now.isoformat() else None
         own_view = viewed == self.own_player_name if viewed and self.own_player_name else None
-        visual_names = {"board", "bench", "cards", "carousel", "shop", "players"}
+        visual_names = {"board", "bench", "item_bench", "cards", "carousel", "shop", "players"}
         fingerprints = tuple((name, frame.crop(rectangle).size,
             hashlib.blake2b(frame.crop(rectangle).tobytes(), digest_size=16).digest())
             for name, rectangle in pixel_regions.items() if name in visual_names)
@@ -154,12 +157,31 @@ class CapturePipeline:
                 self._vision_digest = digest if self._vision_result.fields else None
             result = self._vision_result
             self._vision_fields = deepcopy(result.fields)
-            for field, value in result.fields.items():
-                if field in {"board", "bench", "items", "item_bench", "components", "completed_items", "owned_copies"} and own_view is not True:
+            output_fields=deepcopy(result.fields)
+            field_sources={}
+            if own_view is True and "board_observations" in result.fields:
+                observations=result.fields["board_observations"]
+                merged,disagreements=self.tracker.reconcile(observations,identity_min=getattr(self.visual_reader,"identity_min",.55))
+                # Reconciliation owns the typed board; a raw complete reader result cannot bypass uncertainty.
+                output_fields.pop("board",None)
+                output_fields.pop("bench",None)
+                output_fields.update(merged)
+                if "board" in merged and any(observation.get("identity_confidence",0)<getattr(self.visual_reader,"identity_min",.55) for observation in observations):
+                    field_sources.update(board=result.source+"+purchase-tracking",bench=result.source+"+purchase-tracking")
+                if disagreements and disagreements!=self._last_disagreements:
+                    self.sink.append_event("reader_disagreement",{"disagreements":disagreements},timestamp=now.isoformat())
+                    self.sink.write_keyframe(frame,reason="reader_disagreement",timestamp=now.isoformat())
+                self._last_disagreements=deepcopy(disagreements)
+                if observations!=self._last_board_read:
+                    self.sink.append_event("board_read",{"observations":observations,"model_version":getattr(self.visual_reader,"model_version",result.source),"label_map":getattr(self.visual_reader,"label_map",{})},timestamp=now.isoformat())
+                    self.sink.write_keyframe(frame,reason="own_board",timestamp=now.isoformat())
+                self._last_board_read=deepcopy(observations)
+            for field, value in output_fields.items():
+                if field in {"board", "bench", "board_observations", "tracked_units", "item_bench_observations", "items", "item_bench", "components", "completed_items", "owned_copies"} and own_view is not True:
                     continue
                 self.fields[field] = {"value": deepcopy(value), "read_at": now.isoformat(),
-                                      "source": result.source, "confidence": result.confidence}
-            if own_view is True and any(field in result.fields for field in ("board", "bench")):
+                                      "source": field_sources.get(field,result.source), "confidence": result.confidence}
+            if own_view is True and any(field in output_fields for field in ("board", "bench")):
                 self.fields["inventory_complete"] = {"value": result.inventory_complete, "read_at": now.isoformat(),
                     "source": result.source, "confidence": result.confidence}
         except (ValueError, OSError, RuntimeError):

@@ -6,6 +6,8 @@ requires-python = ">=3.14,<3.15"
 dependencies = [
     "httpx>=0.28",
     "pillow>=12",
+    "numpy>=2.5",
+    "opencv-python>=5",
     "rapidocr>=3.9.2,<4",
     "onnxruntime>=1.30",
     "winrt-Windows.Media.Ocr>=3.2.1; sys_platform == 'win32'",
@@ -16,6 +18,12 @@ dependencies = [
     "psutil>=7",
     "websockets>=15",
 ]
+
+[project.scripts]
+tft-train = "tft_capture.training:main"
+
+[project.optional-dependencies]
+training = ["torch>=2.14.1", "torchvision>=0.29.1", "onnx>=1.22", "onnxscript>=0.6"]
 
 [build-system]
 requires = ["uv_build>=0.11,<0.12"]

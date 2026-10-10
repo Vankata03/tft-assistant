@@ -21,9 +21,11 @@
     "src/main/**/*",
     "src/preload/**/*",
     "src/shared/**/*",
-    "test/**/*"
+    "test/**/*",
+    "vite.fixture.config.ts"
   ],
   "exclude": [
-    "test/**/*.test.tsx"
+    "test/**/*.test.tsx",
+    "test/browser/**/*"
   ]
 }

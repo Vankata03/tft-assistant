@@ -26,6 +26,8 @@ dev = [
 ]
 # The Live advisor. A public build syncs with `--no-group live`.
 live = ["tft-live"]
+# Explicit offline tooling; normal capture does not import Torch.
+train = ["tft-capture[training]"]
 
 [build-system]
 requires = ["uv_build>=0.11,<0.12"]
@@ -84,4 +86,4 @@ ignore_imports = [
 ]
 unmatched_ignore_imports_alerting = "none"
 # The allowlist module itself calls into the rest of the Engine.
-allow_indirect_imports = true
+allow_indirect_imports = false

@@ -30,12 +30,11 @@ def test_hello_gets_current_state_and_mode_changes_broadcast():
             assert await _recv(ws) == {"v": 1, "type": "gameflow", "client_running": False, "phase": None}
             assert await _recv(ws) == {"v": 1, "type": "session_mode", "mode": "silent", "available_modes": ["silent", "baseline", "live"]}
 
-            server.publish_gameflow(GameflowUpdate(True, "InProgress"))
-            assert (await _recv(ws))["phase"] == "InProgress"
-
             await ws.send(dump(SetSessionMode(mode=SessionMode.LIVE)))
             assert await _recv(ws) == {"v": 1, "type": "session_mode", "mode": "live", "available_modes": ["silent", "baseline", "live"]}
             assert server.mode is SessionMode.LIVE
+            server.publish_gameflow(GameflowUpdate(True, "InProgress"))
+            assert (await _recv(ws))["phase"] == "InProgress"
 
     asyncio.run(_with_server(test))
 
