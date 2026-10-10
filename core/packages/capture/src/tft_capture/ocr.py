@@ -99,11 +99,12 @@ class RapidOCRReader:
         if missing:
             raise ValueError("OCR assets are missing; prepare the locale models before capture: " + ", ".join(missing))
         try:
+            import onnxruntime
+            onnxruntime.disable_telemetry_events()
             from rapidocr import RapidOCR
         except ImportError as error:
             raise RuntimeError("RapidOCR is not installed; sync the capture package dependencies") from error
         if keys_path is None:
-            import onnxruntime
             options = onnxruntime.SessionOptions()
             options.intra_op_num_threads = 1
             metadata = onnxruntime.InferenceSession(str(paths[1]), options, providers=["CPUExecutionProvider"]).get_modelmeta().custom_metadata_map

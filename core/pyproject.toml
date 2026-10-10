@@ -26,6 +26,8 @@ dev = [
 ]
 # The Live advisor. A public build syncs with `--no-group live`.
 live = ["tft-live"]
+# Explicit offline tooling; normal capture does not import Torch.
+train = ["tft-capture[training]"]
 
 [build-system]
 requires = ["uv_build>=0.11,<0.12"]

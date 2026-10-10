@@ -1,0 +1,15 @@
+{
+  "v": 1,
+  "version": "reader-6be07151812d299b",
+  "upstream_commit": "bf22ac92010aef321b9e67d6f125bb2109c41cf4",
+  "base_url": "https://raw.githubusercontent.com/mallangmallang0619/TFT-COACH/bf22ac92010aef321b9e67d6f125bb2109c41cf4/assets/models",
+  "files": {
+    "unit_classifier.json": "a443869d4c2b92198fe837301e305d9cdcc5bb031536738911cd8adc2480409e",
+    "unit_classifier.onnx": "c9bb45168962dfd663a6aaa0633bc27ca7a36b64dee18815a3fee48ef3001996",
+    "unit_classifier.onnx.data": "4f80f8010167d34687b9c3a72ac701140abbfa28035aba8b54bd1b737fc65c6c",
+    "star_level_classifier.json": "893391d33dcd9dbbf36d6869db10790e6a4afaf4fc9f8ef0a9a21477e5cd16e5",
+    "star_level_classifier.onnx": "304e8b7a95b7ee3a87ecee963f937cf5c9383b3b1d3195a8aa2538bb3f8f1bdc",
+    "star_level_classifier.onnx.data": "bb78f5f8e4cb590eaf9db79f5ee0dc2c709272cfaf2013a884d453f34eddf3bc"
+  },
+  "qualification": "Pinned upstream assets; owner held-out and Windows checks pending."
+}
