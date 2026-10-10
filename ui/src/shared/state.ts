@@ -1,3 +1,4 @@
+import type { BaselineState } from './messages'
 // What the shell knows, shared by the main process, the tray and the windows.
 import type { SessionMode } from './protocol'
 
@@ -19,12 +20,20 @@ export interface ShellState {
   availableModes?: readonly SessionMode[]
   /** Latest actionable error reported by the core. */
   error?: string | null
+  baseline?: BaselineState | null
 }
 
-export const INITIAL_STATE: ShellState = { core: 'starting', gameflow: null, mode: null, availableModes: [], error: null }
+export const INITIAL_STATE: ShellState = {
+  core: 'starting',
+  gameflow: null,
+  mode: null,
+  availableModes: [],
+  error: null,
+}
 
 export function describeGameflow(state: ShellState): string {
-  if (state.core !== 'running' || state.gameflow === null) return 'Unknown (core not connected)'
+  if (state.core !== 'running' || state.gameflow === null)
+    return 'Unknown (core not connected)'
   if (!state.gameflow.clientRunning) return 'League client not running'
   const { phase } = state.gameflow
   return phase === null || phase === 'None' ? 'No phase (client idle)' : phase
@@ -46,8 +55,15 @@ export const MODE_LABELS: Record<SessionMode, string> = {
 }
 
 export function canSelectMode(state: ShellState, mode: SessionMode): boolean {
-  if (state.core !== 'running' || state.mode === null || !state.availableModes?.includes(mode)) return false
-  const inGame = ['InProgress', 'Reconnect', 'PreEndOfGame'].includes(state.gameflow?.phase ?? '')
+  if (
+    state.core !== 'running' ||
+    state.mode === null ||
+    !state.availableModes?.includes(mode)
+  )
+    return false
+  const inGame = ['InProgress', 'Reconnect', 'PreEndOfGame'].includes(
+    state.gameflow?.phase ?? '',
+  )
   const ranks = { silent: 0, baseline: 1, live: 2 }
   return !inGame || ranks[mode] <= ranks[state.mode]
 }

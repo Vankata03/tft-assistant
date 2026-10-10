@@ -27,3 +27,7 @@ describe('describeGameflow', () => {
     [running({ clientRunning: true, phase: 'InProgress' }), 'InProgress'],
   ])('%j reads %s', (state, text) => expect(describeGameflow(state)).toBe(text))
 })
+
+it('rejects a silent surface payload containing game content', () => {
+  expect(parseCoreMessage(JSON.stringify({v:1,type:'baseline_state',mode:'silent',status:'logging',stale:[],content:{guides:[]},voice:null}))).toBeNull()
+})

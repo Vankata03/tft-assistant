@@ -86,4 +86,4 @@ ignore_imports = [
 ]
 unmatched_ignore_imports_alerting = "none"
 # The allowlist module itself calls into the rest of the Engine.
-allow_indirect_imports = true
+allow_indirect_imports = false

@@ -10,7 +10,9 @@ import json
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel, TypeAdapter
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, RootModel, TypeAdapter
+
+from tft_core.baseline.contracts import BaselineState
 
 SCHEMA_VERSION = 1
 
@@ -50,6 +52,22 @@ class SetSessionMode(_Message):
     mode: SessionMode
 
 
+class RequestBaselineState(_Message):
+    type: Literal["request_baseline_state"] = "request_baseline_state"
+
+
+class SelectGuide(_Message):
+    type: Literal["select_guide"] = "select_guide"
+    guide_id: str = Field(min_length=1, max_length=200)
+
+
+class SurfaceShown(_Message):
+    type: Literal["surface_shown"] = "surface_shown"
+    surface: Literal["cockpit", "overlay", "voice"]
+    content_id: str = Field(min_length=1, max_length=500)
+    timestamp: AwareDatetime
+
+
 # Core to shell.
 
 
@@ -82,12 +100,24 @@ class ErrorMessage(_Message):
     message: str
 
 
-class UiMessage(RootModel[Annotated[Hello | SetSessionMode, Field(discriminator="type")]]):
+class UiMessage(
+    RootModel[
+        Annotated[
+            Hello | SetSessionMode | RequestBaselineState | SelectGuide | SurfaceShown,
+            Field(discriminator="type"),
+        ]
+    ]
+):
     """Any message the shell sends to the core."""
 
 
 class CoreMessage(
-    RootModel[Annotated[Gameflow | SessionModeState | ErrorMessage, Field(discriminator="type")]]
+    RootModel[
+        Annotated[
+            Gameflow | SessionModeState | ErrorMessage | BaselineState,
+            Field(discriminator="type"),
+        ]
+    ]
 ):
     """Any message the core sends to the shell."""
 
@@ -104,19 +134,25 @@ def _check_version(raw: str | bytes) -> object:
     data = json.loads(raw)
     if not isinstance(data, dict) or data.get("v") != SCHEMA_VERSION:
         version = data.get("v") if isinstance(data, dict) else None
-        raise UnsupportedVersion(f"expected schema version {SCHEMA_VERSION}, got {version!r}")
+        raise UnsupportedVersion(
+            f"expected schema version {SCHEMA_VERSION}, got {version!r}"
+        )
     return data
 
 
-def parse_ui_message(raw: str | bytes) -> Hello | SetSessionMode:
+def parse_ui_message(
+    raw: str | bytes,
+) -> Hello | SetSessionMode | RequestBaselineState | SelectGuide | SurfaceShown:
     """Parse a message from the shell; raises UnsupportedVersion or pydantic.ValidationError."""
     return _ui_adapter.validate_python(_check_version(raw)).root
 
 
-def parse_core_message(raw: str | bytes) -> Gameflow | SessionModeState | ErrorMessage:
+def parse_core_message(
+    raw: str | bytes,
+) -> Gameflow | SessionModeState | ErrorMessage | BaselineState:
     """Parse a message from the core; raises UnsupportedVersion or pydantic.ValidationError."""
     return _core_adapter.validate_python(_check_version(raw)).root
 
 
-def dump(message: _Message) -> str:
+def dump(message: BaseModel) -> str:
     return message.model_dump_json()

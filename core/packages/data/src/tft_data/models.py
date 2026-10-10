@@ -134,6 +134,7 @@ class Guide:
     early_items: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     alternative_builds: tuple[Mapping[str, Any], ...] = ()
     cluster_id: str | None = None
+    early_positions: Mapping[str, int] = field(default_factory=dict)
 
     def __post_init__(self):
         for key in (
@@ -148,6 +149,7 @@ class Guide:
         for key in (
             "items",
             "early_items",
+            "early_positions",
             "alternative_builds",
             "positions",
             "stage_tips",

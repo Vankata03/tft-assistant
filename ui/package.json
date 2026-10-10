@@ -11,7 +11,8 @@
     "gen:types": "node scripts/gen-types.mjs",
     "check:types": "node scripts/gen-types.mjs --check",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "preview:fixture": "vite --config vite.fixture.config.ts"
   },
   "dependencies": {
     "react": "^19.3.0",
