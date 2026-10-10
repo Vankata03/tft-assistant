@@ -9,16 +9,22 @@ import {
   type UiMessage,
 } from '../shared/protocol'
 
-export class CoreLink extends EventEmitter<{ message: [CoreMessage]; closed: [] }> {
+export class CoreLink extends EventEmitter<{
+  message: [CoreMessage]
+  closed: []
+}> {
   private socket: WebSocket | null = null
 
   connect(port: number, token: string): void {
     this.close()
     const socket = new WebSocket(`ws://127.0.0.1:${port}/`)
     this.socket = socket
-    socket.addEventListener('open', () => this.send({ v: SCHEMA_VERSION, type: 'hello', token }))
+    socket.addEventListener('open', () =>
+      this.send({ v: SCHEMA_VERSION, type: 'hello', token }),
+    )
     socket.addEventListener('message', (event) => {
-      const message = typeof event.data === 'string' ? parseCoreMessage(event.data) : null
+      const message =
+        typeof event.data === 'string' ? parseCoreMessage(event.data) : null
       if (message) this.emit('message', message)
       else console.warn('core link: ignored a message it could not parse')
     })
@@ -33,6 +39,28 @@ export class CoreLink extends EventEmitter<{ message: [CoreMessage]; closed: [] 
     this.send({ v: SCHEMA_VERSION, type: 'set_session_mode', mode })
   }
 
+  requestBaseline(): void {
+    this.send({ v: SCHEMA_VERSION, type: 'request_baseline_state' })
+  }
+
+  selectGuide(guideId: string): void {
+    this.send({ v: SCHEMA_VERSION, type: 'select_guide', guide_id: guideId })
+  }
+
+  reportShown(
+    surface: 'cockpit' | 'overlay' | 'voice',
+    contentId: string,
+    timestamp: string,
+  ): void {
+    this.send({
+      v: SCHEMA_VERSION,
+      type: 'surface_shown',
+      surface,
+      content_id: contentId,
+      timestamp,
+    })
+  }
+
   close(): void {
     const socket = this.socket
     this.socket = null
@@ -40,6 +68,7 @@ export class CoreLink extends EventEmitter<{ message: [CoreMessage]; closed: [] 
   }
 
   private send(message: UiMessage): void {
-    if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(message))
+    if (this.socket?.readyState === WebSocket.OPEN)
+      this.socket.send(JSON.stringify(message))
   }
 }

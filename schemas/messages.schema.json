@@ -1,9 +1,299 @@
 {
   "$defs": {
+    "AugmentTier": {
+      "additionalProperties": false,
+      "properties": {
+        "entity": {
+          "$ref": "#/$defs/EntityDisplay"
+        },
+        "global_tier": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Global Tier"
+        },
+        "in_guide": {
+          "title": "In Guide",
+          "type": "boolean"
+        },
+        "offer_index": {
+          "anyOf": [
+            {
+              "maximum": 20,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Offer Index"
+        },
+        "offered": {
+          "default": false,
+          "title": "Offered",
+          "type": "boolean"
+        },
+        "tier": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Tier"
+        }
+      },
+      "required": [
+        "entity",
+        "tier",
+        "global_tier",
+        "in_guide",
+        "offered",
+        "offer_index"
+      ],
+      "title": "AugmentTier",
+      "type": "object"
+    },
+    "BaselineContent": {
+      "additionalProperties": false,
+      "properties": {
+        "anchors": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SurfaceAnchor"
+          },
+          "title": "Anchors",
+          "type": "array"
+        },
+        "augments": {
+          "items": {
+            "$ref": "#/$defs/AugmentTier"
+          },
+          "title": "Augments",
+          "type": "array"
+        },
+        "faced": {
+          "items": {
+            "$ref": "#/$defs/FacedResult"
+          },
+          "title": "Faced",
+          "type": "array"
+        },
+        "guides": {
+          "items": {
+            "$ref": "#/$defs/GuideSummary"
+          },
+          "title": "Guides",
+          "type": "array"
+        },
+        "overlay_allowed": {
+          "default": false,
+          "title": "Overlay Allowed",
+          "type": "boolean"
+        },
+        "overlay_bounds": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OverlayBounds"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "par": {
+          "$ref": "#/$defs/ParChance"
+        },
+        "patch": {
+          "title": "Patch",
+          "type": "string"
+        },
+        "phase": {
+          "default": "unknown",
+          "enum": [
+            "planning",
+            "roll_down",
+            "augment",
+            "carousel",
+            "combat",
+            "end",
+            "unknown"
+          ],
+          "title": "Phase",
+          "type": "string"
+        },
+        "recipes": {
+          "items": {
+            "$ref": "#/$defs/ItemRecipe"
+          },
+          "title": "Recipes",
+          "type": "array"
+        },
+        "round_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Round Id"
+        },
+        "selected": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GuideDisplay"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "shop": {
+          "items": {
+            "$ref": "#/$defs/ShopHighlight"
+          },
+          "title": "Shop",
+          "type": "array"
+        },
+        "snapshot_id": {
+          "title": "Snapshot Id",
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        },
+        "wisps": {
+          "items": {
+            "$ref": "#/$defs/WispWorth"
+          },
+          "title": "Wisps",
+          "type": "array"
+        },
+        "xp_hint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/XpHint"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "patch",
+        "snapshot_id",
+        "round_id",
+        "guides",
+        "selected",
+        "xp_hint",
+        "par",
+        "shop",
+        "recipes",
+        "augments",
+        "wisps",
+        "faced",
+        "warnings",
+        "phase",
+        "anchors",
+        "overlay_bounds",
+        "overlay_allowed"
+      ],
+      "title": "BaselineContent",
+      "type": "object"
+    },
+    "BaselineState": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BaselineContent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "mode": {
+          "enum": [
+            "silent",
+            "baseline",
+            "live"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "stale": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PausedField"
+          },
+          "title": "Stale",
+          "type": "array"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        },
+        "type": {
+          "const": "baseline_state",
+          "default": "baseline_state",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        },
+        "voice": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StageVoice"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "v",
+        "type",
+        "mode",
+        "status",
+        "stale",
+        "content",
+        "voice"
+      ],
+      "title": "BaselineState",
+      "type": "object"
+    },
     "CoreMessage": {
       "description": "Any message the core sends to the shell.",
       "discriminator": {
         "mapping": {
+          "baseline_state": "#/$defs/BaselineState",
           "error": "#/$defs/ErrorMessage",
           "gameflow": "#/$defs/Gameflow",
           "session_mode": "#/$defs/SessionModeState"
@@ -19,9 +309,43 @@
         },
         {
           "$ref": "#/$defs/ErrorMessage"
+        },
+        {
+          "$ref": "#/$defs/BaselineState"
         }
       ],
       "title": "CoreMessage"
+    },
+    "EntityDisplay": {
+      "additionalProperties": false,
+      "properties": {
+        "cost": {
+          "default": 0,
+          "title": "Cost",
+          "type": "integer"
+        },
+        "icon": {
+          "default": "",
+          "title": "Icon",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "icon",
+        "cost"
+      ],
+      "title": "EntityDisplay",
+      "type": "object"
     },
     "ErrorMessage": {
       "additionalProperties": false,
@@ -55,6 +379,30 @@
         "message"
       ],
       "title": "ErrorMessage",
+      "type": "object"
+    },
+    "FacedResult": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "result": {
+          "enum": [
+            "win",
+            "loss",
+            "draw"
+          ],
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "result"
+      ],
+      "title": "FacedResult",
       "type": "object"
     },
     "Gameflow": {
@@ -98,6 +446,131 @@
       "title": "Gameflow",
       "type": "object"
     },
+    "GuideDisplay": {
+      "additionalProperties": false,
+      "properties": {
+        "alternatives": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Alternatives",
+          "type": "array"
+        },
+        "carousel": {
+          "items": {
+            "$ref": "#/$defs/EntityDisplay"
+          },
+          "title": "Carousel",
+          "type": "array"
+        },
+        "early_layout": {
+          "items": {
+            "$ref": "#/$defs/LayoutUnit"
+          },
+          "title": "Early Layout",
+          "type": "array"
+        },
+        "final_layout": {
+          "items": {
+            "$ref": "#/$defs/LayoutUnit"
+          },
+          "title": "Final Layout",
+          "type": "array"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "stage_plan": {
+          "items": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "type": "object"
+          },
+          "title": "Stage Plan",
+          "type": "array"
+        },
+        "stage_tips": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Stage Tips",
+          "type": "object"
+        },
+        "tier": {
+          "title": "Tier",
+          "type": "string"
+        },
+        "units": {
+          "items": {
+            "$ref": "#/$defs/EntityDisplay"
+          },
+          "title": "Units",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "tier",
+        "units",
+        "early_layout",
+        "final_layout",
+        "stage_tips",
+        "stage_plan",
+        "carousel",
+        "alternatives"
+      ],
+      "title": "GuideDisplay",
+      "type": "object"
+    },
+    "GuideSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "tier": {
+          "title": "Tier",
+          "type": "string"
+        },
+        "units": {
+          "items": {
+            "$ref": "#/$defs/EntityDisplay"
+          },
+          "title": "Units",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "tier",
+        "units"
+      ],
+      "title": "GuideSummary",
+      "type": "object"
+    },
     "Hello": {
       "additionalProperties": false,
       "description": "First message on every connection; the core closes it on a wrong token.",
@@ -125,6 +598,238 @@
         "token"
       ],
       "title": "Hello",
+      "type": "object"
+    },
+    "ItemRecipe": {
+      "additionalProperties": false,
+      "properties": {
+        "components": {
+          "items": {
+            "$ref": "#/$defs/RecipeComponent"
+          },
+          "title": "Components",
+          "type": "array"
+        },
+        "item": {
+          "$ref": "#/$defs/EntityDisplay"
+        },
+        "unit": {
+          "$ref": "#/$defs/EntityDisplay"
+        }
+      },
+      "required": [
+        "unit",
+        "item",
+        "components"
+      ],
+      "title": "ItemRecipe",
+      "type": "object"
+    },
+    "LayoutUnit": {
+      "additionalProperties": false,
+      "properties": {
+        "entity": {
+          "$ref": "#/$defs/EntityDisplay"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "maximum": 27,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Position"
+        }
+      },
+      "required": [
+        "entity",
+        "position"
+      ],
+      "title": "LayoutUnit",
+      "type": "object"
+    },
+    "OverlayBounds": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "exclusiveMinimum": 0,
+          "maximum": 20000,
+          "title": "Height",
+          "type": "integer"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "maximum": 20000,
+          "title": "Width",
+          "type": "integer"
+        },
+        "x": {
+          "title": "X",
+          "type": "integer"
+        },
+        "y": {
+          "title": "Y",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "title": "OverlayBounds",
+      "type": "object"
+    },
+    "ParChance": {
+      "additionalProperties": false,
+      "properties": {
+        "paused": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Paused"
+        },
+        "probability": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Probability"
+        },
+        "uncertain": {
+          "default": false,
+          "title": "Uncertain",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "probability",
+        "paused",
+        "uncertain"
+      ],
+      "title": "ParChance",
+      "type": "object"
+    },
+    "PausedField": {
+      "additionalProperties": false,
+      "properties": {
+        "age_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Age Seconds"
+        },
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "field",
+        "age_seconds",
+        "reason"
+      ],
+      "title": "PausedField",
+      "type": "object"
+    },
+    "RecipeComponent": {
+      "additionalProperties": false,
+      "properties": {
+        "entity": {
+          "$ref": "#/$defs/EntityDisplay"
+        },
+        "held": {
+          "title": "Held",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "entity",
+        "held"
+      ],
+      "title": "RecipeComponent",
+      "type": "object"
+    },
+    "RequestBaselineState": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "request_baseline_state",
+          "default": "request_baseline_state",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "type"
+      ],
+      "title": "RequestBaselineState",
+      "type": "object"
+    },
+    "SelectGuide": {
+      "additionalProperties": false,
+      "properties": {
+        "guide_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Guide Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "select_guide",
+          "default": "select_guide",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "type",
+        "guide_id"
+      ],
+      "title": "SelectGuide",
       "type": "object"
     },
     "SessionMode": {
@@ -206,12 +911,163 @@
       "title": "SetSessionMode",
       "type": "object"
     },
+    "ShopHighlight": {
+      "additionalProperties": false,
+      "properties": {
+        "entity": {
+          "$ref": "#/$defs/EntityDisplay"
+        },
+        "in_guide": {
+          "title": "In Guide",
+          "type": "boolean"
+        },
+        "slot": {
+          "maximum": 4,
+          "minimum": 0,
+          "title": "Slot",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "slot",
+        "entity",
+        "in_guide"
+      ],
+      "title": "ShopHighlight",
+      "type": "object"
+    },
+    "StageVoice": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text"
+      ],
+      "title": "StageVoice",
+      "type": "object"
+    },
+    "SurfaceAnchor": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Height",
+          "type": "number"
+        },
+        "index": {
+          "default": 0,
+          "maximum": 20,
+          "minimum": 0,
+          "title": "Index",
+          "type": "integer"
+        },
+        "kind": {
+          "enum": [
+            "shop",
+            "level",
+            "par",
+            "augment",
+            "carousel",
+            "wisp"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Width",
+          "type": "number"
+        },
+        "x": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "index",
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "title": "SurfaceAnchor",
+      "type": "object"
+    },
+    "SurfaceShown": {
+      "additionalProperties": false,
+      "properties": {
+        "content_id": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Content Id",
+          "type": "string"
+        },
+        "surface": {
+          "enum": [
+            "cockpit",
+            "overlay",
+            "voice"
+          ],
+          "title": "Surface",
+          "type": "string"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "title": "Timestamp",
+          "type": "string"
+        },
+        "type": {
+          "const": "surface_shown",
+          "default": "surface_shown",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "type",
+        "surface",
+        "content_id",
+        "timestamp"
+      ],
+      "title": "SurfaceShown",
+      "type": "object"
+    },
     "UiMessage": {
       "description": "Any message the shell sends to the core.",
       "discriminator": {
         "mapping": {
           "hello": "#/$defs/Hello",
-          "set_session_mode": "#/$defs/SetSessionMode"
+          "request_baseline_state": "#/$defs/RequestBaselineState",
+          "select_guide": "#/$defs/SelectGuide",
+          "set_session_mode": "#/$defs/SetSessionMode",
+          "surface_shown": "#/$defs/SurfaceShown"
         },
         "propertyName": "type"
       },
@@ -221,9 +1077,102 @@
         },
         {
           "$ref": "#/$defs/SetSessionMode"
+        },
+        {
+          "$ref": "#/$defs/RequestBaselineState"
+        },
+        {
+          "$ref": "#/$defs/SelectGuide"
+        },
+        {
+          "$ref": "#/$defs/SurfaceShown"
         }
       ],
       "title": "UiMessage"
+    },
+    "WispWorth": {
+      "additionalProperties": false,
+      "properties": {
+        "entity": {
+          "$ref": "#/$defs/EntityDisplay"
+        },
+        "offered_slot": {
+          "anyOf": [
+            {
+              "maximum": 4,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Offered Slot"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "worth": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Worth"
+        }
+      },
+      "required": [
+        "entity",
+        "worth",
+        "source",
+        "offered_slot"
+      ],
+      "title": "WispWorth",
+      "type": "object"
+    },
+    "XpHint": {
+      "additionalProperties": false,
+      "properties": {
+        "buys": {
+          "title": "Buys",
+          "type": "integer"
+        },
+        "gold": {
+          "title": "Gold",
+          "type": "integer"
+        },
+        "passive_xp": {
+          "title": "Passive Xp",
+          "type": "integer"
+        },
+        "target_level": {
+          "title": "Target Level",
+          "type": "integer"
+        },
+        "target_round": {
+          "title": "Target Round",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_level",
+        "target_round",
+        "buys",
+        "gold",
+        "passive_xp",
+        "text"
+      ],
+      "title": "XpHint",
+      "type": "object"
     }
   },
   "description": "Core and shell WebSocket messages, schema version 1.",
