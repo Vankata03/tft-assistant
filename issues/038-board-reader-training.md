@@ -2,7 +2,7 @@
 id: 38
 title: Own-board recognition and crop training
 labels: [implementation:task]
-status: open
+status: closed
 assignee: codex-board-reader
 parent: 34
 blocked_by: [47]
@@ -25,6 +25,10 @@ Implement all referenced requirements. Verify through the approved public seams 
 
 ## Comments
 
+### 2026-10-10 — codex (integration resolution)
+
+Reader implementation `9c739b5` and guarded-promotion fix `a719c98` are integrated through merges `5a74f06` and `c833058` on `implement/mvp`. Root inspection identified the unchecked star-bundle and compared-byte gaps before closure; the fix now rejects both through the public acceptance workflow. Final combined macOS verification passed 154 Python tests with the explicit offline training group and no skips, 31 UI tests, both import contracts, schema/lock/type/build checks and diff checks. All commands exited 0; two existing ONNX-export deprecation warnings remain. This closes the software boundary only. Actual owner-data training, measured calibration, Windows accuracy and target latency remain open in ticket 49; full capture and runtime integration remain in tickets 37 and 45.
+
 ### 2026-10-06 — codex (asset preflight)
 
 The required upstream commit resolves to `bf22ac92010aef321b9e67d6f125bb2109c41cf4`. Primary repository: <https://github.com/mallangmallang0619/TFT-COACH>. The pinned model assets include both `.onnx` and external `.onnx.data` files, plus JSON metadata; downloading only `.onnx` is insufficient. Unit weights total about 16 MB and star weights about 6 MB. Upstream configuration skips zero-based bench slot 8 via `UNSAFE_BENCH_SLOTS`; ticket 38 must read all nine. Unit/star inference requests `CPUExecutionProvider`. The full historical benchmark dataset is unavailable here; do not claim equivalent recognition or retraining evidence from the nine committed JPEGs.
@@ -46,3 +50,11 @@ Public APIs and commands are documented in [capture-boundary.md](../docs/agents/
 No owner-labelled full-roster held-out dataset, actual owner-crop retraining, measured Maokai foot offset, Windows reader/capture execution, or target-hardware recognition/latency evidence is available. Those acceptance conditions remain open in [ticket 49](049-capture-device-qualification.md). Full visual choices, active Lux Origin/traits, complete inventory/events and runtime capture integration remain in tickets 37 and 45. Ticket 38 stays open until its software commit is reviewed and integrated.
 
 Final checks on integration base `804c60c`: `uv run --group train pytest -q` passed 139 tests and exited 0; the focused reader/CLI suite passed 17 tests and exited 0. `lint-imports` kept both contracts; `tft-schemas --check`, `uv lock --check`, scoped Ruff checks and `git diff --check` passed. Normal reader/CLI startup imported no Torch. The explicit `prepare-models` CLI fetched and verified the complete pinned bundle, and `BoardReader.from_version` opened version `reader-6be07151812d299b` with `CPUExecutionProvider`. A final provenance regression confirms that a board identity supplied by tracking records the combined reader/purchase-tracking source. The optional style check initially reported import/unused-variable findings; those were corrected while retaining upstream explicit pixel casts for comparison. The bounded documentation preservation check passed 124/124 constraints.
+
+### 2026-10-10 — codex (promotion byte qualification)
+
+The held-out gate qualifies only the unit classifier. Acceptance now rejects candidate star models, external weights or metadata that differ from current. It records both bundles' hashes before inference and rejects changes after comparison, after copying and before pointer publication. A rejected attempt preserves the last-good pointer and existing cache entries; any new candidate cache version from that attempt is removed. The success fixture promotes changed unit weights with unchanged stars.
+
+Six new public `accept` CLI regressions cover changed star weights, current or candidate metadata changing during real CPU inference, candidate bytes changing after report publication, current bytes changing during copying, and current bytes changing after cache publication. External ONNX Runtime and filesystem fault fixtures exercise those transitions without replacing application collaborators. Red runs demonstrated unchecked promotion for changed stars, candidate changes during inference or report publication, and current changes during copying or cache publication.
+
+Merged integration base `224fe56`. Two full `uv run --group train pytest -q` runs passed 154 tests and exited 0, including the real inference and export parity checks. Both import contracts, schema generation check and lock check passed. Scoped Ruff lint/format and `git diff --check` passed after fixing assertion formatting. An initial `uv run --no-sync ruff` invocation failed because Ruff is not installed in the project environment; `uv tool run ruff` supplied the style tool. The two existing legacy ONNX export deprecation warnings remain. The bounded documentation preservation check passed 124/124 constraints; phrase and structure scans found no defects, and pre-existing soft document-shape/readability warnings were retained without expanding the edit. Ticket 49 still owns the external qualification gaps recorded above. Ticket 38 remains open for integration review.

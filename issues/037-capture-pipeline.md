@@ -18,9 +18,15 @@ blocked_by: [47, 38]
 
 WGC/BitBlt capture, fractional HUD anchors and UI scale, OCR/template matching and name matching, change cadence and roll-down cadence, required captured fields, purchase/sell/pick tracking, fight events, stale values, capture gaps and core log integration.
 
+This ticket implements and verifies the full capture software boundary. Actual HUD calibration, game-font assets, Windows behavior, recognition/cadence and target-device evidence remain in [ticket 49](049-capture-device-qualification.md). Ticket 45 owns final supervised application lifecycle wiring. A software closure here does not close those requirements or the parent specification.
+
 Implement all referenced requirements. Verify through the approved public seams in [implementation contract](../docs/agents/implementation.md). Record platform checks separately; keep unmet acceptance explicit.
 
 ## Comments
+
+### 2026-10-10 — codex (full capture resumed)
+
+Reader ticket 38 is integrated and its software boundary closed. Resume full ticket 37 from the current `implement/mvp` tip; preserve the earlier clean prerequisite worktree. Capture must retain positively observed own trait counts and active Lux Origin separately from canonical shop/pool identity. Use the completed reader and the [Baseline publication contract](../docs/agents/baseline-boundary.md) rather than duplicating either. Missing visual evidence remains unavailable; runtime phase publication must use positively read phase evidence.
 
 ### 2026-10-07 — codex (dependency split)
 

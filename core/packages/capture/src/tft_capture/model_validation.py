@@ -106,6 +106,8 @@ def compare_models(current, candidate, split_path, report_path):
 
     split_path = Path(split_path)
     split = load_split(split_path)
+    current_files = model_files(current)
+    candidate_files = model_files(candidate)
     current_meta = json.loads((Path(current) / "unit_classifier.json").read_text())
     existing = CPUClassifier(
         current, "unit_classifier", set_number=current_meta["set_number"]
@@ -226,12 +228,27 @@ def compare_models(current, candidate, split_path, report_path):
         }
     old_correct = sum(row["current"] == row["label"] for row in predictions)
     new_correct = sum(row["candidate"] == row["label"] for row in predictions)
+    if current_files != model_files(current) or candidate_files != model_files(
+        candidate
+    ):
+        raise ValueError(
+            "Model bundle changed during held-out comparison; repeat qualification"
+        )
+    star_names = {
+        "star_level_classifier" + suffix for suffix in (".json", ".onnx", ".onnx.data")
+    }
+    star_bundle_changed = any(
+        current_files.get(name) is None
+        or current_files.get(name) != candidate_files.get(name)
+        for name in star_names
+    )
     report = {
         "v": 1,
         "accepted": not missing_labels
         and not unqualified
         and not unverified_labels
         and not regressions
+        and not star_bundle_changed
         and new_correct >= old_correct,
         "qualified": not missing_labels and not unqualified,
         "unverified_labels": unverified_labels,
@@ -242,11 +259,13 @@ def compare_models(current, candidate, split_path, report_path):
         "current_correct": old_correct,
         "candidate_correct": new_correct,
         "dataset_fingerprint": split["dataset_fingerprint"],
-        "current_files": model_files(current),
-        "candidate_files": model_files(candidate),
+        "current_files": current_files,
+        "candidate_files": candidate_files,
+        "star_bundle_changed": star_bundle_changed,
         "per_class": per_class,
         "predictions": predictions,
         "policy": {
+            "qualified_scope": "unit_classifier; unchanged current star bundle required",
             "minimum_class_crops": 20,
             "minimum_class_games": 5,
             "paired_regression_alpha": 0.05,
@@ -264,7 +283,18 @@ def promote(current, candidate, split, report, pointer, cache):
     result = compare_models(current, candidate, split, report)
     if not result["accepted"]:
         return result
-    files = model_files(candidate)
+
+    def verify_compared_bytes():
+        if (
+            model_files(current) != result["current_files"]
+            or model_files(candidate) != result["candidate_files"]
+        ):
+            raise ValueError(
+                "Model bundle changed after held-out comparison; repeat qualification"
+            )
+
+    verify_compared_bytes()
+    files = result["candidate_files"]
     required = {
         stem + suffix
         for stem in ("unit_classifier", "star_level_classifier")
@@ -276,27 +306,36 @@ def promote(current, candidate, split, report, pointer, cache):
     cache = Path(cache)
     destination = cache / version
     cache.mkdir(parents=True, exist_ok=True)
-    if not destination.exists():
-        with tempfile.TemporaryDirectory(
-            prefix=".reader-promote-", dir=cache
-        ) as temporary:
-            staging = Path(temporary) / version
-            staging.mkdir()
-            for name in files:
-                shutil.copy2(Path(candidate) / name, staging / name)
-            if model_files(staging) != files:
-                raise ValueError("Candidate changed during promotion")
-            staging.replace(destination)
-    if model_files(destination) != files:
-        raise ValueError("Existing model version cache is corrupt")
-    atomic_json(
-        pointer,
-        {
-            "v": 1,
-            "version": version,
-            "files": files,
-            "dataset_fingerprint": result["dataset_fingerprint"],
-            "acceptance_policy": result["policy"],
-        },
-    )
+    created_destination = False
+    try:
+        if not destination.exists():
+            with tempfile.TemporaryDirectory(
+                prefix=".reader-promote-", dir=cache
+            ) as temporary:
+                staging = Path(temporary) / version
+                staging.mkdir()
+                for name in files:
+                    shutil.copy2(Path(candidate) / name, staging / name)
+                verify_compared_bytes()
+                if model_files(staging) != files:
+                    raise ValueError("Candidate changed during promotion")
+                staging.replace(destination)
+                created_destination = True
+        if model_files(destination) != files:
+            raise ValueError("Existing model version cache is corrupt")
+        verify_compared_bytes()
+        atomic_json(
+            pointer,
+            {
+                "v": 1,
+                "version": version,
+                "files": files,
+                "dataset_fingerprint": result["dataset_fingerprint"],
+                "acceptance_policy": result["policy"],
+            },
+        )
+    except (ValueError, OSError):
+        if created_destination:
+            shutil.rmtree(destination)
+        raise
     return result
