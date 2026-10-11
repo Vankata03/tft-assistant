@@ -317,11 +317,32 @@ class BaselineController:
                 )
             )
         offered_wisp = field("wisp") or {}
+        stage_table = data.static.get("wisp_worth_table")
         worth_table = data.static.get("wisp_worth")
+        worth_stage = str(round_id).split("-")[0] if round_id else None
         for id, rule in data.value("wisps").items():
             if id not in data.entities:
                 raise DataError(f"Wisp entity unavailable: {id}")
-            worth = worth_table.value.get(id) if worth_table else rule.get("worth")
+            label = None
+            error = None
+            source = worth_table.source if worth_table else data.static["wisps"].source
+            if stage_table is not None:
+                source = stage_table.source
+                row = stage_table.value.get(id, {}).get(worth_stage, {})
+                label = row.get("label")
+                worth = row.get("placement_gain")
+                error = row.get("paired_standard_error")
+                if label not in (None, "worth_it", "situational", "skip", "unavailable"):
+                    warnings.append(f"Wisp worth label unavailable: {id}")
+                    label = None
+                    worth = error = None
+                if label in (None, "unavailable"):
+                    worth = error = None
+                if error is not None and (isinstance(error, bool) or not isinstance(error, (int, float)) or not isfinite(error) or error < 0):
+                    warnings.append(f"Wisp paired error unavailable: {id}")
+                    error = None
+            else:
+                worth = worth_table.value.get(id) if worth_table else rule.get("worth")
             if worth is not None and (
                 not isinstance(worth, (int, float)) or not isfinite(worth)
             ):
@@ -331,9 +352,10 @@ class BaselineController:
                 WispWorth(
                     entity=entity(id),
                     worth=worth,
-                    source=worth_table.source
-                    if worth_table
-                    else data.static["wisps"].source,
+                    source=source,
+                    worth_label=label,
+                    worth_stage=worth_stage if stage_table is not None else None,
+                    paired_standard_error=error,
                     offered_slot=offered_wisp.get("slot", 4)
                     if offered_wisp.get("wisp_id") == id
                     else None,

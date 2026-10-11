@@ -6,6 +6,22 @@ from tft_data import DataStore
 NOW = datetime(2026, 10, 6, tzinfo=UTC)
 
 
+def test_augment_pick_stage_survives_refresh_persistence_and_thin_sample_prior_keys(tmp_path):
+    from tft_data.sources import MemorySource
+    from datetime import timedelta
+    path=patch_files(tmp_path/'patch')
+    rows=[{'id':'augment','kind':'augment','avg':3.0+order,'count':1000,'order':order} for order in (0,1,2)]
+    source=MemorySource('metatft','statistics','test.1',NOW,{'rows':rows})
+    store=DataStore(tmp_path/'snapshots')
+    first=store.refresh(path,sources=(source,),now=NOW).snapshot
+    assert [(r.pick_stage,r.average_placement) for r in first.statistics]==[(1,3.0),(2,4.0),(3,5.0)]
+    restored=DataStore(tmp_path/'snapshots').refresh(path,now=NOW+timedelta(minutes=1)).snapshot
+    assert [(r.pick_stage,r.average_placement) for r in restored.statistics]==[(1,3.0),(2,4.0),(3,5.0)]
+    thin=MemorySource('metatft','statistics','test.1',NOW+timedelta(hours=1),{'rows':[dict(row,avg=7.0,count=10) for row in rows]})
+    carried=store.refresh(path,sources=(thin,),now=NOW+timedelta(hours=1)).snapshot
+    assert [(r.pick_stage,r.average_placement,r.stale) for r in carried.statistics]==[(1,3.0,True),(2,4.0,True),(3,5.0,True)]
+
+
 def test_missing_patch_does_not_invent_game_data(tmp_path):
     store = DataStore(tmp_path / "snapshots")
     result = store.refresh(tmp_path / "missing", now=NOW)
@@ -1088,3 +1104,33 @@ def test_thin_qualified_update_cannot_resurrect_an_unqualified_cohort_prior(
     assert result.snapshot.sources["units"].qualified
     assert not result.snapshot.statistics
     assert original.statistics[0].average_placement == 4.2
+
+
+@pytest.mark.parametrize('order',(-1,3,True))
+def test_invalid_provider_pick_stage_is_unavailable_and_never_installed(tmp_path,order):
+    from tft_data.sources import MemorySource
+    path=patch_files(tmp_path/'patch')
+    source=MemorySource('metatft','statistics','test.1',NOW,{'rows':[
+        {'id':'augment','kind':'augment','avg':4,'count':1000,'order':order}]})
+    report=DataStore(tmp_path/'snapshots').refresh(path,sources=(source,),now=NOW)
+    assert not report.snapshot.statistics
+    assert report.snapshot.sources['metatft'].qualified is False
+    assert any('order' in reason.lower() for reason in report.snapshot.sources['metatft'].qualification_reasons)
+    assert any('order' in warning.lower() for warning in report.warnings)
+
+
+@pytest.mark.parametrize('effect',(
+    {'effect_kind':'risky','values':{'outcomes':[{'probability':1,'effect':{'effect_kind':'gold','values':{'gold':4}}}]}},
+    {'effect_kind':'sale_modifier','values':{'duration_rounds':1,'sale_gold_by_cost_star':{'1':{'1':1}}}},
+))
+def test_supported_conditional_and_sale_effects_publish_as_immutable_patch_data(tmp_path,effect):
+    import tomllib
+    import tomli_w
+    path=patch_files(tmp_path/'patch')
+    static=tomllib.loads((path/'static.toml').read_text())
+    static['fields']['wisps']['value']={'fixture':dict(effect,cost=1,offer_stages=['3'])}
+    (path/'static.toml').write_text(tomli_w.dumps(static))
+    result=DataStore(tmp_path/'snapshots').refresh(path,sources=(),now=NOW)
+    assert result.snapshot.value('wisps')['fixture']['effect_kind']==effect['effect_kind']
+    with pytest.raises(TypeError):
+        result.snapshot.value('wisps')['fixture']['values']['invented']=0

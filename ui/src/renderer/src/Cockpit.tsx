@@ -12,6 +12,7 @@ import {
 } from '../../shared/state'
 import { SessionModeSelector } from './ModeSelector'
 import { displayRevision, useShown } from './shown'
+import { wispWorthText } from './wispWorth'
 
 const TIER_ORDER: Record<string, number> = {
   'S+': 0,
@@ -262,7 +263,7 @@ function ReferencePanels({
                   <EntityName entity={row.entity} small />
                 </td>
                 <td title={`Source: ${row.source}`}>
-                  {row.worth ?? 'Unavailable'}
+                  {wispWorthText(row)}
                 </td>
               </tr>
             ))}

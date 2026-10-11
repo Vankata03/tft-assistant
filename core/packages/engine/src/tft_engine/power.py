@@ -48,6 +48,16 @@ def keyed(table, key):
     return table.get(str(key), table.get(key)) if isinstance(table, Mapping) else None
 
 
+def stage_tunable(data, name, round_id):
+    value=tunable(data,name)
+    if isinstance(value,Mapping):
+        stage=str(round_id).split('-')[0]
+        value=keyed(value,stage)
+        if value is None:
+            raise DataError(f'Missing {name} for stage {stage}')
+    return float(value)
+
+
 def lobby_rate(data):
     rate = getattr(data, 'lobby_top4_rate', None)
     if rate is None:

@@ -378,3 +378,25 @@ def test_shop_membership_uses_checked_unit_form_identity():
     )
     controller.select(guide.id)
     assert controller.state("baseline", now=now).content.shop[0].in_guide
+
+
+def test_baseline_reads_only_current_stage_wisp_reference_and_preserves_unavailable_rows():
+    from dataclasses import replace
+    from datetime import UTC, datetime
+    from tft_data import TaggedValue
+    from tft_core.baseline import BaselineController
+
+    now=datetime(2026,10,12,tzinfo=UTC)
+    data=fixture_data()
+    table={'wisp':{'3':{'label':'situational','placement_gain':.12,'paired_standard_error':.03,'source':'engine_standard_state'}}}
+    data=replace(data,static=dict(data.static)|{'wisp_worth_table':TaggedValue(table,'owner','synthetic standard states')})
+    controller=BaselineController()
+    controller.update(data=data,snapshot={'round_id':'3-2','phase':'planning','fields':{}},now=now)
+    row=controller.state('baseline',now=now).content.wisps[0]
+    assert row.worth_label=='situational' and row.worth_stage=='3'
+    assert row.worth==.12 and row.paired_standard_error==.03 and row.source=='owner'
+    controller.update(data=data,snapshot={'round_id':'4-2','phase':'planning','fields':{}},now=now)
+    missing=controller.state('baseline',now=now).content.wisps[0]
+    assert missing.worth is None and missing.worth_label is None
+    assert missing.worth_stage=='4' and missing.paired_standard_error is None
+    assert controller.state('silent',now=now).content is None

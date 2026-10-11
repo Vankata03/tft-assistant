@@ -1,6 +1,6 @@
 """Greedy strongest-owned selection followed by strict swap improvement."""
 from .models import Board, Advice
-from .power import strength, tunable, static, estimate_strength
+from .power import strength, tunable, static, estimate_strength, stage_tunable
 from .lines import guide_line
 from .opponents import round_index
 from .shop_math import canonical_id
@@ -16,7 +16,7 @@ def strongest_owned_board(board,level,data,*,target=None,round_id=None):
     guide=data.guides.get(target) if target else None
     deadline=main_roll_down(guide,data) if guide else None
     forced=bool(deadline and round_id and round_index(round_id,data)>=round_index(deadline,data))
-    tolerance=float(tunable(data,'transition_tolerance'))
+    tolerance=stage_tunable(data,'transition_tolerance',round_id)
     weights=tunable(data,'classifier_weights')
     target_pools={canonical_id(id,data) for id in guide.units} if guide else set()
     carry_pools={canonical_id(id,data) for id in guide.carry_ids} if guide else set()
@@ -73,12 +73,13 @@ def strongest_owned_board(board,level,data,*,target=None,round_id=None):
 
 
 def transition_advice(snapshot,recommended,plan,data):
-    current=snapshot.field('board')
+    from .planning import read
+    current=read(snapshot,data,'board')
     old=list(current.units); new=list(recommended.units)
     for unit in tuple(old):
         if unit in new:
             old.remove(unit); new.remove(unit)
-    value=estimate_strength(recommended,int(snapshot.field('level')),data)
+    value=estimate_strength(recommended,int(read(snapshot,data,'level')),data)
     validity={'round':snapshot.round_id,'board':current.to_dict()}
     advice=[]
     if old or new:

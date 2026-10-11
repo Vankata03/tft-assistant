@@ -97,6 +97,9 @@ const content: BaselineContent = {
     {
       entity: unit('wisp', 'Fixture Wisp', 0),
       worth: 3.5,
+      worth_label: null,
+      worth_stage: null,
+      paired_standard_error: null,
       source: 'owner',
       offered_slot: 4,
     },

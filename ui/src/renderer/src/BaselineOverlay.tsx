@@ -1,5 +1,6 @@
 import type { ShellState } from '../../shared/state'
 import { displayRevision, useShown } from './shown'
+import { wispWorthText } from './wispWorth'
 
 export function BaselineOverlay({
   state,
@@ -50,11 +51,11 @@ export function BaselineOverlay({
               (row) => row.offered_slot === anchor.index,
             )
             if (row) {
-              text =
-                row.worth === null
-                  ? 'paused · static Wisp worth unavailable'
-                  : `Static worth ${row.worth}`
-              paused = row.worth === null
+              const worth = wispWorthText(row)
+              paused = worth === 'Unavailable'
+              text = paused
+                ? 'paused · static Wisp worth unavailable'
+                : `Static worth ${worth}`
             }
           } else if (
             anchor.kind === 'carousel' &&

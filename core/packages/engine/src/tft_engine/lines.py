@@ -42,6 +42,13 @@ class SimulationEffects:
     xp_per_round: int = 0
     roll_cost_delta: float = 0.0
     shop_slots_delta: float = 0.0
+    round_income: Mapping = field(default_factory=dict)
+    sale_gold_by_cost_star: Mapping = field(default_factory=dict)
+    round_modifiers: Mapping = field(default_factory=dict)
+    def __post_init__(self):
+        object.__setattr__(self,'round_income',freeze(self.round_income))
+        object.__setattr__(self,'sale_gold_by_cost_star',freeze(self.sale_gold_by_cost_star))
+        object.__setattr__(self,'round_modifiers',freeze(self.round_modifiers))
 
 @dataclass(frozen=True)
 class RoundProjection:
@@ -72,8 +79,13 @@ class LineResult:
         return _encode(self)
 
 
-def snapshot_seed(snapshot):
-    payload=json.dumps(snapshot.to_dict(),sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False).encode()
+def snapshot_seed(snapshot,data=None):
+    from .planning import read
+    # Re-reading unchanged pixels is not a new random experiment. Capture
+    # timestamps/nonces remain in evidence; the tape follows semantic values.
+    names=('board','bench','inventory_complete','gold','hp','level','xp','streak','lobby','slot_count','shop','roll_down','comp_lock','pinned_line','held_augments','held_augments_complete','item_bench','item_inventory_complete','remaining_effects','remaining_effects_complete')
+    state={'game_id':snapshot.game_id,'round_id':snapshot.round_id,'fields':{name:_encode(read(snapshot,data,name) if data is not None else snapshot.field(name)) for name in names}}
+    payload=json.dumps(state,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False).encode()
     return int.from_bytes(sha256(payload).digest()[:8],'big')
 
 
@@ -156,41 +168,46 @@ def _terminal(power,hp,opponent_powers,opponent_hp,stage,data):
 
 def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=None,opponents=(),seed=None,backup_id=None,assume_keys_on_time=False):
     """Return every scored concrete Line; all candidates use the same random tape."""
-    from .planning import required
+    from .planning import required, read
     missing=required(snapshot,data,('board','bench','gold','hp','level','xp','streak','lobby'))
     if missing:
         raise DataError('Simulation fields missing or stale: ' + ', '.join(missing))
-    effects=effects or SimulationEffects()
+    from .effects import captured, combine
+    effects=combine(captured(snapshot,data),effects) or SimulationEffects()
     if effects.free_rolls<0 or effects.gold_reduction<0:
         raise DataError('Free rolls and gold reduction must be nonnegative')
-    if float(snapshot.field('gold'))+effects.gold_delta-effects.gold_reduction<0:
+    if float(read(snapshot,data,'gold'))+effects.gold_delta-effects.gold_reduction<0:
         raise DataError('Simulation option is unaffordable')
     rounds=horizon_rounds(snapshot,data)
     count=int(rollouts or tunable(data,'rollouts_full'))
     if count<1:
         raise DataError('Rollout count must be positive')
-    seed=snapshot_seed(snapshot) if seed is None else seed
+    seed=snapshot_seed(snapshot,data) if seed is None else seed
     rules=static(data,'rules_flags')
     guide=data.guides[comp_id]
     from .shop_math import key_goals, owned_copies, canonical_id
     from .sim_board import RolloutBoard
     from .transition import main_roll_down
-    from .bench import sale_value
+    from .bench import sale_value as base_sale_value
+    def sale_value(unit,data,modifiers=None):
+        cost=data.entities[unit.unit_id].cost
+        bonus=keyed(keyed(effects.sale_gold_by_cost_star,cost) or {},unit.stars) or 0
+        return base_sale_value(unit,data)+float(bonus)+float(keyed(keyed((modifiers or {}).get('sale_gold_by_cost_star',{}),cost) or {},unit.stars) or 0)
     goals=key_goals(guide,data)
-    board=snapshot.field('board')
+    board=read(snapshot,data,'board')
     if effects.item_state is not None:
         board=effects.item_state
-    bench=snapshot.field('bench')
+    bench=read(snapshot,data,'bench')
     if effects.item_state is None and board.bench!=bench:
         board=Board(board.units,bench,board.trait_counts)
     prepared=RolloutBoard(board,data,guide)
-    initial=strength(board,int(snapshot.field('level')),data)
-    confidence=min(prepared.confidence,estimate_strength(board,int(snapshot.field('level')),data).confidence)
+    initial=strength(board,int(read(snapshot,data,'level')),data)
+    confidence=min(prepared.confidence,estimate_strength(board,int(read(snapshot,data,'level')),data).confidence)
     for name in ('terminal_gold_weight','terminal_hp_weight','fight_scale','survivor_scale_by_stage'):
         if data.tunables[name].source in ('default','carried'):
             confidence=min(confidence,float(tunable(data,'confidence_medium_min')))
     from .lobby import alive_lobby
-    hp_map=alive_lobby(snapshot)
+    hp_map=alive_lobby(snapshot,data)
     ids=tuple(hp_map)
     health=tuple(hp_map.values())
     by_id={p.opponent_id:p for p in opponents}
@@ -203,21 +220,22 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
     pool=np.array([float(keyed(static(data,'pool_sizes'),int(c))) for c in prepared.costs])
     pool-=np.array([contested.get(id,0) for id in prepared.ids])
     pool=np.maximum(pool,0)
-    total_income=sum(float(static(data,'gold_by_round').get(r,static(data,'gold_by_round').get('default',0)))+float(static(data,'interest')['cap'])+max(map(float,static(data,'streak_gold').values()),default=0)+float(rules['combat_win_gold'])+float(rules['pve_orb_gold'].get(r,0))+max(0,effects.gold_per_round) for r in rounds)
-    roll_cost=float(rules['roll_cost'])+effects.roll_cost_delta
+    total_income=sum(float(static(data,'gold_by_round').get(r,static(data,'gold_by_round').get('default',0)))+float(static(data,'interest')['cap'])+max(map(float,static(data,'streak_gold').values()),default=0)+float(rules['combat_win_gold'])+float(rules['pve_orb_gold'].get(r,0))+max(0,effects.gold_per_round)+max(0,float(effects.round_income.get(r,{}).get('gold',0))) for r in rounds)
+    roll_cost=min(float(rules['roll_cost'])+effects.roll_cost_delta+float(effects.round_modifiers.get(r,{}).get('roll_cost_delta',0)) for r in rounds)
     if roll_cost<=0:
         raise DataError('Modified roll cost must be positive')
-    max_shops=int(ceil((float(snapshot.field('gold'))+max(0,effects.gold_delta)+total_income)/roll_cost))+effects.free_rolls+1+int(sum(sale_value(u,data) for u in board.bench)/roll_cost)
-    slots=float(snapshot.field('slot_count') if snapshot.field('slot_count') is not None else rules['unknown_wisp_slots'])+effects.shop_slots_delta
+    max_shops=int(ceil((float(read(snapshot,data,'gold'))+max(0,effects.gold_delta)+total_income)/roll_cost))+effects.free_rolls+1+int(sum(max(sale_value(u,data,effects.round_modifiers.get(r,{})) for r in rounds) for u in board.bench)/roll_cost)
+    base_slots=float(read(snapshot,data,'slot_count') if read(snapshot,data,'slot_count') is not None else rules['unknown_wisp_slots'])+effects.shop_slots_delta
+    possible_slots=tuple(base_slots+float(effects.round_modifiers.get(r,{}).get('shop_slots_delta',0)) for r in rounds)
+    slots=min(possible_slots)
     if slots<=0:
         raise DataError('Champion slot count must be positive')
     max_slots=int(rules['champion_slots_max'])
-    if slots>max_slots:
+    if max(possible_slots)>max_slots:
         raise DataError('Modified champion slots exceed the static maximum')
-    from .bench import roll_sale_indices, sale_value
+    from .bench import roll_sale_indices
     sale_units=tuple(board.bench[i] for i in roll_sale_indices(board,data,target=comp_id,backup=backup_id))
     sale_copies=np.array([sum(3**(u.stars-1) for u in sale_units if canonical_id(u.unit_id,data)==id) for id in prepared.ids])
-    sale_gold=sum(sale_value(u,data) for u in sale_units)
     deadline=main_roll_down(guide,data)
     goal_indices=np.array([prepared.index[id] for id in goals],dtype=int)
     goal_values=np.array(list(goals.values()))
@@ -232,7 +250,7 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
     odds_lookup=np.divide(odds_lookup,total_odds[:,None],out=np.zeros_like(odds_lookup),where=total_odds[:,None]>0)
     desired=np.array([goals.get(id,1) for id in prepared.ids])
     key_mask=np.array([id in goals for id in prepared.ids])
-    current_shop=snapshot.field('shop') if not required(snapshot,data,('shop',)) else None
+    current_shop=read(snapshot,data,'shop') if not required(snapshot,data,('shop',)) else None
     curve={r:growth_curve_lookup(r,data) for r in rounds}
     offsets={id:by_id[id].power-curve[snapshot.round_id] if id in by_id else 0.0 for id in ids}
     results=[]
@@ -241,11 +259,11 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
         return ()
     runs=count*len(lines)
     stabilizing=np.repeat([line.stabilize for line in lines],count)
-    gold=np.full(runs,float(snapshot.field('gold'))+effects.gold_delta-effects.gold_reduction)
-    hp=np.full(runs,float(snapshot.field('hp')))
-    level=np.full(runs,int(snapshot.field('level')),dtype=int)
-    xp=np.full(runs,float(snapshot.field('xp'))+effects.xp_delta)
-    streak=np.full(runs,int(snapshot.field('streak')),dtype=int)
+    gold=np.full(runs,float(read(snapshot,data,'gold'))+effects.gold_delta-effects.gold_reduction)
+    hp=np.full(runs,float(read(snapshot,data,'hp')))
+    level=np.full(runs,int(read(snapshot,data,'level')),dtype=int)
+    xp=np.full(runs,float(read(snapshot,data,'xp'))+effects.xp_delta)
+    streak=np.full(runs,int(read(snapshot,data,'streak')),dtype=int)
     level,xp=normalize_xp(level,xp,data)
     copies=np.broadcast_to(prepared.initial,(runs,len(prepared.ids))).copy()
     power=np.full(runs,initial)
@@ -256,6 +274,10 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
     projections=[[] for _ in lines]
     for ri,round_id in enumerate(rounds):
         stage=int(round_id.split('-')[0])
+        modifiers=effects.round_modifiers.get(round_id,{})
+        roll_cost=float(rules['roll_cost'])+effects.roll_cost_delta+float(modifiers.get('roll_cost_delta',0))
+        slots=base_slots+float(modifiers.get('shop_slots_delta',0))
+        sale_gold=sum(sale_value(u,data,modifiers) for u in sale_units)
         alive=hp>0
         floor=np.repeat(np.array([line.rolls.get(round_id,np.nan) for line in lines]),count)
         has_floor=np.isfinite(floor)
@@ -386,8 +408,9 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
             streak_gold=np.where(np.abs(streak)>=int(threshold),float(value),streak_gold)
         orb=float(rules['pve_orb_gold'].get(round_id,0)) if kind=='pve' else 0
         planned_gold=gold.reshape(len(lines),count).mean(axis=1)
-        gold+=alive*(float(base)+interest_gold+streak_gold+won*float(rules['combat_win_gold'])+orb+effects.gold_per_round)
-        xp+=alive*(float(rules['passive_xp'])+effects.xp_per_round)
+        reward=effects.round_income.get(round_id,{})
+        gold+=alive*(float(base)+interest_gold+streak_gold+won*float(rules['combat_win_gold'])+orb+effects.gold_per_round+float(reward.get('gold',0)))
+        xp+=alive*(float(rules['passive_xp'])+effects.xp_per_round+float(reward.get('xp',0)))
         level,xp=normalize_xp(level,xp,data)
         # Passive XP can raise the terminal unit cap after the current fight.
         terminal_power=prepared.power(copies,level,forced=forced)
@@ -414,6 +437,7 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
 
 
 def candidate_lines(snapshot,data,guide,*,rounds_left=float('inf')):
+    from .planning import read
     base=guide_line(guide,data)
     current=snapshot.round_id
     order=tuple(static(data,'round_order'))
@@ -429,14 +453,14 @@ def candidate_lines(snapshot,data,guide,*,rounds_left=float('inf')):
     floors=tuple(float(v) for v in tunable(data,'gold_floors'))
     if rounds_left<float(tunable(data,'all_in_rounds_left')) and 0 not in floors:
         floors+= (0.0,)
-    choices.append(Line('roll:now',dict(base.levels)|{current:int(snapshot.field('level'))},{current:min(floors)},floor_options=floors))
+    choices.append(Line('roll:now',dict(base.levels)|{current:int(read(snapshot,data,'level'))},{current:min(floors)},floor_options=floors))
     upcoming=[r for r in set(base.levels)|set(base.rolls) if round_index(r,data)>round_index(current,data)]
     if upcoming:
         next_point=min(upcoming,key=lambda r:round_index(r,data))
         choices.append(Line('roll:next',base.levels,{next_point:min(floors)},floor_options=floors))
     choices.append(Line('hold',base.levels,{}))
     if rounds_left<float(tunable(data,'stabilize_rounds_left')):
-        choices.append(Line('stabilize',dict(base.levels)|{current:int(snapshot.field('level'))},{current:min(floors)},True,floors))
+        choices.append(Line('stabilize',dict(base.levels)|{current:int(read(snapshot,data,'level'))},{current:min(floors)},True,floors))
     cap=int(tunable(data,'line_candidate_cap'))
     if cap<1:
         raise DataError('Line candidate cap must be positive')
@@ -464,10 +488,11 @@ def concrete_lines(lines):
     return tuple(result)
 
 
-def paired_value(snapshot,history,data,comp_id,lines,effects,*,rollouts=None,opponents=()):
-    seed=snapshot_seed(snapshot)
-    before=simulate_lines(snapshot,history,data,comp_id,lines,rollouts=rollouts,opponents=opponents,seed=seed)
-    after=simulate_lines(snapshot,history,data,comp_id,lines,effects=effects,rollouts=rollouts,opponents=opponents,seed=seed)
+def paired_value(snapshot,history,data,comp_id,lines,effects,*,rollouts=None,opponents=(),seed=None,base_effects=None,backup_id=None):
+    from .effects import combine
+    seed=snapshot_seed(snapshot,data) if seed is None else seed
+    before=simulate_lines(snapshot,history,data,comp_id,lines,effects=base_effects,rollouts=rollouts,opponents=opponents,seed=seed,backup_id=backup_id)
+    after=simulate_lines(snapshot,history,data,comp_id,lines,effects=combine(base_effects,effects),rollouts=rollouts,opponents=opponents,seed=seed,backup_id=backup_id)
     # Positive means the option improves expected placement.
     base=min(before,key=lambda r:r.expected_placement)
     choice=min(after,key=lambda r:r.expected_placement)

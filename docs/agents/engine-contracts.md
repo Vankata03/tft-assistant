@@ -72,6 +72,8 @@ Simulated comp fit uses the best Line placement plus domain fit; owned progress,
 
 The simulator requires canonical `round_order`, `round_types`, `xp_table`, `gold_by_round`, `streak_gold`, `interest`, `player_damage`, `rules_flags`, `shop_odds`, `pool_sizes`, `sell_values`, `bench_size`, `level_calendar`, `stage_items` and `trait_rules` tables. Guide defaults accept `{line: [points]}` or `{roll_level: level}` by carry cost; the latter uses the first sourced calendar point reaching that level and the highest configured floor. Missing required data pauses rather than inventing game constants.
 
+Ticket 41's snapshot, effect, source, pairing and transport schemas are documented in [decision-contracts.md](decision-contracts.md). Default hooks implement shop, item, augment, Wisp, carousel and positioning decisions.
+
 ## Evidence limits
 
 Tests use synthetic public-boundary fixtures. They cover exact posterior sets, hidden inactive rows, emblem slack, special grants, fading sightings, finite endpoints, JSON replay, planning/history, domain pauses, transitions and Line economics. A bounded subprocess checks an ambiguous 215,553,195-set case. Batched results match individual Line results exactly with combat, death, floors and effects; zero-effect pairs have zero gain and paired error.

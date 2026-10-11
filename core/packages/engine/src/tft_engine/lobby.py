@@ -3,11 +3,13 @@ from collections.abc import Mapping
 from tft_data.models import DataError
 
 
-def alive_lobby(snapshot):
-    players=snapshot.field('lobby')
+def alive_lobby(snapshot,data=None):
+    from .planning import read
+    value=lambda name:read(snapshot,data,name) if data is not None else snapshot.field(name)
+    players=value('lobby')
     if not isinstance(players,Mapping):
         raise DataError('Lobby requires an ID-to-HP mapping')
-    own=snapshot.field('player_id') or snapshot.field('local_player_id')
+    own=value('player_id') or value('local_player_id')
     result={}
     for id,value in sorted(players.items()):
         if id==own or (isinstance(value,Mapping) and value.get('is_self')):

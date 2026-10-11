@@ -1110,6 +1110,19 @@
           "default": null,
           "title": "Offered Slot"
         },
+        "paired_standard_error": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Paired Standard Error"
+        },
         "source": {
           "title": "Source",
           "type": "string"
@@ -1124,11 +1137,44 @@
             }
           ],
           "title": "Worth"
+        },
+        "worth_label": {
+          "anyOf": [
+            {
+              "enum": [
+                "worth_it",
+                "situational",
+                "skip",
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Worth Label"
+        },
+        "worth_stage": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Worth Stage"
         }
       },
       "required": [
         "entity",
         "worth",
+        "worth_label",
+        "worth_stage",
+        "paired_standard_error",
         "source",
         "offered_slot"
       ],

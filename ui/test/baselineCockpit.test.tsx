@@ -145,3 +145,30 @@ it('Baseline renders Guide picker, static content and a number-only par chip tog
     html.indexOf('Fixture A augment'),
   )
 })
+
+it('stage Wisp labels render as static references, preserve unavailable rows and disappear in silent mode', async () => {
+  const { BaselineOverlay } = await import('../src/renderer/src/BaselineOverlay')
+  const content = {
+    patch: 'fixture', snapshot_id: 'fixture', round_id: '3-2', guides: [], selected: null,
+    xp_hint: null, par: { probability: null, paused: 'unread', uncertain: false },
+    shop: [], recipes: [], augments: [], faced: [], warnings: [], phase: 'planning',
+    anchors: [{ kind: 'wisp', index: 4, x: .8, y: .8, width: .15, height: .05 }],
+    overlay_bounds: { x: 0, y: 0, width: 1280, height: 720 }, overlay_allowed: true,
+    wisps: [{ entity: { id: 'wisp', name: 'Fixture Wisp', icon: '', cost: 0 }, worth: .12,
+      worth_label: 'situational', worth_stage: '3', paired_standard_error: .03, source: 'owner', offered_slot: 4 }],
+  } as NonNullable<NonNullable<ShellState['baseline']>['content']>
+  const state: ShellState = {
+    core: 'running', mode: 'baseline', availableModes: ['silent', 'baseline'],
+    gameflow: { clientRunning: true, phase: 'InProgress' },
+    baseline: { v: 1, type: 'baseline_state', mode: 'baseline', status: 'Capture OK', stale: [], voice: null, content },
+  }
+  const cockpit = renderToStaticMarkup(createElement(Cockpit, { state, onSelectGuide: () => {}, onMode: () => {} }))
+  expect(cockpit).toContain('Stage 3 · Situational')
+  const overlay = renderToStaticMarkup(createElement(BaselineOverlay, { state }))
+  expect(overlay).toContain('Static worth Stage 3 · Situational')
+  expect(overlay).not.toContain('Buy')
+  const unavailable = { ...state, baseline: { ...state.baseline!, content: { ...content,
+    wisps: [{ ...content.wisps[0]!, worth: null, worth_label: null, paired_standard_error: null }] } } }
+  expect(renderToStaticMarkup(createElement(BaselineOverlay, { state: unavailable }))).toContain('static Wisp worth unavailable')
+  expect(renderToStaticMarkup(createElement(BaselineOverlay, { state: { ...state, mode: 'silent' } }))).toBe('')
+})

@@ -68,6 +68,9 @@ class AugmentTier(DisplayModel):
 class WispWorth(DisplayModel):
     entity: EntityDisplay
     worth: float | None
+    worth_label: Literal['worth_it','situational','skip','unavailable'] | None = None
+    worth_stage: str | None = None
+    paired_standard_error: float | None = Field(default=None,ge=0,allow_inf_nan=False)
     source: str
     offered_slot: int | None = Field(default=None, ge=0, le=4)
 

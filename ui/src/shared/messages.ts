@@ -184,8 +184,11 @@ export interface ShopHighlight {
 export interface WispWorth {
   entity: EntityDisplay
   offered_slot: number | null
+  paired_standard_error: number | null
   source: string
   worth: number | null
+  worth_label: ('worth_it' | 'situational' | 'skip' | 'unavailable') | null
+  worth_stage: string | null
 }
 /**
  * This interface was referenced by `Messages`'s JSON-Schema
