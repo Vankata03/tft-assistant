@@ -23,7 +23,7 @@ Source: [MVP spec](../docs/spec.md), its area files, and the resolved planning t
 - [42: Replay, post-game review and evaluation harness](042-replay-review-harness.md); blocked by [35, 41, 52].
 - [43: Baseline Guides and permitted hints](043-baseline-surfaces.md); blocked by [36, 39].
 - [44: Separable Live advisor, overlay, cockpit and voice](044-live-surfaces.md); blocked by [37, 41, 43].
-- [45: End-to-end runtime, refresh/review jobs and run workflows](045-runtime-run.md); blocked by [38, 42, 44, 50].
+- [45: End-to-end runtime, refresh/review jobs and run workflows](045-runtime-run.md); blocked by [38, 42, 44, 50, 53].
 
 - [46: Immutable data contracts and capture name lists](046-data-contracts.md); blocked by nothing.
 - [47: Capture transport, OCR, tracking and visual-reader contract](047-capture-contracts.md); blocked by [35, 46].
@@ -32,8 +32,13 @@ Source: [MVP spec](../docs/spec.md), its area files, and the resolved planning t
 - [50: Native macOS teardown abort after the full Python suite](050-native-test-teardown.md); blocked by nothing.
 - [51: Preserve source-owned publication and cohort provenance](051-source-provenance.md); blocked by [36].
 - [52: Frozen replay contexts, records and safe review access](052-replay-contracts.md); blocked by [35, 36, 37, 40].
+- [53: Supervised capture and safe-refresh runtime lifecycle](053-capture-runtime-lifecycle.md); blocked by [35, 36, 37, 38, 40, 43, 51].
 
 ## Decisions so far
+
+- 2026-10-11: Ticket 53 extracts capture/session/data lifecycle wiring from 45. Its software dependencies are closed, so it proceeds alongside 41 and 52. Final Live/Engine dispatch, review jobs, run workflows and complete runtime verification remain in 45; native cause 50 still gates final qualification.
+
+- 2026-10-11: Source-provenance software ticket 51 closed after independent merge `91465f1` of exact `3e8a8de`. Root passed 281 Python tests in 14.61 s, no skips, process exit 0, plus both import contracts, schema and lock checks. Payload publication/identity remains distinct from donor hints; rejected attempts cannot relabel qualified last-good data. Production source/patch/cohort qualification stays in 48, and the historical native cause stays in 50.
 
 - 2026-10-11: Ticket 52 extracts the frozen-log/context/cache/review-access prerequisite from 42. Its 35/36/37/40 dependencies are closed, so this software slice proceeds while 41 finishes. Full policy attribution, costs, review, evaluation and fitting remain in 42.
 
