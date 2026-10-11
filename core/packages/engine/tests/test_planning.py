@@ -68,7 +68,7 @@ def patch():
 
 def snapshot(round_id='3-2', **changes):
     board=Board((Unit('a',2),),(Unit('c'),))
-    values={'board':board,'bench':board.bench,'inventory_complete':True,'gold':30,'hp':60,'level':5,'xp':0,'streak':-3,'lobby':{'p1':60,'p2':60},'slot_count':5}
+    values={'board':board,'bench':board.bench,'inventory_complete':True,'phase':'planning','planning_phase':True,'gold':30,'hp':60,'level':5,'xp':0,'streak':-3,'lobby':{'p1':60,'p2':60},'slot_count':5}
     values.update(changes)
     return GameSnapshot('g',round_id,NOW,{k:FieldValue(v,NOW,'fixture',0.9) for k,v in values.items()},f'g:{round_id}')
 
@@ -409,6 +409,98 @@ def test_incomplete_history_never_contributes_fit_and_complete_read_resumes_advi
     assert result.comp_fits and result.line_results and result.recommended_board is not None
     assert next(a for a in result.advice if a.decision=='econ').urgency=='act_this_phase'
     assert not any(a.payload.get('paused') for a in result.advice)
+
+
+@pytest.mark.parametrize('evidence',('missing_phase','missing_flag','stale_phase','stale_flag','false','numeric','combat','end','unknown','conflict'))
+def test_core_actions_require_fresh_consistent_positive_planning_evidence(evidence):
+    from tft_engine import Advice, DomainHook, best_choice_fit, evaluate
+    data=patch(); state=snapshot(choice_offers=('gold',))
+    fields=dict(state.fields)
+    if evidence.startswith('missing'):
+        fields.pop('phase' if evidence=='missing_phase' else 'planning_phase')
+    elif evidence.startswith('stale'):
+        name='phase' if evidence=='stale_phase' else 'planning_phase'
+        fields[name]=replace(fields[name],read_at=NOW-timedelta(seconds=10))
+    elif evidence=='false':
+        fields['planning_phase']=FieldValue(False,NOW,'reader')
+    elif evidence=='numeric':
+        fields['planning_phase']=FieldValue(1,NOW,'reader')
+    elif evidence in ('combat','end','unknown'):
+        fields['phase']=FieldValue(evidence,NOW,'reader')
+        fields['planning_phase']=FieldValue(False,NOW,'reader')
+    else:
+        fields['phase']=FieldValue('augment',NOW,'reader') # Conflicts with True flag.
+    state=GameSnapshot.from_dict(replace(state,fields=fields).to_dict())
+    inspected=[]
+    def information(context):
+        score,projection=best_choice_fit(context,{'gold':31,'phase':'planning','planning_phase':True},hooks=())
+        inspected.append((context,score,projection))
+        return (Advice('offer','Captured offer','information',.5,'observed_offer'),)
+    hooks=(DomainHook('offer',('choice_offers',),advice=information),
+        DomainHook('shop',(),advice=lambda context:(Advice('shop','Buy A','act_this_phase',.8,'key_copy'),)))
+    result=evaluate(state,GameHistory((snapshot('3-1',comp_lock='A'),)),data,'review',hooks=hooks)
+    assert result.plan.target=='A' and result.plan.planning_round=='3-1'
+    assert not result.comp_fits and not result.line_results and result.recommended_board is None
+    assert all(a.urgency=='information' for a in result.advice)
+    assert next(a for a in result.advice if a.decision=='econ').payload['paused'] is True
+    assert next(a for a in result.advice if a.decision=='offer').action=='Captured offer'
+    context,score,projection=inspected[0]
+    assert context.plan==result.plan and not context.comp_fits and not context.line_results
+    assert context.recommended_board is None and score is None
+    assert not projection.comp_fits and not projection.line_results
+
+
+@pytest.mark.parametrize('phase',('augment','carousel'))
+def test_known_choices_use_same_seed_hypothetical_planning_without_folding_observed_choices(phase):
+    from tft_engine import Advice, DomainHook, FitTerm, best_choice_fit, evaluate
+    data=patch(); inspected=[]; fit_observations=[]
+    prior=snapshot('3-1',comp_lock='A')
+    choice_history=snapshot('3-2',phase='augment',planning_phase=False,fit_buff=True)
+    combat_history=snapshot('3-3',phase='combat',planning_phase=False,fit_buff=True)
+    unknown_history=replace(snapshot('3-4',fit_buff=True),fields={k:v for k,v in snapshot('3-4',fit_buff=True).fields.items() if k!='phase'})
+    state=GameSnapshot.from_dict(snapshot('3-5',phase=phase,planning_phase=False,choice_offers=('gold',)).to_dict())
+    history=GameHistory((prior,choice_history,combat_history,unknown_history))
+    def fit(comp,context):
+        fit_observations.append((context.snapshot.round_id,context.snapshot.field('phase')))
+        return FitTerm(-4 if comp=='B' and context.snapshot.field('fit_buff') else 0,'synthetic_buff')
+    def choice(context):
+        score,result=best_choice_fit(context,{'gold':31},hooks=(hook,))
+        inspected.append((context,score,result))
+        return (Advice(phase,'Take gold','act_this_phase',.5,'choice_fit',numbers={'fit':score}),)
+    hook=DomainHook(phase,('choice_offers',),fit=fit,advice=choice,advice_phases=(phase,))
+    shop=DomainHook('shop',(),advice=lambda context:(Advice('shop','Buy A','act_this_phase',.8,'key_copy'),))
+    other=DomainHook('other_choice',(),advice=lambda context:(Advice('other_choice','Take other offer','soon',.5,'choice'),),
+        advice_phases=('carousel' if phase=='augment' else 'augment',))
+    report=evaluate(state,history,data,'review',hooks=(hook,shop,other))
+    assert len(inspected)==1
+    context,score,result=inspected[0]
+    assert score is not None and result.comp_fits and result.line_results
+    projected=replace(state,fields=dict(state.fields)|{
+        'phase':FieldValue('planning',NOW,'choice',1),'planning_phase':FieldValue(True,NOW,'choice',1),
+        'gold':FieldValue(31,NOW,'choice',1)})
+    direct=evaluate(projected,history,data,'review',hooks=(replace(hook,advice=None),),seed=context.seed)
+    assert result==direct
+    assert all(r.seed==context.seed for values in result.line_results.values() for r in values)
+    assert best_choice_fit(context,{'gold':31},hooks=(hook,))==(score,result)
+    assert len(inspected)==1 # Fit-only projection never recursively emits choice advice.
+    assert context.snapshot==state and context.snapshot.field('planning_phase') is False
+    assert report.plan==context.plan and report.plan.planning_round=='3-1'
+    assert report.plan.target=='A' and not report.comp_fits and not report.line_results
+    assert report.recommended_board is None
+    assert next(a for a in report.advice if a.decision==phase).urgency=='act_this_phase'
+    assert all(a.urgency=='information' for a in report.advice if a.decision!=phase)
+    assert set(fit_observations)=={('3-1','planning'),('3-5','planning')}
+
+
+def test_roll_down_is_positive_planning_and_publishes_current_actions():
+    from tft_engine import Advice, DomainHook, evaluate
+    state=snapshot(phase='roll_down',planning_phase=True,roll_down=True)
+    hook=DomainHook('shop',(),advice=lambda context:(Advice('shop','Buy A','act_this_phase',.8,'key_copy'),))
+    result=evaluate(state,GameHistory(),patch(),'live',hooks=(hook,))
+    assert result.plan.planning_round=='3-2' and result.comp_fits and result.line_results
+    assert result.recommended_board is not None
+    assert next(a for a in result.advice if a.decision=='shop').urgency=='act_this_phase'
+    assert next(a for a in result.advice if a.decision=='econ').urgency=='act_this_phase'
 
 
 def test_pin_is_followed_and_mid_roll_upgrades_stop_without_a_new_seed_policy():

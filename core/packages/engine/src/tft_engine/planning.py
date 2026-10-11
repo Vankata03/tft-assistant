@@ -87,6 +87,16 @@ def required(snapshot,data,names):
     return tuple(missing)
 
 
+def observed_phase(snapshot,data):
+    phase=snapshot.field('phase',max_age_seconds=field_age(data,'phase',snapshot))
+    planning=snapshot.field('planning_phase',max_age_seconds=field_age(data,'planning_phase',snapshot))
+    if phase in ('planning','roll_down') and planning is True:
+        return phase
+    if phase in ('augment','carousel','combat','end') and planning is False:
+        return phase
+    return None
+
+
 def comp_universe(snapshot,data):
     if not snapshot.field('include_unguided'):
         return data
@@ -343,7 +353,12 @@ def _hook_advice(hooks,context):
             items.append(paused('Required fields missing or stale',missing=missing,domain=hook.name))
             continue
         try:
-            items.extend(hook.advice(context))
+            advice=tuple(hook.advice(context))
+            phase=observed_phase(context.snapshot,context.data)
+            allowed=phase in ('planning','roll_down','augment','carousel') and phase in hook.advice_phases
+            items.extend(a for a in advice if allowed or a.urgency=='information')
+            if not allowed and any(a.urgency!='information' for a in advice):
+                items.append(paused('Actions unavailable in the observed phase',missing=('phase','planning_phase'),domain=hook.name))
         except DataError as error:
             items.append(paused(str(error),domain=hook.name))
     return tuple(items)
@@ -368,7 +383,7 @@ def evaluate(snapshot,history,data,mode,*,hooks=None,seed=None):
         previous=[s for s in history.snapshots if s.game_id==snapshot.game_id and s.captured_at<=snapshot.captured_at and s!=snapshot and round_index(s.round_id,data)<=round_index(snapshot.round_id,data)]
         previous.sort(key=lambda s:(s.captured_at,round_index(s.round_id,data)))
         for index,state in enumerate(previous):
-            if state.field('planning_phase') is False:
+            if observed_phase(state,data) not in ('planning','roll_down'):
                 continue
             if required(state,data,('board','bench','gold','hp','level','xp','streak','lobby')):
                 continue
@@ -388,10 +403,10 @@ def evaluate(snapshot,history,data,mode,*,hooks=None,seed=None):
                 items+=(paused('Complete own ownership unavailable',missing=('inventory_complete',),domain='plan'),
                         paused('Complete own ownership unavailable',missing=('inventory_complete',),domain='transition'))
             return EngineEvaluation(plan,advice=rank_advice(items))
-        if snapshot.field('planning_phase') is False:
-            context=replace(context,snapshot=snapshot,history=history) if context else EngineContext(snapshot,history,data,plan,{}, {},owned_board(snapshot),snapshot_seed(snapshot) if seed is None else seed)
-            items=(paused('Outside a planning phase',domain='econ'),)+_hook_advice(hooks,context)
-            return EngineEvaluation(plan,context.comp_fits,context.line_results,context.recommended_board,rank_advice(items))
+        if observed_phase(snapshot,data) not in ('planning','roll_down'):
+            context=EngineContext(snapshot,history,data,plan,{}, {},None,snapshot_seed(snapshot) if seed is None else seed)
+            items=tuple(paused('Fresh positive planning evidence unavailable',missing=('phase','planning_phase'),domain=domain) for domain in ('econ','plan','transition'))+_hook_advice(hooks,context)
+            return EngineEvaluation(plan,advice=rank_advice(items))
         else:
             prefix=replace(history,snapshots=tuple(previous),sightings=tuple(s for s in history.sightings if (s.read_at<=snapshot.captured_at if s.read_at else round_index(s.round_id,data)<=round_index(snapshot.round_id,data))))
             context=_step(snapshot,prefix,data,plan,hooks,seed=seed)
@@ -417,8 +432,16 @@ def best_choice_fit(context,changes,*,hooks=None):
     from .models import FieldValue
     if required(context.snapshot,context.data,('inventory_complete',)):
         return None,EngineEvaluation(context.plan,advice=(paused('Complete own ownership unavailable',missing=('inventory_complete',),domain='econ'),))
+    phase=observed_phase(context.snapshot,context.data)
+    if phase not in ('planning','roll_down','augment','carousel'):
+        return None,EngineEvaluation(context.plan,advice=(paused('Choice projection unavailable in the observed phase',missing=('phase','planning_phase'),domain='econ'),))
     fields=dict(context.snapshot.fields)
     fields.update({name:FieldValue(value,context.snapshot.captured_at,'choice',1) for name,value in changes.items()})
+    if phase in ('augment','carousel'):
+        # Project an option into planning without promoting the original evidence
+        # or adding the observed choice snapshot to the actual planning fold.
+        fields.update({name:FieldValue(value,context.snapshot.captured_at,'choice',1)
+            for name,value in (('phase','planning'),('planning_phase',True))})
     changed=replace(context.snapshot,fields=fields)
     if hooks is None:
         from .registry import default_hooks
