@@ -6,6 +6,10 @@ from pathlib import Path
 
 from .models import DataError, Entity, TaggedValue
 
+# The accepted thin-sample policy is an application threshold, not an observed
+# provider metadata field or a fitted value.
+STATISTICS_MIN_SAMPLES = 500
+
 REQUIRED_STATIC = (
     "xp_table",
     "gold_by_round",

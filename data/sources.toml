@@ -1,6 +1,7 @@
 schema_version = 1
 
 [statistics]
+# Requested cohort goals; response evidence is checked separately.
 minimum_rank = "DIAMOND"
 regions = "all"
 
@@ -32,5 +33,6 @@ timeout = 15
 provider = "metatft"
 kind = "enrichment"
 url = "https://api-hc.metatft.com/tft-stat-api/augments_tiers"
+# Optional donor hint only; it never supplies this payload's patch or freshness.
 metadata_url = "https://api-hc.metatft.com/tft-comps-api/unit_items_processed"
 timeout = 15

@@ -162,14 +162,32 @@ class Guide:
 @dataclass(frozen=True)
 class SourceState:
     name: str
-    patch: str
+    patch: str | None
     updated_at: datetime
     fetched_at: datetime
     kind: str
     filters: Mapping[str, Any] = field(default_factory=dict)
+    identity: Mapping[str, Any] = field(default_factory=dict)
+    publication: Mapping[str, Any] = field(default_factory=dict)
+    donor_hint: Mapping[str, Any] = field(default_factory=dict)
+    qualified: bool = True
+    qualification_reasons: tuple[str, ...] = ()
+    last_attempt: Mapping[str, Any] = field(default_factory=dict)
+    cohort: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
-        object.__setattr__(self, "filters", freeze(self.filters))
+        for name in (
+            "filters",
+            "identity",
+            "publication",
+            "donor_hint",
+            "last_attempt",
+            "cohort",
+        ):
+            object.__setattr__(self, name, freeze(getattr(self, name)))
+        object.__setattr__(
+            self, "qualification_reasons", tuple(self.qualification_reasons)
+        )
 
 
 @dataclass(frozen=True)
