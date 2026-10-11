@@ -2,7 +2,7 @@
 id: 37
 title: Automatic screen capture and purchase tracking
 labels: [implementation:task]
-status: open
+status: closed
 assignee: codex-capture
 parent: 34
 blocked_by: [47, 38]
@@ -71,3 +71,11 @@ Remaining external qualification is explicit in ticket 49: genuine game-font tem
 Independent integration review found that `CapturePipeline.from_data` did not project equipped-item trait grants. A fully observed board with an ordinary equipped item therefore remained uncertified unless a caller supplied a separate table. The projection now consumes only explicit pinned `Entity.values['trait_grants']` metadata, with an empty tagged mapping establishing a known zero contribution and a positive integer mapping establishing an emblem's contribution. Item and trait IDs must match the appropriate pinned entities; missing, untagged or invalid metadata leaves ownership uncertified. No name, recipe or category supplies a guessed zero. Board-read logs preserve each accepted item's source, citation, family, grant mapping and original data snapshot ID, and successful certificates name the pinned item-trait sources. The exact contract is documented in [capture-boundary.md](../docs/agents/capture-boundary.md). Production item-ledger qualification remains in ticket 48.
 
 Public snapshot/log red-green cases cover ordinary empty grants, matching and conflicting emblem traits, absent and untagged metadata, unknown trait IDs, wrong entity kinds, blank item/trait IDs and boolean, zero, negative, fractional and string counts. The ordinary and emblem cases each failed before their projection was implemented; invalid cases exposed ten failures before validation was added. The corrected scoped capture suite passed 66 tests with exit 0. The full training-group suite passed 262 tests with exit 0 and the same two existing Torch ONNX export deprecation warnings. Import contracts, schemas, lock, Ruff F821 and diff checks passed. This bounded correction changes no UI code; its previous 31-test UI verification remains the earlier result, not a new run. The integration tip `9c5907f` adds only the runtime lifecycle note and was merged before final verification; root and other worktrees were not edited. Ticket status remains open for independent integration review.
+
+### 2026-10-11 — Independent integration and software closure
+
+The separate merger reviewed the full capture candidate and corrected equipped-item projection, then merged exact `9f0adb7` as `7963682`. Independent capture/session/process/real-reader/training checks passed 99 tests in 13.53 s, process exit 0, with the two existing Torch ONNX export deprecation warnings. Frozen training synchronization, both import contracts, schema, lock and diff checks passed.
+
+The root then ran the complete suite on `7963682` with the actual pinned model cache: 262 tests passed in 16.23 s, no skips, process exit 0, with those same two warnings. The initial root command supplied an incorrect model-cache path and passed 257 tests with five reader checks skipped; that run did not verify those checks and was corrected before closure. Root import/schema/lock checks also passed. No UI code changed; its recorded 31-test/type/generated-type/build result remains earlier evidence.
+
+Ticket 37 is closed for its full capture software boundary. Actual Windows/game HUD/recognition/cadence/overlay/device qualification remains in 49; production metadata and assets remain in 48; supervised application lifecycle remains in 45; the unknown historical native abort cause remains in 50. This does not close the parent MVP specification or establish end-to-end live readiness.

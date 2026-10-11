@@ -34,6 +34,8 @@ Source: [MVP spec](../docs/spec.md), its area files, and the resolved planning t
 
 ## Decisions so far
 
+- 2026-10-11: Full capture software ticket 37 closed after independent merge `7963682` of corrected `9f0adb7`. Root checks passed 262 Python tests in 16.23 s without skips, process exit 0; both import contracts, schema and lock checks passed. Pinned equipped-item trait grants now project through `from_data`; unknown or invalid metadata still fails completeness. Production metadata/assets (48), Windows/recognition/device evidence (49), runtime lifecycle (45) and the historical native cause (50) remain open.
+
 - 2026-10-11: Ticket 51 extracts the tested source-provenance prerequisite from 48. A donor endpoint's metadata must not qualify the augment-tier payload, and configured cohort goals must be checked against provider evidence. This software work can proceed before 41; production data qualification remains in 48.
 
 - 2026-10-11: Ticket 40's Engine software boundary is closed after ownership merge `472bea4` and phase merge `27aeb7f`. Independent merged-root Engine checks passed 74 tests; the phase worktree passed 209 full-suite tests with process exit 0. The recorded inference timeout and historical native abort remain explicit. Native investigation/prevention stays open in ticket 50 as a parent/final-runtime gate; closing this domain does not declare complete integration or device qualification. Ticket 41 is now unblocked.
