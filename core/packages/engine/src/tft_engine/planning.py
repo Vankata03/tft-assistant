@@ -76,7 +76,15 @@ def field_age(data,name,snapshot):
 
 
 def required(snapshot,data,names):
-    return tuple(name for name in names if snapshot.field(name,max_age_seconds=field_age(data,name,snapshot)) is None)
+    names=tuple(names)
+    if {'board','bench','owned_copies','slot_inventory'}.intersection(names) and 'inventory_complete' not in names:
+        names+=('inventory_complete',)
+    missing=[]
+    for name in names:
+        value=snapshot.field(name,max_age_seconds=field_age(data,name,snapshot))
+        if value is None or (name=='inventory_complete' and value is not True):
+            missing.append(name)
+    return tuple(missing)
 
 
 def comp_universe(snapshot,data):
@@ -370,13 +378,16 @@ def evaluate(snapshot,history,data,mode,*,hooks=None,seed=None):
         missing=required(snapshot,data,('board','bench','gold','hp','level','xp','streak','lobby'))
         if missing:
             lock=snapshot.field('comp_lock')
-            if plan.target is None:
-                target=lock if lock in data.guides else next(iter(sorted(data.guides)))
-                plan=GamePlan('committed' if lock else 'open',target,candidates=(target,))
-            board=owned_board(snapshot)
-            context=EngineContext(snapshot,history,data,plan,context.comp_fits if context else {},context.line_results if context else {},board,snapshot_seed(snapshot) if seed is None else seed)
+            if plan.target is None and lock in data.guides:
+                plan=GamePlan('committed',lock,candidates=(lock,))
+            # Earlier fits and a freshly read ownership subset cannot describe
+            # this current state. Preserve only the descriptive observed plan.
+            context=EngineContext(snapshot,history,data,plan,{}, {},None,snapshot_seed(snapshot) if seed is None else seed)
             items=(paused('Required fields missing or stale',missing=missing,domain='econ'),)+_hook_advice(hooks,context)
-            return EngineEvaluation(plan,context.comp_fits,context.line_results,board,rank_advice(items))
+            if 'inventory_complete' in missing:
+                items+=(paused('Complete own ownership unavailable',missing=('inventory_complete',),domain='plan'),
+                        paused('Complete own ownership unavailable',missing=('inventory_complete',),domain='transition'))
+            return EngineEvaluation(plan,advice=rank_advice(items))
         if snapshot.field('planning_phase') is False:
             context=replace(context,snapshot=snapshot,history=history) if context else EngineContext(snapshot,history,data,plan,{}, {},owned_board(snapshot),snapshot_seed(snapshot) if seed is None else seed)
             items=(paused('Outside a planning phase',domain='econ'),)+_hook_advice(hooks,context)
@@ -404,6 +415,8 @@ def advise(snapshot,history,data,mode,*,hooks=None):
 def best_choice_fit(context,changes,*,hooks=None):
     """Score a changed choice state on the original snapshot's random tape."""
     from .models import FieldValue
+    if required(context.snapshot,context.data,('inventory_complete',)):
+        return None,EngineEvaluation(context.plan,advice=(paused('Complete own ownership unavailable',missing=('inventory_complete',),domain='econ'),))
     fields=dict(context.snapshot.fields)
     fields.update({name:FieldValue(value,context.snapshot.captured_at,'choice',1) for name,value in changes.items()})
     changed=replace(context.snapshot,fields=fields)

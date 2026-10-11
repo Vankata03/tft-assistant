@@ -68,7 +68,7 @@ def patch():
 
 def snapshot(round_id='3-2', **changes):
     board=Board((Unit('a',2),),(Unit('c'),))
-    values={'board':board,'bench':board.bench,'gold':30,'hp':60,'level':5,'xp':0,'streak':-3,'lobby':{'p1':60,'p2':60},'slot_count':5}
+    values={'board':board,'bench':board.bench,'inventory_complete':True,'gold':30,'hp':60,'level':5,'xp':0,'streak':-3,'lobby':{'p1':60,'p2':60},'slot_count':5}
     values.update(changes)
     return GameSnapshot('g',round_id,NOW,{k:FieldValue(v,NOW,'fixture',0.9) for k,v in values.items()},f'g:{round_id}')
 
@@ -336,6 +336,79 @@ def test_missing_xp_pauses_econ_but_preserves_valid_domain_advice_and_the_prior_
     assert report.plan.target=='A'
     assert next(a for a in report.advice if a.decision=='shop').payload['plan']=='A'
     assert next(a for a in report.advice if a.decision=='econ').payload['missing']==('xp',)
+
+
+def test_partial_captured_ownership_pauses_scoring_and_dependent_hooks_but_keeps_independent_advice():
+    from tft_engine import Advice, DomainHook, best_choice_fit, evaluate
+    data=patch()
+    previous=snapshot('3-1',comp_lock='A')
+    partial=snapshot('3-2',board=Board((Unit('b'),)),bench=(),inventory_complete=False,
+        shop=('a',),choice_offers=('gold',))
+    # Decode the real capture/log shape: a positively read subset is a typed
+    # Board; its fresh False completeness field prevents treating omitted copies as zero.
+    partial=GameSnapshot.from_dict(partial.to_dict())
+    inspected=[]
+    def independent(context):
+        score,result=best_choice_fit(context,{'gold':31},hooks=())
+        inspected.append((context,score,result))
+        return (Advice('offer','Show captured offer','information',.5,'captured_offer',payload={'offers':context.snapshot.field('choice_offers')}),)
+    shop=DomainHook('shop',('shop','gold','board','bench'),advice=lambda context:(Advice('shop','Buy A','act_this_phase',.5,'key_copy'),))
+    offer=DomainHook('offer',('choice_offers',),advice=independent)
+    report=evaluate(partial,GameHistory((previous,)),data,'review',hooks=(shop,offer))
+    assert report.plan.target=='A' # Descriptive last-complete plan is preserved.
+    assert not report.comp_fits and not report.line_results and report.recommended_board is None
+    assert all(a.urgency=='information' for a in report.advice)
+    assert next(a for a in report.advice if a.decision=='shop').payload['missing']==('inventory_complete',)
+    assert next(a for a in report.advice if a.decision=='offer').payload['offers']==('gold',)
+    context,score,result=inspected[0]
+    assert score is None and not result.comp_fits and not result.line_results
+    assert result.recommended_board is None
+    assert context.plan.target=='A' and not context.comp_fits and not context.line_results
+    assert context.recommended_board is None
+
+
+@pytest.mark.parametrize('completeness',('missing','stale','numeric'))
+def test_ownership_requires_a_fresh_positive_completeness_field_before_scoring(completeness):
+    from tft_engine import Advice, DomainHook, Line, best_choice_fit, evaluate, simulate_lines
+    from tft_data.models import DataError
+    data=patch(); state=snapshot()
+    fields=dict(state.fields)
+    if completeness=='missing':
+        fields.pop('inventory_complete')
+    elif completeness=='stale':
+        fields['inventory_complete']=FieldValue(True,NOW-timedelta(seconds=10),'reader')
+    else:
+        fields['inventory_complete']=FieldValue(1,NOW,'reader')
+    state=GameSnapshot.from_dict(replace(state,fields=fields).to_dict())
+    inspected=[]
+    def show(context):
+        # A choice is not evidence that the original partial inventory became complete.
+        score,result=best_choice_fit(context,{'gold':31,'inventory_complete':True},hooks=())
+        inspected.append((score,result))
+        return (Advice('offer','Show offer','information',.5,'offer'),)
+    result=evaluate(state,GameHistory(),data,'live',hooks=(DomainHook('offer',(),advice=show),))
+    assert result.plan.target is None
+    assert not result.comp_fits and not result.line_results and result.recommended_board is None
+    assert all(a.urgency=='information' for a in result.advice)
+    assert next(a for a in result.advice if a.decision=='transition').payload['missing']==('inventory_complete',)
+    assert inspected[0][0] is None and not inspected[0][1].comp_fits
+    with pytest.raises(DataError,match='inventory_complete'):
+        simulate_lines(state,GameHistory(),data,'A',(Line('hold'),))
+
+
+def test_incomplete_history_never_contributes_fit_and_complete_read_resumes_advice():
+    from tft_engine import DomainHook, FitTerm, evaluate
+    data=patch(); seen=[]
+    complete=snapshot('3-1',comp_lock='A')
+    partial=snapshot('3-2',board=Board((Unit('c',3),)),bench=(),inventory_complete=False)
+    resumed=snapshot('3-3',comp_lock='A')
+    hook=DomainHook('observer',(),fit=lambda comp,context:seen.append(context.snapshot.round_id) or FitTerm(0,'observed_complete_state'))
+    result=evaluate(resumed,GameHistory((complete,partial)),data,'review',hooks=(hook,))
+    assert set(seen)=={'3-1','3-3'}
+    assert result.plan.target=='A'
+    assert result.comp_fits and result.line_results and result.recommended_board is not None
+    assert next(a for a in result.advice if a.decision=='econ').urgency=='act_this_phase'
+    assert not any(a.payload.get('paused') for a in result.advice)
 
 
 def test_pin_is_followed_and_mid_roll_upgrades_stop_without_a_new_seed_policy():
