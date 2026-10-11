@@ -12,7 +12,7 @@ from pathlib import Path
 
 from .adapters import guides, merge_entities, statistics
 from .computed import default_lines
-from .config import load_patch
+from .config import STATISTICS_MIN_SAMPLES, load_patch
 from .enrichment import enrichment
 from .models import (
     DataError,
@@ -25,6 +25,34 @@ from .models import (
 from .overrides import apply_overrides
 from .serialization import load_snapshot
 from .threats import derive_threats
+
+
+def _source_state(source, metadata, now):
+    return SourceState(
+        name=source.name,
+        patch=metadata.patch,
+        updated_at=metadata.updated_at,
+        fetched_at=now,
+        kind=source.kind,
+        filters=metadata.filters,
+        identity=metadata.identity,
+        publication=metadata.publication,
+        donor_hint=metadata.donor_hint,
+        qualified=metadata.qualified,
+        qualification_reasons=metadata.qualification_reasons,
+        cohort=metadata.cohort,
+    )
+
+
+def _rejected_state(old, observed, error):
+    reasons = tuple(dict.fromkeys((*observed.qualification_reasons, str(error))))
+    rejected = replace(observed, qualified=False, qualification_reasons=reasons)
+    attempt = plain(vars(rejected)) | {
+        "updated_at": rejected.updated_at.isoformat(),
+        "fetched_at": rejected.fetched_at.isoformat(),
+        "error": str(error),
+    }
+    return replace(old, last_attempt=attempt) if old and old.qualified else rejected
 
 
 class DataStore:
@@ -101,10 +129,43 @@ class DataStore:
             source_guides = dict(self._source_guides)
             source_enrichment = dict(self._source_enrichment)
             failed_sources = set()
+            # Last-good means qualified under the requested policy, including
+            # when restoring a snapshot made before cohort checks existed.
+            for source in (*sources, *((fallback,) if fallback else ())):
+                old = states.get(source.name)
+                if old is None:
+                    continue
+                required = getattr(source, "required_cohort", {})
+                reasons = tuple(
+                    f"Cached {source.name} did not confirm statistical cohort {key}={value}"
+                    for key, value in required.items()
+                    if old.cohort.get(key) != value
+                )
+                if not old.qualified or reasons:
+                    states[source.name] = replace(
+                        old,
+                        qualified=False,
+                        qualification_reasons=old.qualification_reasons + reasons,
+                    )
+                    source_rows.pop(source.name, None)
+                    source_guides.pop(source.name, None)
+                    source_enrichment.pop(source.name, None)
+                    warnings.extend(states[source.name].qualification_reasons)
+            prior_providers = {
+                row.source
+                for name, cached_rows in source_rows.items()
+                if name in states and states[name].qualified
+                for row in cached_rows
+            }
             for source in sources:
+                observed = None
+                old = states.get(source.name)
                 try:
                     metadata = source.metadata()
                     old = states.get(source.name)
+                    observed = _source_state(source, metadata, now)
+                    if not metadata.qualified:
+                        raise DataError("; ".join(metadata.qualification_reasons))
                     age = (
                         3600
                         if source.kind in {"statistics", "enrichment"}
@@ -114,12 +175,14 @@ class DataStore:
                     )
                     changed = (
                         old is None
+                        or not old.qualified
                         or metadata.patch != old.patch
                         or metadata.updated_at > old.updated_at
                     )
                     if (
                         not changed
                         or old
+                        and old.qualified
                         and (now - old.fetched_at).total_seconds() < age
                     ):
                         continue
@@ -140,49 +203,97 @@ class DataStore:
                         source_enrichment[source.name] = enrichment(raw)
                     else:
                         raise DataError(f"Unsupported source kind: {source.kind}")
-                    states[source.name] = SourceState(
-                        source.name,
-                        metadata.patch,
-                        metadata.updated_at,
-                        now,
-                        source.kind,
-                        metadata.filters,
-                    )
+                    states[source.name] = observed
                 except (DataError, OSError, ValueError, TypeError) as exc:
+                    if observed is not None:
+                        states[source.name] = _rejected_state(old, observed, exc)
                     since = (
                         states[source.name].fetched_at.isoformat()
-                        if source.name in states
+                        if source.name in states and states[source.name].qualified
                         else "unavailable"
                     )
                     warnings.append(f"{source.name} data stale since {since}: {exc}")
                     failed_sources.add(source.name)
-                    if source.kind == "statistics" and fallback:
+                    if (
+                        source.kind == "statistics"
+                        and fallback
+                        and fallback.name != source.name
+                    ):
+                        observed_fallback = None
+                        old_fallback = states.get(fallback.name)
                         try:
                             metadata = fallback.metadata()
-                            source_rows[source.name] = statistics(
+                            old_fallback = states.get(fallback.name)
+                            observed_fallback = _source_state(fallback, metadata, now)
+                            if not metadata.qualified:
+                                raise DataError(
+                                    "; ".join(metadata.qualification_reasons)
+                                )
+                            if old_fallback and old_fallback.qualified:
+                                unchanged = (
+                                    metadata.patch == old_fallback.patch
+                                    and metadata.updated_at <= old_fallback.updated_at
+                                )
+                                young = (
+                                    now - old_fallback.fetched_at
+                                ).total_seconds() < 3600
+                                cached_backup = source_rows.get(fallback.name, ())
+                                provider = getattr(fallback, "provider", fallback.name)
+                                if (
+                                    (unchanged or young)
+                                    and cached_backup
+                                    and all(
+                                        row.source == provider for row in cached_backup
+                                    )
+                                ):
+                                    failed_sources.discard(source.name)
+                                    source_rows.pop(source.name, None)
+                                    continue
+                            source_rows[fallback.name] = statistics(
                                 fallback.fetch(),
                                 getattr(fallback, "provider", fallback.name),
                                 metadata.patch,
                                 entities,
                             )
+                            source_rows.pop(source.name, None)
                             failed_sources.discard(source.name)
-                            states[fallback.name] = SourceState(
-                                fallback.name,
-                                metadata.patch,
-                                metadata.updated_at,
-                                now,
-                                "statistics",
-                                metadata.filters,
-                            )
+                            states[fallback.name] = observed_fallback
                         except (
                             DataError,
                             OSError,
                             ValueError,
                             TypeError,
                         ) as fallback_error:
+                            failed_sources.add(fallback.name)
+                            if observed_fallback is not None:
+                                states[fallback.name] = _rejected_state(
+                                    old_fallback, observed_fallback, fallback_error
+                                )
                             warnings.append(
                                 f"{fallback.name} fallback unavailable: {fallback_error}"
                             )
+            # An offline refresh must not erase a previously recorded rejection
+            # or make an unqualified legacy source usable without rechecking it.
+            for name, state in states.items():
+                if state.qualified and not state.last_attempt:
+                    continue
+                failed_sources.add(name)
+                if not state.qualified:
+                    source_rows.pop(name, None)
+                    source_guides.pop(name, None)
+                    source_enrichment.pop(name, None)
+                if not any(warning.startswith(f"{name} ") for warning in warnings):
+                    reasons = state.qualification_reasons or state.last_attempt.get(
+                        "qualification_reasons", ("Latest source attempt unavailable",)
+                    )
+                    since = (
+                        state.fetched_at.isoformat()
+                        if state.qualified
+                        else "unavailable"
+                    )
+                    warnings.append(
+                        f"{name} data stale since {since}: {'; '.join(reasons)}"
+                    )
             rows = []
             previous = (
                 {
@@ -196,6 +307,7 @@ class DataStore:
                         r.source,
                     ): r
                     for r in self.current.statistics
+                    if r.source in prior_providers
                 }
                 if self.current
                 else {}
@@ -214,7 +326,7 @@ class DataStore:
                     )
                     if key in seen:
                         continue
-                    if row.patch == patch and row.sample_count < 500:
+                    if row.patch == patch and row.sample_count < STATISTICS_MIN_SAMPLES:
                         old = previous.get(key)
                         if old:
                             row = replace(

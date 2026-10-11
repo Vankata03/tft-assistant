@@ -13,6 +13,147 @@ def test_missing_patch_does_not_invent_game_data(tmp_path):
     assert "missing" in result.warnings[0].lower()
 
 
+def test_unknown_tier_patch_stays_unavailable_and_its_provenance_survives_reload(
+    tmp_path, monkeypatch
+):
+    from packages.data.tests.test_sources import (
+        external_responses,
+        TIERS_URL,
+        DONOR_URL,
+    )
+    from tft_data.sources import HTTPSource
+
+    external_responses(
+        monkeypatch,
+        {
+            TIERS_URL: {
+                "updated": 1791641438134,
+                "tft_set": "TFTSet18",
+                "tier_list_set": "TFTSet18",
+                "queue_id": 1100,
+                "content": {
+                    "updated_at": "2026-10-10T05:21:29.598Z",
+                    "content": {
+                        "tierList": [
+                            {
+                                "label": "S",
+                                "content": [
+                                    {"type": "augment", "id": "fixture-augment"}
+                                ],
+                            }
+                        ]
+                    },
+                },
+            },
+            DONOR_URL: {"patch": "test.1", "updated": 1791641414471},
+        },
+    )
+    source = HTTPSource("tiers", "enrichment", TIERS_URL, DONOR_URL, provider="metatft")
+    root = tmp_path / "snapshots"
+    result = DataStore(root).refresh(
+        patch_files(tmp_path / "patch"), now=NOW, sources=[source]
+    )
+
+    assert "confirmed patch" in "\n".join(result.warnings).lower()
+    assert not result.snapshot.augment_tiers
+    observed = result.snapshot.sources["tiers"]
+    assert observed.patch is None and not observed.qualified
+    assert observed.identity["tft_set"] == "TFTSet18"
+    assert observed.donor_hint["patch"] == "test.1"
+    restored = DataStore(root).get(result.snapshot.snapshot_id)
+    assert restored.sources["tiers"] == observed
+
+
+def test_unqualified_tier_update_retains_qualified_data_and_separate_attempt_metadata(
+    tmp_path, monkeypatch
+):
+    from datetime import timedelta
+    from packages.data.tests.test_sources import external_responses, TIERS_URL
+    from tft_data.sources import HTTPSource
+
+    body = {
+        "patch": "test.1",
+        "updated": 1791641438134,
+        "global_augment_tiers": {"fixture-augment": "S"},
+    }
+    responses = {TIERS_URL: body}
+    external_responses(monkeypatch, responses)
+    source = HTTPSource("tiers", "enrichment", TIERS_URL, provider="metatft")
+    root = tmp_path / "snapshots"
+    path = patch_files(tmp_path / "patch")
+    store = DataStore(root)
+    checked_at = datetime(2026, 10, 10, 16, tzinfo=UTC)
+    good = store.refresh(path, now=checked_at, sources=[source]).snapshot
+    assert good.augment_tiers["fixture-augment"] == "S"
+    responses[TIERS_URL] = {
+        "updated": 1791645038134,
+        "global_augment_tiers": {"fixture-augment": "D"},
+    }
+
+    result = store.refresh(path, now=checked_at + timedelta(hours=2), sources=[source])
+
+    assert result.snapshot.augment_tiers["fixture-augment"] == "S"
+    state = result.snapshot.sources["tiers"]
+    assert state.qualified and state.patch == "test.1"
+    assert state.updated_at == good.sources["tiers"].updated_at
+    assert state.fetched_at == good.sources["tiers"].fetched_at
+    assert state.last_attempt["patch"] is None
+    assert state.last_attempt["qualified"] is False
+    assert "confirmed patch" in "\n".join(result.warnings).lower()
+    assert DataStore(root).get(result.snapshot.snapshot_id).sources["tiers"] == state
+    assert good.sources["tiers"].last_attempt == {}
+
+
+def test_configured_statistics_require_actual_cohort_evidence(tmp_path, monkeypatch):
+    from packages.data.tests.test_sources import external_responses, DONOR_URL
+    from tft_data.source_config import SourceConfiguration
+
+    manifest = tmp_path / "sources.toml"
+    manifest.write_text("""schema_version=1
+[statistics]
+minimum_rank="DIAMOND"
+regions="all"
+[refresh]
+sources=["units"]
+[sources.units]
+provider="metatft"
+kind="statistics"
+url="https://example.invalid/unit_items_processed"
+""")
+    body = {
+        "patch": "test.1",
+        "updated": 1791641438134,
+        "rows": [{"id": "fixture-unit", "kind": "unit", "avg": 4.2, "count": 900}],
+    }
+    responses = {DONOR_URL: body}
+    external_responses(monkeypatch, responses)
+    config = SourceConfiguration.load(manifest)
+    path = patch_files(tmp_path / "patch")
+    store = DataStore(tmp_path / "snapshots")
+    checked_at = datetime(2026, 10, 10, 16, tzinfo=UTC)
+
+    missing = store.refresh(path, now=checked_at, sources=config.sources)
+
+    assert not missing.snapshot.statistics
+    assert missing.snapshot.sources["units"].cohort == {
+        "minimum_rank": None,
+        "regions": None,
+    }
+    assert "minimum_rank" in "\n".join(missing.warnings)
+    assert "regions" in "\n".join(missing.warnings)
+    responses[DONOR_URL] = {
+        **body,
+        "filters": {"minimum_rank": "DIAMOND", "regions": "all"},
+    }
+    qualified = store.refresh(path, now=checked_at, sources=config.sources)
+    assert qualified.snapshot.statistics[0].average_placement == 4.2
+    assert qualified.snapshot.sources["units"].qualified
+    assert qualified.snapshot.sources["units"].cohort == {
+        "minimum_rank": "DIAMOND",
+        "regions": "all",
+    }
+
+
 def patch_files(path):
     import tomli_w
     from tft_data.config import REQUIRED_STATIC, TUNABLE_FAMILIES
@@ -378,8 +519,11 @@ def test_tactics_checked_rows_expose_rates_and_map_trait_tier_to_breakpoint(tmp_
             }
         )
     )
-    # Literal excerpt of tactics.tools /units statsData, read 2026-10-06.
+    # Statistics excerpt read 2026-10-06, wrapped in an explicitly synthetic
+    # publication for this adapter test. This is not the source's patch label.
     payload = {
+        "patch": "test.1",
+        "updated_at": NOW.isoformat(),
         "statsData": {
             "totalEntries": 4026162,
             "lastUpdated": 1791297861,
@@ -397,7 +541,7 @@ def test_tactics_checked_rows_expose_rates_and_map_trait_tier_to_breakpoint(tmp_
                 "DA_18_Spellweaver__1": {"count": 1067956, "place": 4.4, "top4": 52.14}
             },
             "items": [],
-        }
+        },
     }
     source = MemorySource("tactics.tools", "statistics", "test.1", NOW, payload)
     result = DataStore(tmp_path / "snapshots").refresh(path, now=NOW, sources=[source])
@@ -664,3 +808,283 @@ def test_new_set_cli_archives_overrides_and_drops_set_specific_margin(tmp_path):
     loaded = DataStore(tmp_path / "snapshots").refresh(tmp_path / "test.2", now=NOW)
     assert "wisp_buy_margin" not in loaded.snapshot.tunables
     assert loaded.snapshot.tunables["unit_weight"].value == 1
+
+
+def test_unqualified_fallback_cannot_replace_qualified_statistics(
+    tmp_path, monkeypatch
+):
+    from datetime import timedelta
+    from packages.data.tests.test_sources import external_responses, DONOR_URL
+    from tft_data.sources import HTTPSource, MemorySource
+
+    primary = MemorySource(
+        "metatft",
+        "statistics",
+        "test.1",
+        NOW,
+        {"rows": [{"id": "fixture-unit", "kind": "unit", "avg": 4.2, "count": 900}]},
+    )
+    backup = HTTPSource(
+        "backup",
+        "statistics",
+        DONOR_URL,
+        provider="metatft",
+        required_cohort={"minimum_rank": "DIAMOND", "regions": "all"},
+    )
+    external_responses(
+        monkeypatch,
+        {
+            DONOR_URL: {
+                "patch": "test.1",
+                "updated": 1791641438134,
+                "rows": [
+                    {"id": "fixture-unit", "kind": "unit", "avg": 1.1, "count": 900}
+                ],
+            }
+        },
+    )
+    root = tmp_path / "snapshots"
+    store = DataStore(root)
+    path = patch_files(tmp_path / "patch")
+    original = store.refresh(path, now=NOW, sources=[primary]).snapshot
+    primary.payload = {"broken": True}
+    primary.updated_at = NOW + timedelta(hours=2)
+
+    result = store.refresh(
+        path, now=NOW + timedelta(hours=2), sources=[primary], fallback=backup
+    )
+
+    assert result.snapshot.statistics[0].average_placement == 4.2
+    assert result.snapshot.statistics[0].stale
+    assert not result.snapshot.sources["backup"].qualified
+    assert "fallback unavailable" in "\n".join(result.warnings)
+    assert "regions" in "\n".join(result.warnings)
+    assert (
+        DataStore(root).get(result.snapshot.snapshot_id).sources["backup"]
+        == result.snapshot.sources["backup"]
+    )
+    assert not original.statistics[0].stale
+
+
+def test_new_cohort_requirements_do_not_grandfather_unconfirmed_cached_rows(
+    tmp_path, monkeypatch
+):
+    from datetime import timedelta
+    from packages.data.tests.test_sources import external_responses, DONOR_URL
+    from tft_data.sources import HTTPSource
+
+    body = {
+        "patch": "test.1",
+        "updated": 1791641438134,
+        "rows": [{"id": "fixture-unit", "kind": "unit", "avg": 4.2, "count": 900}],
+    }
+    external_responses(monkeypatch, {DONOR_URL: body})
+    root = tmp_path / "snapshots"
+    path = patch_files(tmp_path / "patch")
+    now = datetime(2026, 10, 10, 16, tzinfo=UTC)
+    original = (
+        DataStore(root)
+        .refresh(
+            path,
+            now=now,
+            sources=[HTTPSource("units", "statistics", DONOR_URL, provider="metatft")],
+        )
+        .snapshot
+    )
+    assert original.statistics[0].average_placement == 4.2
+    strict = HTTPSource(
+        "units",
+        "statistics",
+        DONOR_URL,
+        provider="metatft",
+        required_cohort={"minimum_rank": "DIAMOND", "regions": "all"},
+    )
+
+    result = DataStore(root).refresh(
+        path, now=now + timedelta(hours=2), sources=[strict]
+    )
+
+    assert not result.snapshot.statistics
+    assert not result.snapshot.sources["units"].qualified
+    assert original.statistics[0].average_placement == 4.2
+    assert DataStore(root).get(original.snapshot_id) == original
+
+
+def test_fallback_preserves_its_own_one_hour_refresh_age(tmp_path):
+    from datetime import timedelta
+    from tft_data.sources import MemorySource
+
+    primary = MemorySource("metatft", "statistics", "test.1", NOW, {"broken": True})
+    backup = MemorySource(
+        "tactics.tools",
+        "statistics",
+        "test.1",
+        NOW,
+        {"rows": [{"id": "fixture-unit", "kind": "unit", "avg": 4.4, "count": 800}]},
+    )
+    store = DataStore(tmp_path / "snapshots")
+    path = patch_files(tmp_path / "patch")
+    first = store.refresh(path, now=NOW, sources=[primary], fallback=backup).snapshot
+    backup.updated_at = NOW + timedelta(minutes=30)
+    backup.payload["rows"][0]["avg"] = 4.1
+
+    young = store.refresh(
+        path, now=NOW + timedelta(minutes=30), sources=[primary], fallback=backup
+    ).snapshot
+    assert young.statistics[0].average_placement == 4.4
+    assert (
+        young.sources["tactics.tools"].fetched_at
+        == first.sources["tactics.tools"].fetched_at
+    )
+    later = store.refresh(
+        path, now=NOW + timedelta(hours=2), sources=[primary], fallback=backup
+    ).snapshot
+    assert later.statistics[0].average_placement == 4.1
+    assert later.sources["tactics.tools"].updated_at == NOW + timedelta(minutes=30)
+
+
+def test_refresh_cli_reports_unqualified_own_payload_without_publishing_tiers(
+    tmp_path, monkeypatch, capsys
+):
+    from packages.data.tests.test_sources import (
+        external_responses,
+        TIERS_URL,
+        DONOR_URL,
+    )
+    from tft_data.cli import main
+
+    responses = {
+        TIERS_URL: {
+            "updated": 1791641438134,
+            "tft_set": "TFTSet18",
+            "queue_id": 1100,
+            "global_augment_tiers": {"fixture-augment": "S"},
+        },
+        DONOR_URL: {"patch": "test.1", "updated": 1791641414471},
+    }
+    external_responses(monkeypatch, responses)
+    path = patch_files(tmp_path / "patch")
+    root = tmp_path / "snapshots"
+    manifest = tmp_path / "sources.toml"
+    manifest.write_text("""schema_version=1
+[statistics]
+minimum_rank="DIAMOND"
+regions="all"
+[refresh]
+sources=["tiers"]
+[sources.tiers]
+provider="metatft"
+kind="enrichment"
+url="https://example.invalid/augments_tiers"
+metadata_url="https://example.invalid/unit_items_processed"
+""")
+
+    assert (
+        main(
+            ["refresh", str(path), "--snapshots", str(root), "--sources", str(manifest)]
+        )
+        == 0
+    )
+    output = capsys.readouterr().out
+    assert "Confirmed patch identity unavailable" in output
+    assert "unavailable" in output
+    saved = DataStore(root).current
+    assert not saved.augment_tiers
+    assert saved.sources["tiers"].patch is None
+    assert saved.sources["tiers"].donor_hint["patch"] == "test.1"
+    assert main(["refresh", str(path), "--snapshots", str(root), "--offline"]) == 0
+    reloaded_output = capsys.readouterr().out
+    assert "Confirmed patch identity unavailable" in reloaded_output
+
+
+def test_rejected_payload_records_latest_owned_publication_without_relabeling_last_good(
+    tmp_path, monkeypatch
+):
+    from datetime import timedelta
+    from packages.data.tests.test_sources import external_responses, DONOR_URL
+    from tft_data.sources import HTTPSource
+
+    body = {
+        "patch": "test.1",
+        "updated": 1791641438134,
+        "rows": [{"id": "fixture-unit", "kind": "unit", "avg": 4.2, "count": 900}],
+    }
+    responses = {DONOR_URL: body}
+    external_responses(monkeypatch, responses)
+    root = tmp_path / "snapshots"
+    path = patch_files(tmp_path / "patch")
+    store = DataStore(root)
+    source = HTTPSource("units", "statistics", DONOR_URL, provider="metatft")
+    now = datetime(2026, 10, 10, 16, tzinfo=UTC)
+    first = store.refresh(path, now=now, sources=[source]).snapshot
+    responses[DONOR_URL] = {
+        **body,
+        "updated": 1791645038134,
+        "rows": [{"broken": True}],
+    }
+
+    rejected = store.refresh(
+        path, now=now + timedelta(hours=2), sources=[source]
+    ).snapshot
+
+    assert rejected.statistics[0].average_placement == 4.2
+    assert rejected.sources["units"].updated_at == first.sources["units"].updated_at
+    assert (
+        rejected.sources["units"].last_attempt["updated_at"]
+        == "2026-10-10T15:10:38.134000+00:00"
+    )
+    assert rejected.sources["units"].last_attempt["qualified"] is False
+    assert rejected.sources["units"].last_attempt["error"]
+    assert (
+        DataStore(root).get(rejected.snapshot_id).sources["units"]
+        == rejected.sources["units"]
+    )
+
+
+def test_thin_qualified_update_cannot_resurrect_an_unqualified_cohort_prior(
+    tmp_path, monkeypatch
+):
+    from datetime import timedelta
+    from packages.data.tests.test_sources import external_responses, DONOR_URL
+    from tft_data.sources import HTTPSource
+
+    body = {
+        "patch": "test.1",
+        "updated": 1791641438134,
+        "rows": [{"id": "fixture-unit", "kind": "unit", "avg": 4.2, "count": 900}],
+    }
+    responses = {DONOR_URL: body}
+    external_responses(monkeypatch, responses)
+    root = tmp_path / "snapshots"
+    path = patch_files(tmp_path / "patch")
+    now = datetime(2026, 10, 10, 16, tzinfo=UTC)
+    original = (
+        DataStore(root)
+        .refresh(
+            path,
+            now=now,
+            sources=[HTTPSource("units", "statistics", DONOR_URL, provider="metatft")],
+        )
+        .snapshot
+    )
+    responses[DONOR_URL] = {
+        **body,
+        "updated": 1791645038134,
+        "filters": {"minimum_rank": "DIAMOND", "regions": "all"},
+        "rows": [{"id": "fixture-unit", "kind": "unit", "avg": 3.1, "count": 30}],
+    }
+    strict = HTTPSource(
+        "units",
+        "statistics",
+        DONOR_URL,
+        provider="metatft",
+        required_cohort={"minimum_rank": "DIAMOND", "regions": "all"},
+    )
+
+    result = DataStore(root).refresh(
+        path, now=now + timedelta(hours=2), sources=[strict]
+    )
+
+    assert result.snapshot.sources["units"].qualified
+    assert not result.snapshot.statistics
+    assert original.statistics[0].average_placement == 4.2
