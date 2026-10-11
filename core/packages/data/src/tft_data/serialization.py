@@ -43,6 +43,11 @@ def load_snapshot(root, id):
             key: SourceState(
                 **{
                     **value,
+                    "qualified": value.get("qualified", False),
+                    "qualification_reasons": value.get(
+                        "qualification_reasons",
+                        ("Legacy source provenance requires requalification",),
+                    ),
                     "updated_at": datetime.fromisoformat(value["updated_at"]),
                     "fetched_at": datetime.fromisoformat(value["fetched_at"]),
                 }

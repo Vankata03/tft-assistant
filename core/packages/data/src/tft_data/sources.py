@@ -2,7 +2,7 @@
 
 import json
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
@@ -11,16 +11,33 @@ from .models import DataError, freeze
 
 @dataclass(frozen=True)
 class SourceMetadata:
-    patch: str
+    patch: str | None
     updated_at: datetime
     filters: dict = field(default_factory=dict)
+    identity: dict = field(default_factory=dict)
+    publication: dict = field(default_factory=dict)
+    donor_hint: dict = field(default_factory=dict)
+    qualification_reasons: tuple[str, ...] = ()
+    cohort: dict = field(default_factory=dict)
 
     def __post_init__(self):
-        if not self.patch or self.updated_at.tzinfo is None:
+        if (
+            self.patch is not None
+            and (not isinstance(self.patch, str) or not self.patch)
+        ) or self.updated_at.tzinfo is None:
             raise DataError(
-                "Source metadata requires patch and timezone-aware timestamp"
+                "Source metadata requires a known or explicitly unknown patch and timezone-aware timestamp"
             )
-        object.__setattr__(self, "filters", freeze(self.filters))
+        for name in ("filters", "identity", "publication", "donor_hint", "cohort"):
+            object.__setattr__(self, name, freeze(getattr(self, name)))
+        reasons = tuple(self.qualification_reasons)
+        if self.patch is None:
+            reasons += ("Confirmed patch identity unavailable",)
+        object.__setattr__(self, "qualification_reasons", tuple(dict.fromkeys(reasons)))
+
+    @property
+    def qualified(self):
+        return not self.qualification_reasons
 
 
 class Source(Protocol):
@@ -42,6 +59,21 @@ class MemorySource:
     payload: Any
 
     def metadata(self):
+        if isinstance(self.payload, dict) and any(
+            name in self.payload
+            for name in (
+                "updated",
+                "updated_at",
+                "tft_set",
+                "tier_list_set",
+                "region_patch_adjustment",
+                "statsData",
+                "props",
+            )
+        ):
+            # A checked offline body keeps its own metadata. The fixture envelope
+            # cannot supply an invented patch for a real unlabelled publication.
+            return _owned_metadata(self.payload, self.name, self.name)
         return SourceMetadata(self.patch, self.updated_at)
 
     def fetch(self):
@@ -49,7 +81,7 @@ class MemorySource:
 
 
 class HTTPSource:
-    """Configured versioned endpoints with mandatory patch/update metadata.
+    """Configured endpoints with payload-owned publication metadata.
 
     Undocumented endpoints must be explicitly configured and rechecked when their
     schema changes. Missing timestamps never become invented freshness.
@@ -67,6 +99,7 @@ class HTTPSource:
         provider=None,
         query=None,
         expected_filters=None,
+        required_cohort=None,
     ):
         from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -89,6 +122,7 @@ class HTTPSource:
         url = queried(url)
         metadata_url = queried(metadata_url) if metadata_url else None
         self.expected_filters = expected_filters or {}
+        self.required_cohort = required_cohort or {}
         self.name, self.kind, self.url = name, kind, url
         self.metadata_url = metadata_url or url
         self.headers = {
@@ -113,32 +147,30 @@ class HTTPSource:
             raise DataError(f"{self.name} unavailable: {type(exc).__name__}") from None
 
     def metadata(self):
-        raw = self._get(self.metadata_url)
+        raw = self._get(self.url)
+        self._checked_payload = raw
+        metadata = self._metadata(raw)
         if self.metadata_url == self.url:
-            self._checked_payload = raw
+            return metadata
         try:
-            if self.provider == "metatft":
-                patch = (
-                    raw.get("patch")
-                    or raw["region_patch_adjustment"]["global_patch"]["patch"]
-                )
-                updated = datetime.fromtimestamp(raw["updated"] / 1000, UTC)
-            else:
-                patch = raw["patch"]
-                updated = datetime.fromisoformat(raw["updated_at"])
-            if updated.tzinfo is None:
-                raise ValueError("timestamp needs timezone")
-            filters = raw.get("filters", raw.get("aperture", {}))
-            for key, value in self.expected_filters.items():
-                if filters.get(key) != value:
-                    raise DataError(
-                        f"{self.name} did not confirm requested filter {key}={value}"
-                    )
-            return SourceMetadata(str(patch), updated, filters)
-        except (KeyError, ValueError, TypeError) as exc:
-            raise DataError(
-                f"{self.name} missing patch/update metadata: {exc}"
-            ) from None
+            donor = self._get(self.metadata_url)
+            hint = self._metadata(donor)
+            donor_hint = {
+                "url": self.metadata_url,
+                "patch": hint.patch,
+                "updated_at": hint.updated_at.isoformat(),
+                "revision": donor.get("region_patch_adjustment", {}).get(
+                    "global_patch", {}
+                ),
+            }
+        except DataError as error:
+            donor_hint = {"url": self.metadata_url, "error": str(error)}
+        return replace(metadata, donor_hint=donor_hint)
+
+    def _metadata(self, raw):
+        return _owned_metadata(
+            raw, self.provider, self.name, self.expected_filters, self.required_cohort
+        )
 
     def fetch(self):
         if self._checked_payload is not None:
@@ -146,6 +178,68 @@ class HTTPSource:
             self._checked_payload = None
             return payload
         return self._get(self.url)
+
+
+def _owned_metadata(raw, provider, name, expected_filters=None, required_cohort=None):
+    expected_filters = expected_filters or {}
+    required_cohort = required_cohort or {}
+    try:
+        if "props" in raw:
+            raw = raw.get("props", {}).get("pageProps", {})
+        if provider == "metatft":
+            patch = raw.get("patch") or raw.get("region_patch_adjustment", {}).get(
+                "global_patch", {}
+            ).get("patch")
+            updated = datetime.fromtimestamp(raw["updated"] / 1000, UTC)
+        else:
+            patch = raw.get("patch")
+            if "updated_at" in raw:
+                updated = datetime.fromisoformat(raw["updated_at"])
+            else:
+                updated = datetime.fromtimestamp(raw["statsData"]["lastUpdated"], UTC)
+        if updated.tzinfo is None:
+            raise ValueError("timestamp needs timezone")
+        filters = raw.get("filters", raw.get("aperture", {}))
+        reasons = []
+        for key, value in expected_filters.items():
+            if filters.get(key) != value:
+                reasons.append(f"{name} did not confirm requested filter {key}={value}")
+        cohort = {
+            "minimum_rank": filters.get("minimum_rank"),
+            "regions": filters.get("regions"),
+        }
+        for key, value in required_cohort.items():
+            if cohort.get(key) != value:
+                reasons.append(
+                    f"{name} did not confirm statistical cohort {key}={value}; observed {cohort.get(key)!r}"
+                )
+        publication = {"updated_at": updated.isoformat()}
+        content = raw.get("content", {})
+        for field_name in ("updated_at", "created_at"):
+            if field_name in content:
+                publication["content_" + field_name] = content[field_name]
+        identity = {
+            name: raw[name]
+            for name in ("tft_set", "tier_list_set", "queue_id")
+            if name in raw
+        }
+        if patch is not None and not isinstance(patch, str):
+            identity["patch"] = patch
+            patch = None
+        revision = raw.get("region_patch_adjustment", {}).get("global_patch")
+        if revision is not None:
+            identity["global_patch"] = revision
+        return SourceMetadata(
+            patch,
+            updated,
+            filters,
+            identity,
+            publication,
+            qualification_reasons=tuple(reasons),
+            cohort=cohort,
+        )
+    except (KeyError, ValueError, TypeError, AttributeError, OverflowError) as exc:
+        raise DataError(f"{name} missing patch/update metadata: {exc}") from None
 
 
 def embedded_academy(html):

@@ -23,6 +23,14 @@ class SourceConfiguration:
                 raise DataError("Unknown source configuration version")
             sources = []
             lookup = {}
+            cohort = {
+                name: raw["statistics"][name] for name in ("minimum_rank", "regions")
+            }
+            if any(
+                not isinstance(value, str) or not value.strip()
+                for value in cohort.values()
+            ):
+                raise DataError("Statistical cohort goals must be nonempty strings")
             for name, row in raw["sources"].items():
                 provider = row["provider"]
                 kind = row["kind"]
@@ -30,6 +38,7 @@ class SourceConfiguration:
                     "timeout": row.get("timeout", 15),
                     "query": row.get("query"),
                     "expected_filters": row.get("expected_filters"),
+                    "required_cohort": cohort if kind == "statistics" else None,
                 }
                 if provider == "tftacademy":
                     source = AcademySource(row["url"], **kwargs)
@@ -50,7 +59,6 @@ class SourceConfiguration:
             for name in raw["refresh"]["sources"]:
                 sources.append(lookup[name])
             fallback = lookup.get(raw["refresh"].get("fallback"))
-            cohort = raw["statistics"]
             return cls(
                 tuple(sources), fallback, cohort["minimum_rank"], cohort["regions"]
             )
