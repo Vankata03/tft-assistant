@@ -27,11 +27,14 @@ Source: [MVP spec](../docs/spec.md), its area files, and the resolved planning t
 
 - [46: Immutable data contracts and capture name lists](046-data-contracts.md); blocked by nothing.
 - [47: Capture transport, OCR, tracking and visual-reader contract](047-capture-contracts.md); blocked by [35, 46].
-- [48: First sourced patch-data candidate and qualification](048-production-data-readiness.md); blocked by [36, 40, 41].
+- [48: First sourced patch-data candidate and qualification](048-production-data-readiness.md); blocked by [36, 40, 41, 51].
 - [49: Recognition, capture and target hardware qualification](049-capture-device-qualification.md); blocked by [37, 38, 40, 45].
 - [50: Native macOS teardown abort after the full Python suite](050-native-test-teardown.md); blocked by nothing.
+- [51: Preserve source-owned publication and cohort provenance](051-source-provenance.md); blocked by [36].
 
 ## Decisions so far
+
+- 2026-10-11: Ticket 51 extracts the tested source-provenance prerequisite from 48. A donor endpoint's metadata must not qualify the augment-tier payload, and configured cohort goals must be checked against provider evidence. This software work can proceed before 41; production data qualification remains in 48.
 
 - 2026-10-11: Ticket 40's Engine software boundary is closed after ownership merge `472bea4` and phase merge `27aeb7f`. Independent merged-root Engine checks passed 74 tests; the phase worktree passed 209 full-suite tests with process exit 0. The recorded inference timeout and historical native abort remain explicit. Native investigation/prevention stays open in ticket 50 as a parent/final-runtime gate; closing this domain does not declare complete integration or device qualification. Ticket 41 is now unblocked.
 
