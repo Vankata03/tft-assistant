@@ -20,7 +20,7 @@ Source: [MVP spec](../docs/spec.md), its area files, and the resolved planning t
 - [39: Board power, classification and trait-only opponent inference](039-board-power-opponents.md); blocked by [46].
 - [40: Game plan, transitions and seeded Line simulation](040-game-plan-lines.md); blocked by [39].
 - [41: Shop, Wisp, item, augment, carousel and positioning advice](041-decision-sub-engines.md); blocked by [40].
-- [42: Replay, post-game review and evaluation harness](042-replay-review-harness.md); blocked by [35, 41].
+- [42: Replay, post-game review and evaluation harness](042-replay-review-harness.md); blocked by [35, 41, 52].
 - [43: Baseline Guides and permitted hints](043-baseline-surfaces.md); blocked by [36, 39].
 - [44: Separable Live advisor, overlay, cockpit and voice](044-live-surfaces.md); blocked by [37, 41, 43].
 - [45: End-to-end runtime, refresh/review jobs and run workflows](045-runtime-run.md); blocked by [38, 42, 44, 50].
@@ -31,8 +31,11 @@ Source: [MVP spec](../docs/spec.md), its area files, and the resolved planning t
 - [49: Recognition, capture and target hardware qualification](049-capture-device-qualification.md); blocked by [37, 38, 40, 45].
 - [50: Native macOS teardown abort after the full Python suite](050-native-test-teardown.md); blocked by nothing.
 - [51: Preserve source-owned publication and cohort provenance](051-source-provenance.md); blocked by [36].
+- [52: Frozen replay contexts, records and safe review access](052-replay-contracts.md); blocked by [35, 36, 37, 40].
 
 ## Decisions so far
+
+- 2026-10-11: Ticket 52 extracts the frozen-log/context/cache/review-access prerequisite from 42. Its 35/36/37/40 dependencies are closed, so this software slice proceeds while 41 finishes. Full policy attribution, costs, review, evaluation and fitting remain in 42.
 
 - 2026-10-11: Full capture software ticket 37 closed after independent merge `7963682` of corrected `9f0adb7`. Root checks passed 262 Python tests in 16.23 s without skips, process exit 0; both import contracts, schema and lock checks passed. Pinned equipped-item trait grants now project through `from_data`; unknown or invalid metadata still fails completeness. Production metadata/assets (48), Windows/recognition/device evidence (49), runtime lifecycle (45) and the historical native cause (50) remain open.
 
