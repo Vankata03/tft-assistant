@@ -19,6 +19,7 @@ class DomainHook:
     fit: Callable | None = None
     advice: Callable | None = None
     fit_required_fields: tuple[str,...] = ()
+    advice_phases: tuple[str,...] = ('planning','roll_down')
 
 
 def default_hooks():
