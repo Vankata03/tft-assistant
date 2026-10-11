@@ -23,3 +23,7 @@ Wire capture/Engine threads and persistent sessions to supervised core, data ref
 Implement all referenced requirements. Verify through the approved public seams in [implementation contract](../docs/agents/implementation.md). Record platform checks separately; keep unmet acceptance explicit.
 
 ## Comments
+
+### 2026-10-11 — Delivered versus shown advice
+
+Runtime wiring must preserve ticket 44's delivered-advice and surface-acknowledgement mapping for replay. Engine evaluation is not evidence that advice was shown. Unknown or absent acknowledgement remains unavailable; replay never fabricates an ignored advice event from a generated recommendation.

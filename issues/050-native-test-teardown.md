@@ -29,7 +29,7 @@ Engine-only (56 tests), reader-only (23 tests), core-only (117 tests), core plus
 - Preserve recognition, training and Engine checks. Do not skip tests, force process exit, suppress the native error, or claim success from a favorable retry alone.
 - Keep macOS process evidence separate from Windows/live-game qualification in ticket 49.
 
-This blocks ticket 40's integration verification and the final runtime gate. Investigation continuity: Vault `10 Projects/TFT Assistant/Issues/Native Python shutdown abort after passing tests.md`.
+This blocks the parent specification and final runtime gate. Ticket 40's independently verified Engine software boundary is closed. Investigation continuity: Vault `10 Projects/TFT Assistant/Issues/Native Python shutdown abort after passing tests.md`.
 
 ## Resolution
 
@@ -54,3 +54,7 @@ The owner authorized a bounded prevention mitigation while retaining the unknown
 - The scoped capture-boundary prose audit preserved all 130 extracted constraints without warnings; phrase and structure scans reported no findings. Preexisting soft document-shape and technical-readability findings were reviewed and retained. No unrelated prose was rewritten.
 
 A host that imports or initializes ORT before capture must apply the startup flag itself; this bootstrap cannot dismantle an existing uploader. `docs/agents/capture-boundary.md` records that boundary. Windows execution, recognition accuracy and device latency remain separate qualification work. Ticket 50 stays open: there is still no minimized red-capable abort reproduction, initiating cause or causal repair. Favorable full-suite exits validate their recorded executions only.
+
+### 2026-10-11 — Independent integration verification
+
+The separate merger reviewed the four-file startup-prevention change and passed its three public process tests before merging exact commit `5d8157e` as `29b3d26`. The integration root then passed all 212 Python tests in 21.98 s, with the two existing ONNX-export warnings and process exit 0. Both import contracts, schema generation and the frozen lock check passed. No UI files changed; the prior 31-test UI/type/generated-type/build verification remains dated evidence. The unknown initiating cause and missing minimal abort reproduction remain open.

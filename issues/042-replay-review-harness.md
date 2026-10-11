@@ -21,3 +21,9 @@ Replay same Engine with historical snapshots/data, explicit choice/cost/scored-o
 Implement all referenced requirements. Verify through the approved public seams in [implementation contract](../docs/agents/implementation.md). Record platform checks separately; keep unmet acceptance explicit.
 
 ## Comments
+
+### 2026-10-11 — Cost sign and observed Line interpretation
+
+Preserve the specification's signed definition: `cost = Engine expected placement - player expected placement`. A worse player choice therefore has negative cost (Engine 3.1, player 4.2 gives -1.1). Top moments rank harmful deviations by ascending signed cost; close-call exclusion compares `max(0, -cost)` with the nonnegative threshold. Replay records and category totals keep the signed value. A surface displaying its negation must label it estimated placement loss. A player choice estimated better than the Engine is an improvement, not a worst-loss moment. This resolves ranking semantics without changing the cost formula.
+
+Later observed level-ups and roll-downs identify the player's actual action schedule only. Revaluation uses the decision's original snapshot, historical data and common seed; later shops, hits, fights, HP and outcomes never enter its initial state or simulated outcomes. Label that inferred schedule as observed after the decision. If the log cannot identify the schedule or choice, retain unavailable attribution rather than fabricate a policy.
