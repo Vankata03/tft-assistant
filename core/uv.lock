@@ -1312,6 +1312,16 @@ source = { editable = "packages/live" }
 name = "tft-review"
 version = "0.1.0"
 source = { editable = "packages/review" }
+dependencies = [
+    { name = "tft-data" },
+    { name = "tft-engine" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "tft-data", editable = "packages/data" },
+    { name = "tft-engine", editable = "packages/engine" },
+]
 
 [[package]]
 name = "tomli-w"

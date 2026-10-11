@@ -105,11 +105,13 @@ def test_replay_cache_dirty_versions_and_review_locks(tmp_path):
     session.write_review("600", {"moments": [{"decision_id": "4-2"}]}, engine_version="abc", data_snapshot_id="data-a")
     with pytest.raises(PermissionError, match="locked"):
         session.read_review("600")
-    session.set_review_tag("600", "4-2", "disagree")
+    with pytest.raises(PermissionError, match="locked"):
+        session.set_review_tag("600", "4-2", "disagree")
     session.rebuild_index()
     assert session.read_replay_cache("600", engine_version="abc", tunables_hash="t1", data_snapshot_id="data-a") == [{"decision_id": "4-2", "choice": "save"}]
     assert session.read_replay_cache("600", engine_version="abc+dirty", tunables_hash="t1", data_snapshot_id="data-a") is None
     session.start_run({"game_count": 50, "average_placement": 4.62, "rank": "P3"}, set_id="18")
+    session.set_review_tag("600", "4-2", "disagree")
     session.write_review("600", {"moments": []}, engine_version="def", data_snapshot_id="data-a")
     assert session.read_review("600")["tags"] == {"4-2": "disagree"}
     assert session.read_review("600")["engine_version"] == "def"
