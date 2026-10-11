@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta, timezone
 
 from PIL import Image
+import pytest
 
 from tft_capture.ocr import NameCatalog, TextLine
 from tft_capture.pipeline import CapturePipeline
@@ -501,6 +502,95 @@ def test_pinned_lux_trait_variants_validate_complete_ownership_without_inventing
     failed = pipeline.tick(BLACK, timestamp=NOW + timedelta(seconds=.25))
     assert failed['fields']['inventory_complete']['value'] is False
     assert any(e['kind'] == 'capture_conflict' for e in logs.read_events('900'))
+
+
+def equipped_item_capture(tmp_path, item, *, observed_traits=('Defender 1',)):
+    from tft_data.models import DataSnapshot, Entity, TaggedValue
+
+    data = DataSnapshot('pinned-items', '16.20', 18,
+        static={'trait_rules': TaggedValue({}, 'owner')}, tunables={}, entities={
+            'shen': Entity('shen', 'unit', 'Shen', traits=('defender',)),
+            'defender': Entity('defender', 'trait', 'Defender'),
+            'inferno': Entity('inferno', 'trait', 'Inferno'), item.id: item})
+    row = {'zone': 'board', 'position': 0, 'unit_id': 'shen', 'identity_confidence': .99,
+        'stars': 1, 'items': [item.id]}
+    visual = VisualFrames({'board_observations': [row], 'slot_inventory': {
+        'board_occupied': [0], 'board_empty': list(range(1, 28)),
+        'bench_occupied': [], 'bench_empty': list(range(9))}}, complete=True)
+    ocr = OCRFrames({'scouted': [TextLine('Owner Level 4')], 'unit_count': [TextLine('1/4')],
+        'traits': [TextLine(text) for text in (*observed_traits, '0+')]})
+    logs = SessionStore(tmp_path / 'app', tmp_path / 'config', live_installed=True)
+    logs.start_game('900')
+    pipeline = CapturePipeline.from_data('900', data=data, ocr=ocr, sink=logs,
+        visual_reader=visual, own_player_name='Owner',
+        regions={name: (0, 0, 1, 1) for name in (*ocr.values, 'board')})
+    return pipeline.tick(WHITE, timestamp=NOW), logs.read_events('900')
+
+
+def test_pinned_explicit_no_trait_grant_certifies_equipped_ordinary_item_and_logs_its_source(tmp_path):
+    from tft_data.models import Entity, TaggedValue
+
+    snapshot, events = equipped_item_capture(tmp_path, Entity('sword', 'item', 'Sword',
+        values={'trait_grants': TaggedValue({}, 'owner', citation='reviewed item ledger', family='item-traits')}))
+    assert snapshot['fields']['inventory_complete']['value'] is True
+    assert snapshot['fields']['owned_copies']['value'] == {'shen': 1}
+    assert 'pinned-item-traits:owner' in snapshot['fields']['inventory_complete']['source']
+    read = next(event['payload'] for event in events if event['kind'] == 'board_read')
+    assert read['item_trait_provenance'] == {'sword': {'value': {}, 'source': 'owner',
+        'citation': 'reviewed item ledger', 'family': 'item-traits', 'data_snapshot_id': 'pinned-items'}}
+
+
+def test_pinned_emblem_grant_must_agree_with_current_own_traits(tmp_path):
+    from tft_data.models import Entity, TaggedValue
+
+    emblem = Entity('emblem', 'item', 'Emblem', values={
+        'trait_grants': TaggedValue({'inferno': 1}, 'patch-notes', citation='reviewed patch note')})
+    complete, events = equipped_item_capture(tmp_path / 'matching', emblem,
+        observed_traits=('Defender 1', 'Inferno 1'))
+    assert complete['fields']['inventory_complete']['value'] is True
+    read = next(event['payload'] for event in events if event['kind'] == 'board_read')
+    assert read['item_trait_provenance']['emblem']['value'] == {'inferno': 1}
+    assert read['item_trait_provenance']['emblem']['citation'] == 'reviewed patch note'
+    conflict, events = equipped_item_capture(tmp_path / 'conflicting', emblem)
+    assert conflict['fields']['inventory_complete']['value'] is False
+    assert not any(event['kind'] == 'ownership' for event in events)
+
+
+@pytest.mark.parametrize(('item_id', 'metadata', 'observed_traits'), [
+    ('unknown', None, ('Defender 1',)),
+    ('sword', {'defender': 0}, ('Defender 1',)),
+    ('sword', {'inferno': True}, ('Defender 1', 'Inferno 1')),
+    ('sword', {'defender': -1}, ('Defender 1',)),
+    ('sword', {'inferno': 1.0}, ('Defender 1', 'Inferno 1')),
+    ('sword', {'inferno': '1'}, ('Defender 1', 'Inferno 1')),
+    ('sword', {'missing-trait': 1}, ('Defender 1',)),
+    ('sword', {'shen': 1}, ('Defender 1',)),
+    ('sword', {'': 1}, ('Defender 1',)),
+    ('sword', [], ('Defender 1',)),
+    ('sword', 0, ('Defender 1',)),
+    ('', {}, ('Defender 1',)),
+    (' sword ', {}, ('Defender 1',)),
+])
+def test_unknown_or_invalid_pinned_item_grants_cannot_certify_ownership(tmp_path, item_id, metadata, observed_traits):
+    from tft_data.models import Entity, TaggedValue
+
+    values = {} if metadata is None else {'trait_grants': TaggedValue(metadata, 'owner')}
+    snapshot, events = equipped_item_capture(tmp_path, Entity(item_id, 'item', 'Sword', values=values),
+        observed_traits=observed_traits)
+    assert snapshot['fields']['inventory_complete']['value'] is False
+    assert 'owned_copies' not in snapshot['fields']
+    assert not any(event['kind'] == 'ownership' for event in events)
+    read = next(event['payload'] for event in events if event['kind'] == 'board_read')
+    assert read['item_trait_provenance'] == {}
+
+
+def test_untagged_item_grants_do_not_replace_missing_pinned_provenance(tmp_path):
+    from tft_data.models import Entity
+
+    snapshot, events = equipped_item_capture(tmp_path, Entity('sword', 'item', 'Sword',
+        values={'trait_grants': {}}))
+    assert snapshot['fields']['inventory_complete']['value'] is False
+    assert not any(event['kind'] == 'ownership' for event in events)
 
 
 def test_capture_cli_uses_checked_calibration_artwork_and_logs_automatic_fields(tmp_path, capsys):

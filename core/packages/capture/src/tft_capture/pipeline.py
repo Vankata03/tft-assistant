@@ -33,7 +33,7 @@ class EventSink(Protocol):
 
 class CapturePipeline:
     def __init__(self, game_id: str, *, ocr: OCR, sink: EventSink, regions: dict[str, tuple] | None = None,
-                 catalog: NameCatalog | None = None, layout: HudLayout | None = None, visual_reader: VisualReader | None = None, own_player_name: str | None = None, tracking_events=(), unit_traits=None, item_traits=None, sale_values=None, video=None, unit_variants=None, data_snapshot_id=None, effect_sources=None):
+                 catalog: NameCatalog | None = None, layout: HudLayout | None = None, visual_reader: VisualReader | None = None, own_player_name: str | None = None, tracking_events=(), unit_traits=None, item_traits=None, sale_values=None, video=None, unit_variants=None, data_snapshot_id=None, effect_sources=None, item_trait_sources=None):
         self.game_id, self.ocr, self.sink = str(game_id), ocr, sink
         self.video = video
         self._closed = False
@@ -56,6 +56,7 @@ class CapturePipeline:
         self._last_board_read = None
         self.catalog = catalog or NameCatalog()
         self.unit_traits, self.item_traits = unit_traits or {}, item_traits or {}
+        self.item_trait_sources = item_trait_sources or {}
         self.unit_variants = unit_variants or {}
         self.effect_sources = effect_sources or {}
         self.data_snapshot_id = data_snapshot_id
@@ -466,6 +467,11 @@ class CapturePipeline:
                     self._last_ownership = payload
                     output_fields["owned_copies"] = dict(copies)
                 output_fields["inventory_complete"] = complete
+                item_provenance = {item: deepcopy(self.item_trait_sources[item]) for row in observations
+                    for item in row.get("items") or () if item in self.item_trait_sources}
+                if complete and item_provenance:
+                    sources = sorted({value["source"] for value in item_provenance.values()})
+                    field_sources["inventory_complete"] = result.source+"+pinned-item-traits:"+",".join(sources)
                 if result.inventory_complete and not complete and result.fields != self._last_conflict:
                     self.sink.append_event("capture_conflict", {"reason": "Reader, independent slots, unit count and complete traits do not agree"}, timestamp=now.isoformat())
                     self.sink.write_keyframe(full_image(frame), reason="capture_conflict", timestamp=now.isoformat())
@@ -484,7 +490,7 @@ class CapturePipeline:
                     self.sink.write_keyframe(full_image(frame),reason="reader_disagreement",timestamp=now.isoformat())
                 self._last_disagreements=deepcopy(disagreements)
                 if observations!=self._last_board_read:
-                    self.sink.append_event("board_read",{"observations":observations,"model_version":getattr(self.visual_reader,"model_version",result.source),"label_map":getattr(self.visual_reader,"label_map",{})},timestamp=now.isoformat())
+                    self.sink.append_event("board_read",{"observations":observations,"model_version":getattr(self.visual_reader,"model_version",result.source),"label_map":getattr(self.visual_reader,"label_map",{}),"item_trait_provenance":item_provenance},timestamp=now.isoformat())
                     self.sink.write_keyframe(full_image(frame),reason="own_board",timestamp=now.isoformat())
                 self._last_board_read=deepcopy(observations)
             for field, value in output_fields.items():
