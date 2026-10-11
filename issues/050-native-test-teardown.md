@@ -34,3 +34,11 @@ This blocks ticket 40's integration verification and the final runtime gate. Inv
 ## Resolution
 
 Unresolved. The failure is reproduced; its initiating cause and a verified fix remain unknown.
+
+## Comments
+
+### 2026-10-11 — Contemporaneous controls and uncertainty
+
+The unchanged original command later passed all 191 tests and exited 0 in 21.02 s, without a dependency, flag or lifecycle change. The 190-test control omitting only the data Riot CLI also exited 0; this does not attribute the earlier failure to that test. Import/construction controls, delayed exit and repeated OCR lifetime probes have not produced a smaller red process. Evidence is in `worktrees/native-teardown-2026-10-11/`.
+
+The ownership follow-up on separate commit `bdad1d9` passed 196 tests and exited 0 with the same two ONNX-export warnings. These favorable runs establish current outcomes only. They neither identify the initiating cause nor resolve the historical abort. Current environment guards were recorded separately; their absence now does not establish their state in the original failed processes. Ticket 50 remains open.
