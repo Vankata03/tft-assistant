@@ -31,3 +31,7 @@ Later observed level-ups and roll-downs identify the player's actual action sche
 ### 2026-10-11 — Replay prerequisite extracted
 
 Ticket 52 implements frozen historical replay contexts/records, public cache safety and locked review/tag/media access through the completed 35/36/37/40 seams. It can proceed while 41 finishes. This ticket consumes those contracts for full choice/policy attribution, costs, grouping, reports, evaluation and fitting; its acceptance remains open.
+
+### 2026-10-12 — Full-game replay resource boundary
+
+Ticket 41's synthetic candidate benchmark emits 17,741,188 bytes of full scored Advice/Line evidence. Evaluating and copying that evidence for every repeated capture poll would multiply memory, disk and runtime without identifying new player decisions. Segment decisions semantically before expensive valuation, retain stable decision IDs and required-field fingerprints, and use shared or lazy content-addressed evidence where appropriate. Preserve every original raw snapshot, log sequence, causal information prefix, timestamp, validity annotation and scored option; resource work must not remove evidence or make a later read fresh. Full-game resource use still requires explicit verification and remains separate from the 100 ms target-device gate.
