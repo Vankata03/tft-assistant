@@ -4,13 +4,65 @@ from datetime import datetime
 
 
 class PurchaseTracker:
-    def __init__(self):
+    def __init__(self, *, sale_values=None):
         self.previous = None
         self.confirmed_acquisitions = Counter()
         self.owned_copies = Counter()
         self.inventory_complete = False
+        self.sale_values = sale_values or {}
+        self._copy_previous = None
+        self._used_receipts = set()
+
+    def invalidate(self):
+        """A route gap invalidates transition uniqueness and complete ownership."""
+        self.previous, self._copy_previous = None, None
+        self.inventory_complete = False
 
     def observe(self, snapshot: dict) -> list[tuple[str, dict]]:
+        events = self._observe_shop(snapshot)
+        now = snapshot["captured_at"]
+        values = {key: item["value"] for key, item in snapshot["fields"].items() if item["read_at"] == now}
+        if values.get("inventory_complete") is not True or "owned_copies" not in values:
+            self._copy_previous = None
+            return events
+        copies = Counter(values["owned_copies"])
+        previous = self._copy_previous
+        self._copy_previous = {"copies": copies, "gold": values.get("gold"), "round": values.get("round"),
+            "planning": values.get("planning_phase"), "timestamp": now}
+        self.owned_copies = copies.copy()
+        self.inventory_complete = True
+        if not previous or previous["round"] != values.get("round") or (datetime.fromisoformat(now)-datetime.fromisoformat(previous["timestamp"])).total_seconds() > 2:
+            return events
+        gained, lost = copies-previous["copies"], previous["copies"]-copies
+        confirmed = Counter()
+        for kind, payload in events:
+            if kind == "purchase":
+                confirmed[payload["unit_id"]] += payload["copies"]
+        receipt = values.get("grant_receipt")
+        if "grant_receipt" in values and receipt is None:
+            self._used_receipts.clear()
+        if isinstance(receipt, dict) and receipt.get("source") in {"wisp", "encounter", "duplicator", "carousel"}:
+            identity, count = receipt.get("unit_id"), receipt.get("copies")
+            token = repr(receipt)
+            if identity and isinstance(count, int) and not isinstance(count, bool) and count > 0 and token not in self._used_receipts:
+                if gained-confirmed == Counter({identity: count}) and not lost:
+                    self._used_receipts.add(token)
+                    return events + [("unit_grant", {"source": receipt["source"], "unit_id": identity, "copies": count})]
+        if gained == confirmed and not lost:
+            return events
+        if not gained and len(lost) == 1 and previous["planning"] is True and values.get("planning_phase") is True:
+            identity, count = next(iter(lost.items()))
+            stars = {1: 1, 3: 2, 9: 3}.get(count)
+            refund = self.sale_values.get(identity, {}).get(stars)
+            if refund is None:
+                refund = self.sale_values.get(identity, {}).get(str(stars))
+            if stars and refund is not None and previous["gold"] is not None and values.get("gold") == previous["gold"] + refund:
+                return events + [("sell", {"unit_id": identity, "copies": count, "stars": stars, "gold": refund})]
+        if gained or lost:
+            events.append(("tracking_ambiguity", {"reason": "Unattributed copy gain or loss", "gained": dict(gained), "lost": dict(lost)}))
+        return events
+
+    def _observe_shop(self, snapshot: dict) -> list[tuple[str, dict]]:
         now = snapshot["captured_at"]
         values = {key: item["value"] for key, item in snapshot["fields"].items() if item["read_at"] == now}
         round_field = snapshot["fields"].get("round", {})
@@ -23,6 +75,10 @@ class PurchaseTracker:
         if (not previous or current["gold"] is None or previous["gold"] is None or
             not current["shop"] or not previous["shop"] or not current["round"] or current["round"] != previous["round"]):
             return []
+        maximum_interval = .5 if snapshot.get('roll_down') else 2
+        interval = (datetime.fromisoformat(now)-datetime.fromisoformat(previous['timestamp'])).total_seconds()
+        if not 0 < interval <= maximum_interval:
+            return [('tracking_ambiguity', {'reason': 'Unobserved shop interval prevents unique action attribution', 'interval_seconds': interval})]
         difference = previous["gold"] - current["gold"]
         old = {slot["slot"]: slot for slot in previous["shop"]}
         new = {slot["slot"]: slot for slot in current["shop"]}
@@ -46,6 +102,7 @@ class PurchaseTracker:
 
     def restore(self, events):
         """Recover positively established ownership from the same game's durable log."""
+        ownership_at = None
         for event in events:
             kind,payload=event.get("kind"),event.get("payload",{})
             if kind=="ownership":
@@ -54,8 +111,25 @@ class PurchaseTracker:
                     raise ValueError("Ownership copies must be nonnegative integers")
                 self.owned_copies=Counter(copies)
                 self.inventory_complete=payload.get("complete") is True
-            elif kind=="purchase":
-                self.owned_copies[payload["unit_id"]]+=payload.get("copies",1)
+                ownership_at = event.get("timestamp")
+            elif kind == 'carousel_pick':
+                included = payload.get('ownership_included', False)
+                if included is False:
+                    self.owned_copies[payload['unit_id']] += 1
+                elif included is True and ownership_at != event.get('timestamp'):
+                    self.owned_copies[payload['unit_id']] += 1
+                if included is not True:
+                    self.inventory_complete = False
+            elif kind == "purchase":
+                if not ownership_at or ownership_at != event.get("timestamp"):
+                    self.owned_copies[payload["unit_id"]]+=payload.get("copies",1)
+            elif kind=="unit_grant":
+                self._used_receipts.add(repr(payload))
+                if not ownership_at or ownership_at != event.get("timestamp"):
+                    self.owned_copies[payload["unit_id"]]+=payload.get("copies",1)
+            elif kind=="sell":
+                if not ownership_at or ownership_at != event.get("timestamp"):
+                    self.owned_copies[payload["unit_id"]]-=payload.get("copies",1)
 
     def reconcile(self, observations, *, identity_min=.55):
         """Preserve reader geometry/details; replace identity only with unique complete tracking evidence."""
