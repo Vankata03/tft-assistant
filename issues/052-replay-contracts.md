@@ -2,7 +2,7 @@
 id: 52
 title: Frozen replay contexts, records and safe review access
 labels: [implementation:task]
-status: open
+status: closed
 assignee: codex-replay-contracts
 parent: 34
 blocked_by: [35, 36, 37, 40]
@@ -46,3 +46,11 @@ Cache reuse requires a clean matching source checkout, unchanged finished log, h
 Verification from `core/`: frozen train sync and full train-group tests **308 passed, no skips, 19.28 seconds, process exit 0**; replay/storage tests **34 passed, 3.96 seconds, exit 0**. Import contracts **2 kept**, schema check, lock check, scoped Ruff F821 and diff checks exited 0. The full suite emitted two existing Torch ONNX export deprecation warnings; sync emitted the existing uv/build-backend version-range warning. The scoped documentation pass made no editorial change and preserved **22/22 constraints**. No UI code or message schema changed.
 
 This ticket remains open for independent integration review. Ticket 42 still owns player policy, signed paired costs, grouping, display attribution, metrics, fits and replay/review/harness CLIs; ticket 44 owns rendered surfaces and 45 owns review jobs. Owner data, Windows accuracy/cadence and actual model calibration remain separate qualification work. These clean process exits do not establish the initiating cause of the historical native abort in ticket 50. No owner data, API token, Live import, push, PR or Vault write was used.
+
+### 2026-10-11 — Independent integration verification and resolution
+
+A different merger reviewed exact clean commit `7cbb71d8d32b0fde9f1de6c60fe87f0a2f50f44b` and merged it as `b5c3d88`. No blocking scoped acceptance findings remained. Replay/storage tests passed **34 cases in 3.83 seconds** on the exact branch and **34 cases in 3.88 seconds** on the merged root, both exit 0. The merger also verified frozen training synchronization, both import contracts, schema, lock and diff checks.
+
+The integration root then passed the complete training-group suite: **308 tests, no skips, 18.99 seconds, process exit 0**. The two existing Torch ONNX-export warnings remain. No UI or message schema changed; prior UI checks remain dated evidence. The source/backend version-range warning is unchanged.
+
+Resolved for this prerequisite's software boundary. Full player-policy reconstruction, costs, grouping, displayed-advice attribution, metrics, fits and CLIs remain in ticket 42; rendered surfaces and runtime jobs remain in 44/45. The historical native cause, production data, recognition and Windows/device qualification remain open. Final 42 must address semantic decision segmentation and repeated evidence serialization before evaluating complete game logs with the full 41 registry; this closure does not qualify full-game resource use.
