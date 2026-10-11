@@ -5,7 +5,7 @@ labels: [implementation:task]
 status: open
 assignee: implement/ticket-40
 parent: 34
-blocked_by: [39]
+blocked_by: [39, 50]
 ---
 
 # Game plan, transitions and seeded Line simulation
@@ -48,3 +48,11 @@ Merged integration through `247f9ef` (capture promotion guard corrections and re
 Independent merger review found an undefined `previous` reference and an unsupported `backup_id` argument in `best_choice_fit`. Public tests reproduced both failing paths before the fix. An actual `DomainHook` now values a gold counterfactual with the same seed/history, verifies unchanged-context fit/Line equality, preserves the target/Backup and pinned or unlocked Line, and proves no recursive choice advice. The counterfactual Line results equal direct changed-snapshot simulation and an equivalent same-seed +1-gold effect. Repeated calls are deterministic and do not mutate the context. Missing current XP yields no choice score and clears stale prior fits/Lines; missing offer fields suppress the callback. Only simulated candidates contribute the returned best fit.
 
 Final corrected checks: Engine 56 tests passed; the full train-group suite with cached pinned assets passed all 191 tests in 26.57 s with the same two existing ONNX-export warnings. Both import contracts, schema check, lock check and diff check passed. `uv tool run ruff check --select F821 core/packages/engine core/packages/data/src/tft_data/config.py` passed the scoped undefined-name check. Engine-contract editorial preservation retained all 150 extracted facts/references without warnings. The previously recorded Mac timing and target-device qualification gap remain unchanged.
+
+### 2026-10-11 — Integration process failure
+
+Corrected commit `d863e41` is merged in `33b83b1`. Independent Engine checks passed all 56 tests, and the scoped undefined-name check passed. The full train-group suite passed all 191 assertions twice but aborted during native shutdown with exit 134. Integration verification is therefore incomplete. Investigation and the required process gate are tracked in [ticket 50](050-native-test-teardown.md); no Windows or live-game failure is inferred.
+
+### 2026-10-11 — Ownership completeness integration
+
+Full capture ticket 37 retains partial typed board observations while exposing `inventory_complete=False`. Engine inspection found no consumer gate for that explicit state. A public-boundary regression and narrow consumer correction are assigned separately from native teardown diagnosis. Domains requiring complete ownership must not price unseen units as absent; independent domains remain available where their own fields are valid. Ticket 40 remains open pending this integration check and ticket 50.
