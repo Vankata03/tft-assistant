@@ -53,7 +53,8 @@ export class CoreSupervisor extends EventEmitter<{
     super()
     this.policy = options.policy ?? new RestartPolicy()
     this.readyTimeoutMs = options.readyTimeoutMs ?? 30_000
-    this.stopTimeoutMs = options.stopTimeoutMs ?? 3_000
+    // Core gives capture eight seconds to flush, including its bounded encoder.
+    this.stopTimeoutMs = options.stopTimeoutMs ?? 10_000
     this.now = options.now ?? Date.now
     this.log = options.log ?? console.log
   }
@@ -88,6 +89,9 @@ export class CoreSupervisor extends EventEmitter<{
     if (!child) return
     await new Promise<void>((resolve) => {
       const timer = setTimeout(() => {
+        const warning = 'core: graceful shutdown deadline exceeded; media may be incomplete; game logs remain recoverable'
+        this.log(warning)
+        this.emit('stderr', warning)
         child.kill()
         resolve()
       }, this.stopTimeoutMs)

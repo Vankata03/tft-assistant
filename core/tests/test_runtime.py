@@ -20,26 +20,38 @@ from tft_capture.windows import CapturedFrame
 from tft_core.server import CoreServer
 from tft_core.storage import SessionStore
 from tft_data import DataStore
-patch_files = runpy.run_path(str(Path(__file__).parents[1] / "packages/data/tests/test_refresh.py"))["patch_files"]
+
+patch_files = runpy.run_path(
+    str(Path(__file__).parents[1] / "packages/data/tests/test_refresh.py")
+)["patch_files"]
 
 
-@pytest.mark.parametrize("game_data,expected", [
-    ({"gameId": 123, "queue": {"gameMode": "TFT"}}, "TFT"),
-    ({"gameId": 123, "gameMode": "CLASSIC"}, "CLASSIC"),
-    ({"gameId": 123, "queue": {"id": 1100}}, None),
-    ({"gameId": 123, "gameMode": "CLASSIC", "queue": {"gameMode": "TFT"}}, None),
-])
+@pytest.mark.parametrize(
+    "game_data,expected",
+    [
+        ({"gameId": 123, "queue": {"gameMode": "TFT"}}, "TFT"),
+        ({"gameId": 123, "gameMode": "CLASSIC"}, "CLASSIC"),
+        ({"gameId": 123, "queue": {"id": 1100}}, None),
+        ({"gameId": 123, "gameMode": "CLASSIC", "queue": {"gameMode": "TFT"}}, None),
+    ],
+)
 def test_lcu_identity_requires_an_explicit_consistent_mode(game_data, expected):
     async def scenario():
-        transport = httpx.MockTransport(lambda request: httpx.Response(200, json={"gameData": game_data}))
-        async with LcuConnection(LcuCredentials(1, "fixture-token"), transport=transport) as lcu:
+        transport = httpx.MockTransport(
+            lambda request: httpx.Response(200, json={"gameData": game_data})
+        )
+        async with LcuConnection(
+            LcuCredentials(1, "fixture-token"), transport=transport
+        ) as lcu:
             identity = await lcu.get_game_identity()
             assert identity == ("123", expected)
+
     asyncio.run(scenario())
 
 
 class Devices:
     """Recorded external OCR and window boundary, never application collaborators."""
+
     source = "recorded-runtime-ocr"
 
     def __init__(self, *, failure=False):
@@ -54,10 +66,14 @@ class Devices:
     def capture(self):
         if self.failure:
             raise RuntimeError("Recorded driver failed")
-        return CapturedFrame(Image.new("RGB", (100, 100), "white"), "window-a", "recorded")
+        return CapturedFrame(
+            Image.new("RGB", (100, 100), "white"), "window-a", "recorded"
+        )
 
     def read(self, image, *, region):
-        text = {"stage": "2-1", "players": "Owner", "gold": "28", "level": "4"}.get(region)
+        text = {"stage": "2-1", "players": "Owner", "gold": "28", "level": "4"}.get(
+            region
+        )
         return [TextLine(text, 1)] if text else []
 
     def close(self):
@@ -66,22 +82,53 @@ class Devices:
 
 def fixture_runtime(tmp_path, *, devices=None):
     from tft_core.runtime import CaptureRuntime, RuntimeSettings
+
     patch = patch_files(tmp_path / "patch")
     data = DataStore(tmp_path / "snapshots")
     snapshot = data.refresh(patch).snapshot
-    (tmp_path / "profile.json").write_text(json.dumps({"version": 1, "regions": {
-        "stage": [0, 0, 1, 1], "players": [0, 0, 1, 1], "gold": [0, 0, 1, 1], "level": [0, 0, 1, 1]}}))
-    (tmp_path / "game.cfg").write_text("[HUD]\nGlobalScale=1\n[General]\nWindowMode=2\n")
+    (tmp_path / "profile.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "regions": {
+                    "stage": [0, 0, 1, 1],
+                    "players": [0, 0, 1, 1],
+                    "gold": [0, 0, 1, 1],
+                    "level": [0, 0, 1, 1],
+                },
+            }
+        )
+    )
+    (tmp_path / "game.cfg").write_text(
+        "[HUD]\nGlobalScale=1\n[General]\nWindowMode=2\n"
+    )
     (tmp_path / "models.json").write_text(json.dumps({"version": "fixture-reader"}))
-    (tmp_path / "names.json").write_text(json.dumps({"snapshot_id": snapshot.snapshot_id,
-        "locale": "en_us", "names": {"units": {"fixture-unit": "Fixture unit"}}}))
+    (tmp_path / "names.json").write_text(
+        json.dumps(
+            {
+                "snapshot_id": snapshot.snapshot_id,
+                "locale": "en_us",
+                "names": {"units": {"fixture-unit": "Fixture unit"}},
+            }
+        )
+    )
     settings_path = tmp_path / "settings.toml"
-    settings_path.write_text('schema_version=1\nowner_name="Owner"\nlocale="en_us"\nexpected_patch="test.1"\n'
+    settings_path.write_text(
+        'schema_version=1\nowner_name="Owner"\nwindow_title="fixture-window"\nlocale="en_us"\nexpected_patch="test.1"\n'
         'profile="profile.json"\ngame_config="game.cfg"\nmodels="models"\nmodel_pointer="models.json"\n'
-        'names="names.json"\npatch_dir="patch"\n')
-    sessions = SessionStore(tmp_path / "logs", tmp_path / "config", live_installed=False)
+        'names="names.json"\ndigits="calibrated-glyphs"\npatch_dir="patch"\n'
+    )
+    sessions = SessionStore(
+        tmp_path / "logs", tmp_path / "config", live_installed=False
+    )
     server = CoreServer("token", sessions=sessions, managed_lifecycle=True)
-    runtime = CaptureRuntime(server, sessions, data, settings=RuntimeSettings.load(settings_path), devices=devices or Devices())
+    runtime = CaptureRuntime(
+        server,
+        sessions,
+        data,
+        settings=RuntimeSettings.load(settings_path),
+        devices=devices or Devices(),
+    )
     return runtime, sessions, data, server
 
 
@@ -89,7 +136,7 @@ async def wait_snapshot(runtime):
     for _ in range(200):
         if runtime.latest_snapshot is not None:
             return runtime.latest_snapshot
-        await asyncio.sleep(.01)
+        await asyncio.sleep(0.01)
     raise AssertionError("Capture did not publish a snapshot")
 
 
@@ -113,6 +160,7 @@ def test_runtime_one_worker_original_pins_and_unknown_shutdown(tmp_path):
         assert not any(event["kind"] == "game_end" for event in events)
         assert sessions.active_game_id == "123"
         assert devices.closed.is_set()
+
     asyncio.run(scenario())
 
 
@@ -125,6 +173,7 @@ def test_runtime_rejects_unidentified_and_non_tft_games(tmp_path, mode):
         assert runtime.latest_snapshot is None
         assert "TFT" in runtime.status
         await runtime.shutdown()
+
     asyncio.run(scenario())
 
 
@@ -142,6 +191,7 @@ def test_terminal_flushes_capture_before_end_and_retains_completed_mode(tmp_path
         assert runtime.completed_game["final_mode"] == "silent"
         assert sessions.active_game_id is None
         await runtime.shutdown()
+
     asyncio.run(scenario())
 
 
@@ -152,34 +202,53 @@ def test_client_loss_and_new_process_reattach_use_original_data(tmp_path):
         await wait_snapshot(runtime)
         pin = data.current
         await runtime.update(GameflowUpdate(False, None))
-        assert not any(event["kind"] == "game_end" for event in sessions.read_events("123"))
+        assert not any(
+            event["kind"] == "game_end" for event in sessions.read_events("123")
+        )
         await runtime.shutdown()
         from tft_core.runtime import CaptureRuntime
-        resumed_store = SessionStore(sessions.root, sessions.config_root, live_installed=False)
-        resumed = CaptureRuntime(CoreServer("other", sessions=resumed_store, managed_lifecycle=True),
-            resumed_store, DataStore(data.root), settings=runtime.settings, devices=Devices())
+
+        resumed_store = SessionStore(
+            sessions.root, sessions.config_root, live_installed=False
+        )
+        resumed = CaptureRuntime(
+            CoreServer("other", sessions=resumed_store, managed_lifecycle=True),
+            resumed_store,
+            DataStore(data.root),
+            settings=runtime.settings,
+            devices=Devices(),
+        )
         await resumed.update(GameflowUpdate(True, "Reconnect", "123", "TFT"))
         assert (await wait_snapshot(resumed))["data_snapshot_id"] == pin.snapshot_id
-        assert any(event["kind"] == "capture_gap" and event["payload"]["reason"] == "core_restart"
-            for event in resumed_store.read_events("123"))
+        assert any(
+            event["kind"] == "capture_gap"
+            and event["payload"]["reason"] == "core_restart"
+            for event in resumed_store.read_events("123")
+        )
         await resumed.shutdown()
+
     asyncio.run(scenario())
 
 
 def test_worker_error_remains_visible_and_watcher_can_follow_lobby(tmp_path):
     async def scenario():
-        runtime, sessions, data, server = fixture_runtime(tmp_path, devices=Devices(failure=True))
+        runtime, sessions, data, server = fixture_runtime(
+            tmp_path, devices=Devices(failure=True)
+        )
         await runtime.update(GameflowUpdate(True, "InProgress", "123", "TFT"))
         for _ in range(100):
             if "driver failed" in runtime.status:
                 break
-            await asyncio.sleep(.01)
+            await asyncio.sleep(0.01)
         assert "driver failed" in runtime.status
         assert runtime.latest_snapshot is None
         await runtime.update(GameflowUpdate(True, "Lobby"))
         assert sessions.active_game_id == "123"
-        assert not any(event["kind"] == "game_end" for event in sessions.read_events("123"))
+        assert not any(
+            event["kind"] == "game_end" for event in sessions.read_events("123")
+        )
         await runtime.shutdown()
+
     asyncio.run(scenario())
 
 
@@ -202,14 +271,33 @@ def test_refresh_coalesces_and_cannot_replace_active_pin(tmp_path):
         await runtime.update(GameflowUpdate(True, "EndOfGame", "123", "TFT"))
         await runtime.refresh.wait()
         assert data.current.snapshot_id == pin.snapshot_id
-        assert "unavailable" in runtime.status.lower() or "missing" in runtime.status.lower()
+        assert (
+            "unavailable" in runtime.status.lower()
+            or "missing" in runtime.status.lower()
+        )
         await runtime.shutdown()
+
     asyncio.run(scenario())
 
 
-def test_stalled_native_worker_timeout_keeps_log_unfinished(tmp_path):
+@pytest.mark.parametrize(
+    "transition",
+    [
+        GameflowUpdate(True, "EndOfGame", "123", "TFT"),
+        GameflowUpdate(True, "EndOfGame", None, None),
+        GameflowUpdate(True, "InProgress", "123", None),
+        GameflowUpdate(False, None),
+        GameflowUpdate(False, None, error="Watcher unavailable: RuntimeError"),
+    ],
+)
+def test_stalled_native_worker_timeout_keeps_log_unfinished(tmp_path, transition):
     class Stalled(Devices):
+        def __init__(self):
+            super().__init__()
+            self.entered = threading.Event()
+
         def capture(self):
+            self.entered.set()
             self.closed.wait(2)
             return super().capture()
 
@@ -219,43 +307,100 @@ def test_stalled_native_worker_timeout_keeps_log_unfinished(tmp_path):
     async def scenario():
         devices = Stalled()
         runtime, sessions, data, server = fixture_runtime(tmp_path, devices=devices)
-        runtime.shutdown_seconds = .05
+        runtime.shutdown_seconds = 0.05
         await runtime.update(GameflowUpdate(True, "InProgress", "123", "TFT"))
-        await asyncio.sleep(.03)
-        await runtime.update(GameflowUpdate(True, "EndOfGame", "123", "TFT"))
+        for _ in range(200):
+            if devices.entered.is_set():
+                break
+            await asyncio.sleep(0.01)
+        assert devices.entered.is_set()
+        await runtime.update(transition)
         assert "timed out" in runtime.status
         assert sessions.active_game_id == "123"
-        assert any(event["kind"] == "capture_shutdown_timeout" for event in sessions.read_events("123"))
-        assert not any(event["kind"] == "game_end" for event in sessions.read_events("123"))
+        assert any(
+            event["kind"] == "capture_shutdown_timeout"
+            for event in sessions.read_events("123")
+        )
+        assert not any(
+            event["kind"] == "game_end" for event in sessions.read_events("123")
+        )
         devices.closed.set()
         await runtime.shutdown()
+
     asyncio.run(scenario())
 
 
 def test_gap_aware_fight_projection_never_certifies_a_later_prefix():
     from tft_core.runtime import project_fight_history
+
     history = [
         {"kind": "game_start", "timestamp": "2026-10-11T10:00:00+00:00", "payload": {}},
-        {"kind": "capture_history_start", "timestamp": "2026-10-11T10:00:01+00:00", "payload": {"round_id": "1-1", "expected_first_round": "1-1"}},
-        {"kind": "fight_start", "timestamp": "2026-10-11T10:01:00+00:00", "payload": {"round_id": "2-1", "opponent_id": "Rival"}},
-        {"kind": "fight_result", "timestamp": "2026-10-11T10:01:30+00:00", "payload": {"round_id": "2-1", "opponent_id": "Rival", "result": "win"}},
+        {
+            "kind": "capture_history_start",
+            "timestamp": "2026-10-11T10:00:01+00:00",
+            "payload": {"round_id": "1-1", "expected_first_round": "1-1"},
+        },
+        {
+            "kind": "fight_start",
+            "timestamp": "2026-10-11T10:01:00+00:00",
+            "payload": {"round_id": "2-1", "opponent_id": "Rival"},
+        },
+        {
+            "kind": "fight_result",
+            "timestamp": "2026-10-11T10:01:30+00:00",
+            "payload": {"round_id": "2-1", "opponent_id": "Rival", "result": "win"},
+        },
     ]
-    assert project_fight_history(history, "2026-10-11T10:01:10+00:00")["recent_opponent_fights_complete"]["value"] is False
-    projected = project_fight_history(history, "2026-10-11T10:02:00+00:00")
+    assert (
+        project_fight_history(
+            history,
+            "2026-10-11T10:01:10+00:00",
+            round_types={"1-1": "carousel", "2-1": "combat"},
+        )["recent_opponent_fights_complete"]["value"]
+        is False
+    )
+    projected = project_fight_history(
+        history,
+        "2026-10-11T10:02:00+00:00",
+        round_types={"1-1": "carousel", "2-1": "combat"},
+    )
     assert projected["recent_opponent_fights_complete"]["value"] is True
     row = projected["recent_opponent_fights"]["value"][0]
     assert row["read_at"] == history[2]["timestamp"]
-    history.append({"kind": "capture_gap", "timestamp": "2026-10-11T10:02:01+00:00", "payload": {"reason": "core_restart"}})
-    assert project_fight_history(history, "2026-10-11T10:03:00+00:00")["recent_opponent_fights_complete"]["value"] is False
+    history.append(
+        {
+            "kind": "capture_gap",
+            "timestamp": "2026-10-11T10:02:01+00:00",
+            "payload": {"reason": "core_restart"},
+        }
+    )
+    assert (
+        project_fight_history(
+            history,
+            "2026-10-11T10:03:00+00:00",
+            round_types={"1-1": "carousel", "2-1": "combat"},
+        )["recent_opponent_fights_complete"]["value"]
+        is False
+    )
 
 
 def test_game_start_without_observed_initial_capture_does_not_certify_fights():
     from tft_core.runtime import project_fight_history
-    history = [{"kind": "game_start", "timestamp": "2026-10-11T10:00:00+00:00", "payload": {}}]
-    assert project_fight_history(history, "2026-10-11T10:03:00+00:00")["recent_opponent_fights_complete"]["value"] is False
+
+    history = [
+        {"kind": "game_start", "timestamp": "2026-10-11T10:00:00+00:00", "payload": {}}
+    ]
+    assert (
+        project_fight_history(history, "2026-10-11T10:03:00+00:00")[
+            "recent_opponent_fights_complete"
+        ]["value"]
+        is False
+    )
 
 
-def test_actual_capture_producer_certifies_checked_start_then_retains_fight_times(tmp_path):
+def test_actual_capture_producer_certifies_checked_start_then_retains_fight_times(
+    tmp_path,
+):
     from tft_capture.vision import VisionRead
 
     class RecordedFight(Devices):
@@ -268,18 +413,23 @@ def test_actual_capture_producer_certifies_checked_start_then_retains_fight_time
             return self, self, self
 
         units = None
-        identity_min = .55
+        identity_min = 0.55
         model_version = "fixture-reader"
         label_map = {}
 
         def capture(self):
             self.frame += 1
-            return CapturedFrame(Image.new("RGB", (100, 100), (self.frame % 255, 0, 0)), "a", "recorded")
+            return CapturedFrame(
+                Image.new("RGB", (100, 100), (self.frame % 255, 0, 0)), "a", "recorded"
+            )
 
         def read(self, image, *, region=None, regions=None, own_view=None):
             if regions is not None:
-                fields = {"phase": "carousel" if self.frame == 1 else "combat", "hp": 100,
-                    "fight_opponent": "Rival"}
+                fields = {
+                    "phase": "carousel" if self.frame == 1 else "combat",
+                    "hp": 100,
+                    "fight_opponent": "Rival",
+                }
                 if self.frame >= 3:
                     fields["fight_result"] = "win"
                 return VisionRead(fields, "recorded-fight", 1)
@@ -308,7 +458,18 @@ def test_actual_capture_producer_certifies_checked_start_then_retains_fight_time
         start = next(event for event in events if event["kind"] == "fight_start")
         assert row["read_at"] == start["timestamp"]
         assert any(event["kind"] == "capture_history_start" for event in events)
+        stored = next(
+            event["payload"]
+            for event in reversed(events)
+            if event["kind"] == "snapshot"
+        )
+        assert stored["fields"]["recent_opponent_fights_complete"]["value"] is True
+        from tft_engine import GameSnapshot
+
+        restored = GameSnapshot.from_dict(stored)
+        assert restored.fields["recent_opponent_fights_complete"].value is True
         await runtime.shutdown()
+
     asyncio.run(scenario())
 
 
@@ -319,7 +480,9 @@ def test_authenticated_runtime_surfaces_silent_clearing_and_public_modes(tmp_pat
     async def scenario():
         runtime, sessions, data, server = fixture_runtime(tmp_path)
         async with server.listen() as listening:
-            async with connect(f"ws://127.0.0.1:{listening.sockets[0].getsockname()[1]}") as ws:
+            async with connect(
+                f"ws://127.0.0.1:{listening.sockets[0].getsockname()[1]}"
+            ) as ws:
                 await ws.send(dump(Hello(token="token")))
                 await ws.recv()
                 modes = json.loads(await ws.recv())
@@ -327,35 +490,50 @@ def test_authenticated_runtime_surfaces_silent_clearing_and_public_modes(tmp_pat
                 await runtime.update(GameflowUpdate(True, "InProgress", "123", "TFT"))
                 await wait_snapshot(runtime)
                 await ws.send(json.dumps({"v": 1, "type": "request_baseline_state"}))
-                while (state := json.loads(await ws.recv()))["type"] != "baseline_state":
+                while (state := json.loads(await ws.recv()))[
+                    "type"
+                ] != "baseline_state":
                     pass
                 assert state["mode"] == "baseline"
                 assert state["content"] is not None
-                await ws.send(json.dumps({"v": 1, "type": "set_session_mode", "mode": "silent"}))
-                while (state := json.loads(await ws.recv()))["type"] != "baseline_state" or state["mode"] != "silent":
+                await ws.send(
+                    json.dumps({"v": 1, "type": "set_session_mode", "mode": "silent"})
+                )
+                while (state := json.loads(await ws.recv()))[
+                    "type"
+                ] != "baseline_state" or state["mode"] != "silent":
                     pass
                 assert state["content"] is None and state["voice"] is None
         await runtime.shutdown()
+
     asyncio.run(scenario())
 
 
 @pytest.mark.parametrize("with_run", [False, True])
-def test_completed_permissions_come_from_stored_game_before_mode_reset(tmp_path, with_run):
+def test_completed_permissions_come_from_stored_game_before_mode_reset(
+    tmp_path, with_run
+):
     async def scenario():
         runtime, sessions, data, server = fixture_runtime(tmp_path)
         sessions.live_installed = True
         if with_run:
-            sessions.start_run({"game_count": 50, "average_placement": 4.2, "rank": "Fixture rank"}, set_id="18")
+            sessions.start_run(
+                {"game_count": 50, "average_placement": 4.2, "rank": "Fixture rank"},
+                set_id="18",
+            )
         sessions.set_mode("silent")
         await runtime.update(GameflowUpdate(True, "InProgress", "123", "TFT"))
         await wait_snapshot(runtime)
         await runtime.update(GameflowUpdate(True, "EndOfGame", "123", "TFT"))
-        stored = next(game for game in sessions.list_games() if game["game_id"] == "123")
+        stored = next(
+            game for game in sessions.list_games() if game["game_id"] == "123"
+        )
         assert runtime.completed_game["review_locked"] is stored["review_locked"]
         assert runtime.completed_game["mode"] == stored["mode"]
         assert runtime.completed_game["final_mode"] == "silent"
         assert stored["review_locked"] is (not with_run)
         await runtime.shutdown()
+
     asyncio.run(scenario())
 
 
@@ -367,7 +545,9 @@ def test_real_process_eof_does_not_wait_for_blocked_external_refresh(tmp_path):
         def do_GET(self):
             entered.set()
             release.wait(5)
-            body = json.dumps({"patch": "test.1", "updated": int(time.time() * 1000), "rows": []}).encode()
+            body = json.dumps(
+                {"patch": "test.1", "updated": int(time.time() * 1000), "rows": []}
+            ).encode()
             self.send_response(200)
             self.end_headers()
             try:
@@ -382,9 +562,11 @@ def test_real_process_eof_does_not_wait_for_blocked_external_refresh(tmp_path):
     thread = threading.Thread(target=http.serve_forever, daemon=True)
     thread.start()
     sources = tmp_path / "sources.toml"
-    sources.write_text('schema_version=1\n[statistics]\nminimum_rank="DIAMOND"\nregions="all"\n'
+    sources.write_text(
+        'schema_version=1\n[statistics]\nminimum_rank="DIAMOND"\nregions="all"\n'
         '[refresh]\nsources=["slow"]\n[sources.slow]\nprovider="metatft"\nkind="statistics"\n'
-        'url="https://source-fixture.invalid/rows"\ntimeout=15\n')
+        'url="https://source-fixture.invalid/rows"\ntimeout=15\n'
+    )
     settings_path = tmp_path / "settings.toml"
     settings_path.write_text(settings_path.read_text() + 'sources="sources.toml"\n')
     code = """
@@ -399,8 +581,21 @@ def recorded_service(request, *, timeout):
 urllib.request.urlopen = recorded_service
 asyncio.run(run('fixture-token', sessions=SessionStore(Path(sys.argv[1]),Path(sys.argv[2]),live_installed=False),settings_path=Path(sys.argv[3]),watcher_options={'discover':lambda:None}))
 """
-    child = subprocess.Popen([sys.executable, "-c", code, str(sessions.root), str(sessions.config_root), str(settings_path), str(http.server_port)],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    child = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            code,
+            str(sessions.root),
+            str(sessions.config_root),
+            str(settings_path),
+            str(http.server_port),
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
     try:
         assert json.loads(child.stdout.readline())["event"] == "ready"
         assert entered.wait(3)
@@ -417,3 +612,332 @@ asyncio.run(run('fixture-token', sessions=SessionStore(Path(sys.argv[1]),Path(sy
         child.wait(timeout=10)
         http.shutdown()
         http.server_close()
+
+
+def test_encoder_close_deadline_reports_loss_and_stops_its_own_process(tmp_path):
+    from datetime import UTC, datetime
+    from tft_capture.media import SegmentRecorder
+    import psutil
+
+    marker = tmp_path / "encoder-started"
+    encoder = tmp_path / "slow_encoder.py"
+    encoder.write_text(
+        f"import os,time,signal\nfrom pathlib import Path\nsignal.signal(signal.SIGTERM,signal.SIG_IGN)\nPath({str(marker)!r}).write_text(str(os.getpid()))\ntime.sleep(30)\n"
+    )
+    sessions = SessionStore(
+        tmp_path / "logs", tmp_path / "config", live_installed=False
+    )
+    sessions.start_game("123")
+    recorder = SegmentRecorder(
+        sessions, executable=[sys.executable, str(encoder)], close_timeout=0.1
+    )
+    recorder.submit(Image.new("RGB", (8, 8)), datetime.now(UTC))
+    recorder.flush()
+    for _ in range(200):
+        if marker.exists():
+            break
+        time.sleep(0.01)
+    assert marker.exists()
+    started = time.monotonic()
+    with pytest.raises(RuntimeError, match="incomplete"):
+        recorder.close()
+    assert time.monotonic() - started < 1
+    assert not recorder.worker.is_alive()
+    assert not psutil.pid_exists(int(marker.read_text()))
+    assert any(event["kind"] == "video_gap" for event in sessions.read_events("123"))
+    assert not any(
+        event["kind"] == "video_segment" for event in sessions.read_events("123")
+    )
+
+
+def test_pve_fights_do_not_become_player_opponents_and_unknown_rounds_cannot_certify():
+    from tft_core.runtime import project_fight_history
+
+    events = [
+        {"kind": "game_start", "timestamp": "2026-10-11T10:00:00+00:00", "payload": {}},
+        {
+            "kind": "capture_history_start",
+            "timestamp": "2026-10-11T10:00:01+00:00",
+            "payload": {"round_id": "1-1", "expected_first_round": "1-1"},
+        },
+        {
+            "kind": "fight_start",
+            "timestamp": "2026-10-11T10:01:00+00:00",
+            "payload": {"round_id": "1-2", "opponent_id": "Neutral monster"},
+        },
+        {
+            "kind": "fight_result",
+            "timestamp": "2026-10-11T10:01:30+00:00",
+            "payload": {
+                "round_id": "1-2",
+                "opponent_id": "Neutral monster",
+                "result": "win",
+            },
+        },
+    ]
+    fields = project_fight_history(
+        events,
+        "2026-10-11T10:02:00+00:00",
+        round_types={"1-1": "carousel", "1-2": "pve"},
+    )
+    assert fields["recent_opponent_fights"]["value"] == []
+    assert fields["recent_opponent_fights_complete"]["value"] is True
+    fields = project_fight_history(events, "2026-10-11T10:02:00+00:00", round_types={})
+    assert fields["recent_opponent_fights_complete"]["value"] is False
+
+
+def test_lost_mode_identity_pauses_capture_without_confirming_an_outcome(tmp_path):
+    async def scenario():
+        devices = Devices()
+        runtime, sessions, data, server = fixture_runtime(tmp_path, devices=devices)
+        await runtime.update(GameflowUpdate(True, "InProgress", "123", "TFT"))
+        await wait_snapshot(runtime)
+        await runtime.update(GameflowUpdate(True, "InProgress", "123", None))
+        assert devices.closed.is_set()
+        assert runtime.latest_snapshot is None
+        assert sessions.active_game_id == "123"
+        assert not any(
+            event["kind"] == "game_end" for event in sessions.read_events("123")
+        )
+        assert any(
+            event["kind"] == "capture_gap" for event in sessions.read_events("123")
+        )
+        await runtime.update(GameflowUpdate(True, "Reconnect", "123", "TFT"))
+        await wait_snapshot(runtime)
+        assert devices.opens == 2
+        await runtime.shutdown()
+
+    asyncio.run(scenario())
+
+
+def test_malformed_lcu_phase_is_reported_as_unavailable():
+    from tft_capture.lcu import LcuUnavailable
+
+    async def scenario():
+        transport = httpx.MockTransport(
+            lambda request: httpx.Response(200, json={"unexpected": "phase"})
+        )
+        async with LcuConnection(
+            LcuCredentials(1, "fixture-token"), transport=transport
+        ) as lcu:
+            with pytest.raises(LcuUnavailable, match="Malformed gameflow phase"):
+                await lcu.get_phase()
+
+    asyncio.run(scenario())
+
+
+def test_native_close_failure_is_durable_and_does_not_end_the_game(tmp_path):
+    class FailingClose(Devices):
+        def close(self):
+            raise RuntimeError("recorded source close failed")
+
+    async def scenario():
+        runtime, sessions, data, server = fixture_runtime(
+            tmp_path, devices=FailingClose()
+        )
+        await runtime.update(GameflowUpdate(True, "InProgress", "123", "TFT"))
+        await wait_snapshot(runtime)
+        await runtime.update(GameflowUpdate(True, "EndOfGame", "123", "TFT"))
+        events = sessions.read_events("123")
+        assert sessions.active_game_id == "123"
+        assert not any(event["kind"] == "game_end" for event in events)
+        assert any(event["kind"] == "capture_finalization_failed" for event in events)
+        assert "close failed" in runtime.status
+        await runtime.shutdown()
+
+    asyncio.run(scenario())
+
+
+def test_runtime_settings_pin_calibrated_digit_assets_and_reject_missing_path(tmp_path):
+    from tft_core.runtime import RuntimeSettings
+
+    fixture_runtime(tmp_path)
+    path = tmp_path / "settings.toml"
+    original = path.read_text().replace('digits="calibrated-glyphs"\n', "")
+    path.write_text(original)
+    with pytest.raises(ValueError, match="documented capture fields"):
+        RuntimeSettings.load(path)
+    path.write_text(original + 'digits="calibrated-glyphs"\n')
+    settings = RuntimeSettings.load(path)
+    assert settings.digits == (tmp_path / "calibrated-glyphs").resolve()
+
+
+def test_core_reports_and_recovers_from_external_lcu_discovery_failure(tmp_path):
+    from tft_core.app import run
+    from tft_core.messages import Hello, dump
+    from websockets.asyncio.client import connect
+    import contextlib
+    import io
+
+    runtime, sessions, data, server = fixture_runtime(tmp_path)
+    closed = asyncio.Event()
+    attempts = 0
+
+    def discover():
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("recorded process enumeration failure")
+        return None
+
+    async def scenario():
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            task = asyncio.create_task(
+                run(
+                    "fixture-token",
+                    sessions=sessions,
+                    data_store=data,
+                    settings_path=tmp_path / "settings.toml",
+                    closed=closed,
+                    watcher_options={"discover": discover, "discovery_interval": 0.01},
+                )
+            )
+            try:
+                for _ in range(200):
+                    if output.getvalue():
+                        break
+                    await asyncio.sleep(0.01)
+                port = json.loads(output.getvalue().splitlines()[0])["port"]
+                async with connect(f"ws://127.0.0.1:{port}") as ws:
+                    await ws.send(dump(Hello(token="fixture-token")))
+                    await ws.send(
+                        json.dumps({"v": 1, "type": "request_baseline_state"})
+                    )
+                    for _ in range(10):
+                        state = json.loads(await asyncio.wait_for(ws.recv(), 1))
+                        if state["type"] == "baseline_state":
+                            assert (
+                                "Watcher unavailable: RuntimeError" in state["status"]
+                            )
+                            assert state["content"] is None
+                            break
+                for _ in range(200):
+                    if attempts >= 2:
+                        break
+                    await asyncio.sleep(0.01)
+                assert attempts >= 2
+            finally:
+                closed.set()
+                await task
+
+    asyncio.run(scenario())
+
+
+def test_failed_capture_clears_pending_handoff_before_future_dispatch(tmp_path):
+    async def scenario():
+        devices = Devices()
+        runtime, sessions, data, server = fixture_runtime(tmp_path, devices=devices)
+        await runtime.update(GameflowUpdate(True, "InProgress", "123", "TFT"))
+        await wait_snapshot(runtime)
+        devices.failure = True
+        try:
+            for _ in range(200):
+                if "driver failed" in runtime.status:
+                    break
+                await asyncio.sleep(0.01)
+            assert "driver failed" in runtime.status
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(runtime.next_snapshot(), 0.05)
+        finally:
+            await runtime.shutdown()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("game_id,mode", [(None, None), ("999", "TFT")])
+def test_unconfirmed_terminal_identity_pauses_and_retains_an_unfinished_log(
+    tmp_path, game_id, mode
+):
+    async def scenario():
+        devices = Devices()
+        runtime, sessions, data, server = fixture_runtime(tmp_path, devices=devices)
+        await runtime.update(GameflowUpdate(True, "InProgress", "123", "TFT"))
+        await wait_snapshot(runtime)
+        try:
+            await runtime.update(GameflowUpdate(True, "EndOfGame", game_id, mode))
+            assert devices.closed.is_set()
+            assert runtime.latest_snapshot is None
+            assert sessions.active_game_id == "123"
+            events = sessions.read_events("123")
+            assert not any(event["kind"] == "game_end" for event in events)
+            assert any(event["kind"] == "capture_gap" for event in events)
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(runtime.next_snapshot(), 0.05)
+        finally:
+            await runtime.shutdown()
+
+    asyncio.run(scenario())
+
+
+def test_runtime_settings_accept_an_operator_checked_window_title(tmp_path):
+    from tft_core.runtime import RuntimeSettings
+
+    fixture_runtime(tmp_path)
+    path = tmp_path / "settings.toml"
+    original = path.read_text()
+    path.write_text(
+        original.replace('window_title="fixture-window"\n', "")
+        + 'window_title="Owner-reviewed game title"\n'
+    )
+    assert RuntimeSettings.load(path).window_title == "Owner-reviewed game title"
+
+
+def test_invalid_refresh_configuration_remains_visible_with_last_good_capture(tmp_path):
+    from dataclasses import replace
+    from tft_core.runtime import CaptureRuntime
+
+    async def scenario():
+        original, sessions, data, server = fixture_runtime(tmp_path)
+        runtime = CaptureRuntime(
+            server,
+            sessions,
+            data,
+            settings=replace(
+                original.settings, sources=tmp_path / "missing-sources.toml"
+            ),
+            devices=Devices(),
+        )
+        try:
+            await runtime.update(GameflowUpdate(True, "InProgress", "123", "TFT"))
+            await wait_snapshot(runtime)
+            state = server.baseline.state("baseline")
+            assert "Refresh configuration unavailable" in state.status
+        finally:
+            await runtime.shutdown()
+
+    asyncio.run(scenario())
+
+
+def test_queued_capture_callbacks_cannot_deliver_after_source_failure(tmp_path):
+    class QueuedFailure(Devices):
+        def __init__(self):
+            super().__init__()
+            self.frames = 0
+
+        def capture(self):
+            self.frames += 1
+            if self.frames > 1:
+                raise RuntimeError("recorded queued source failure")
+            return super().capture()
+
+    async def scenario():
+        devices = QueuedFailure()
+        runtime, sessions, data, server = fixture_runtime(tmp_path, devices=devices)
+        await runtime.update(GameflowUpdate(True, "InProgress", "123", "TFT"))
+        try:
+            # Keep the core loop busy until both the first frame callback and
+            # failure callback are queued by the actual capture thread.
+            assert devices.closed.wait(2)
+            for _ in range(200):
+                if "queued source failure" in runtime.status:
+                    break
+                await asyncio.sleep(0.01)
+            assert "queued source failure" in runtime.status
+            assert runtime.latest_snapshot is None
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(runtime.next_snapshot(), 0.05)
+        finally:
+            await runtime.shutdown()
+
+    asyncio.run(scenario())

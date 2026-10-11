@@ -33,3 +33,21 @@ This extracts the capture/data/session lifecycle prerequisite from ticket 45. It
 ## Remaining scope
 
 Ticket 45 consumes this lifecycle for final Live/Engine worker integration, post-game subprocess jobs, harness start-run and numbering/block workflows, desktop shortcut/login settings and complete end-to-end verification. Ticket 44 owns delivered/displayed advice and review-ready transport/rendering. Ticket 49 owns real Windows/capture/recognition/device qualification. This prerequisite does not close those requirements or the parent specification.
+
+## Implemented software boundary
+
+The core now runs CaptureRuntime as the single session/capture owner, with safe-phase RefreshCoordinator scheduling and existing Baseline publication. [Runtime configuration and contracts](../docs/agents/runtime-boundary.md) document local settings, checked window title, real profile/name/glyph/model requirements, immutable original pins, latest-snapshot handoff and completed-game permissions. The worker persists gap-aware fight-history certificates in actual snapshots; confirmed PvP encounter times remain historical, and unknown/PvE rounds do not supply player-history coverage.
+
+Positive identity is required throughout the lifecycle. Losing mode/game identity, client disappearance and an unconfirmed terminal phase stop capture, clear pending content and retain an unfinished original game. Public regressions reproduce both missing and different terminal identities. Matching positive reconnects reuse the original log/data/model/profile; only a confirmed matching terminal phase can end a successfully finalized session. Finished review permissions come from SessionStore, including Silent before and after start-run.
+
+Shutdown gives capture eight seconds. Media has five seconds for flushing and at most one additional second for owned encoder cleanup/join; the shell allows ten seconds and explicitly warns before its child-termination fallback. Public regressions use a blocked native boundary, a real encoder that ignores termination and a real core process whose refresh is waiting on a slow local HTTP response. Timeouts and close failures remain visible and durable, and never synthesize game completion. Cancelling refresh no longer leaves a default-executor network worker holding process exit.
+
+## Verification
+
+After merging integration `5f0c6ad`, the full Python suite passed with cached pinned reader assets: **344 tests, no skips, 25.15 seconds, process exit 0**. Both existing Torch ONNX deprecation warnings remain. The suite includes actual CPU inference/training, RapidOCR and codec tests; a favorable exit does not establish the cause or resolution of ticket 50's historical native abort. The added runtime module has 36 public cases covering the real capture/storage/data/WebSocket/process workflows and external platform fixtures.
+
+The UI passed **33 tests**, TypeScript checks, generated-type parity and production build. Import-linter retained both contracts; schema, frozen lock, scoped Ruff F821 and Git whitespace checks passed. A separate frozen sync without the Live package passed all **48 public runtime, process and Baseline cases** in 5.53 seconds with process exit 0. The Live package was then restored through frozen sync. The runtime documentation received a bounded Unslop pass: no wording changes were justified, and all 70 extracted constraints survived the preservation check.
+
+## Qualification and integration limits
+
+No owner API, real game, production data publication or Windows device run was performed. Missing production assets and rejected sources remain unavailable. Ticket 48 owns production qualification; ticket 49 owns Windows recognition/driver/latency checks; ticket 50 retains the unknown native-abort cause and final runtime gate. Tickets 44/45 must retain physical client bounds currently discarded by CapturedFrame, perform checked desktop DIP conversion and supply profile anchors before enabling overlays. This runtime leaves overlay permission false. Final Live dispatch, review jobs and run eligibility/numbering remain in ticket 45. This ticket stays open pending independent merger verification.

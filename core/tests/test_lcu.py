@@ -177,9 +177,10 @@ def test_watcher_polls_when_subscribe_fails():
 def test_watcher_rediscovers_after_client_exits():
     first = FakeLcu(polls=["InProgress", LcuUnavailable("gone")], events=None)
     second = FakeLcu(polls=["Reconnect"], events=["InProgress"])
-    updates = asyncio.run(_watch([CREDENTIALS, None, CREDENTIALS], [first, second], expected=4))
+    updates = asyncio.run(_watch([CREDENTIALS, None, CREDENTIALS], [first, second], expected=5))
     assert updates == [
         GameflowUpdate(True, "InProgress"),
+        GameflowUpdate(True, None),
         NOT_RUNNING,
         GameflowUpdate(True, "Reconnect"),
         GameflowUpdate(True, "InProgress"),

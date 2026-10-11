@@ -49,9 +49,13 @@ class RefreshCoordinator:
         def fetch():
             result, error = None, None
             try:
-                result = self.store.refresh(self.patch_dir, trigger=reason,
+                result = self.store.refresh(
+                    self.patch_dir,
+                    trigger=reason,
                     can_publish=lambda: not self.in_game,
-                    defer_publication=True, **self.options)
+                    defer_publication=True,
+                    **self.options,
+                )
             except Exception as caught:
                 error = caught
             try:

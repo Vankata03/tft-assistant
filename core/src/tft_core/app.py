@@ -35,12 +35,24 @@ def _stdin_closed(loop: asyncio.AbstractEventLoop) -> asyncio.Event:
     return closed
 
 
-async def run(token: str, *, sessions=None, data_store=None, settings_path=None,
-              watcher_options=None, devices=None, closed=None) -> None:
+async def run(
+    token: str,
+    *,
+    sessions=None,
+    data_store=None,
+    settings_path=None,
+    watcher_options=None,
+    devices=None,
+    closed=None,
+) -> None:
     """Run the actual server with optional external platform/LCU boundaries."""
     sessions = sessions or SessionStore.default()
     data_store = data_store or DataStore(sessions.root / "snapshots")
-    settings_path = settings_path or os.environ.get("TFT_ASSISTANT_SETTINGS") or sessions.config_root / "settings.toml"
+    settings_path = (
+        settings_path
+        or os.environ.get("TFT_ASSISTANT_SETTINGS")
+        or sessions.config_root / "settings.toml"
+    )
     settings, settings_error = None, None
     try:
         settings = RuntimeSettings.load(settings_path)
@@ -48,14 +60,25 @@ async def run(token: str, *, sessions=None, data_store=None, settings_path=None,
         settings_error = str(error)
         log.error("%s", settings_error)
     server = CoreServer(token, sessions=sessions, managed_lifecycle=True)
-    runtime = CaptureRuntime(server, sessions, data_store, settings=settings,
-        settings_error=settings_error, devices=devices)
+    runtime = CaptureRuntime(
+        server,
+        sessions,
+        data_store,
+        settings=settings,
+        settings_error=settings_error,
+        devices=devices,
+    )
     async with server.listen() as ws_server:
         port = ws_server.sockets[0].getsockname()[1]
-        print(json.dumps({"event": "ready", "port": port, "v": SCHEMA_VERSION}), flush=True)
+        print(
+            json.dumps({"event": "ready", "port": port, "v": SCHEMA_VERSION}),
+            flush=True,
+        )
         log.info("Core listening on 127.0.0.1:%d", port)
         await runtime.start()
-        watcher = asyncio.create_task(GameflowWatcher(runtime.update, **(watcher_options or {})).run())
+        watcher = asyncio.create_task(
+            GameflowWatcher(runtime.update, **(watcher_options or {})).run()
+        )
         try:
             await (closed or _stdin_closed(asyncio.get_running_loop())).wait()
             log.info("Shell closed stdin; finalizing capture")
