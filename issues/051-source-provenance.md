@@ -2,7 +2,7 @@
 id: 51
 title: Preserve source-owned publication and cohort provenance
 labels: [implementation:task, bug]
-status: open
+status: closed
 assignee: codex-source-provenance
 parent: 34
 blocked_by: [36]
@@ -39,3 +39,11 @@ Red/green public source, refresh and CLI slices reproduced donor timestamp attri
 Verification from `core/`: frozen train sync, `TFT_READER_TEST_MODELS=<ignored pinned-model directory> uv run --no-sync pytest -q` **281 passed, no skips, 16.20 seconds, process exit 0**; data-only **37 passed**. Import contracts **2 kept**, schema check, lock check, scoped Ruff F821 and diff checks all exited 0. The full suite emitted two existing Torch ONNX deprecation warnings; sync emitted the existing uv/build-backend version-range warning. The new [source provenance contract](../docs/agents/source-provenance.md) passed its scoped Unslop no-op preservation check, **19/19 constraints**. No UI code or message schema changed.
 
 Software acceptance is ready for independent merger review; this ticket remains open until integration is verified. Current-patch source coverage, all-region/provider cohort evidence, static tables, fitted parameters and the owner's live calendar remain ticket 48's qualification work. These favorable process exits do not establish the initiating cause of the historical native abort tracked in 50. Ticket 41's additive pick-stage fields and row keys remain owned by its implementer and must be preserved when merging.
+
+### 2026-10-11 — Independent integration and software closure
+
+The different merger reviewed the full diff and merged exact `3e8a8de` as `91465f1`. Public source/refresh/CLI plus complete-capture/pipeline checks passed 103 tests in 4.14 s, process exit 0. Both import contracts, schema, lock and diff checks passed.
+
+The integration root then passed all 281 Python tests in 14.61 s, no skips, process exit 0, with the same two existing Torch ONNX export deprecation warnings. Root import/schema/lock checks passed. No UI or message schema changed; earlier UI verification was not rerun for this data-only change.
+
+Ticket 51 is closed for the provenance software boundary. Unknown source patch/cohort stays unavailable or retains qualified last-good data with an explicit persisted reason. Current provider coverage, reviewed production data and fits remain ticket 48; the historical native abort cause remains ticket 50. This does not qualify a production patch or close the parent specification.

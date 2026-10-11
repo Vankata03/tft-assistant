@@ -35,6 +35,8 @@ Source: [MVP spec](../docs/spec.md), its area files, and the resolved planning t
 
 ## Decisions so far
 
+- 2026-10-11: Source-provenance software ticket 51 closed after independent merge `91465f1` of exact `3e8a8de`. Root passed 281 Python tests in 14.61 s, no skips, process exit 0, plus both import contracts, schema and lock checks. Payload publication/identity remains distinct from donor hints; rejected attempts cannot relabel qualified last-good data. Production source/patch/cohort qualification stays in 48, and the historical native cause stays in 50.
+
 - 2026-10-11: Ticket 52 extracts the frozen-log/context/cache/review-access prerequisite from 42. Its 35/36/37/40 dependencies are closed, so this software slice proceeds while 41 finishes. Full policy attribution, costs, review, evaluation and fitting remain in 42.
 
 - 2026-10-11: Full capture software ticket 37 closed after independent merge `7963682` of corrected `9f0adb7`. Root checks passed 262 Python tests in 16.23 s without skips, process exit 0; both import contracts, schema and lock checks passed. Pinned equipped-item trait grants now project through `from_data`; unknown or invalid metadata still fails completeness. Production metadata/assets (48), Windows/recognition/device evidence (49), runtime lifecycle (45) and the historical native cause (50) remain open.
