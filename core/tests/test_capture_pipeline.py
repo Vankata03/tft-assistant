@@ -56,9 +56,10 @@ def test_shop_and_wisp_are_locale_matched_and_logged_with_keyframes(tmp_path):
     catalog = NameCatalog({"units": {"shen": "Shen", "yi": "Master Yi", "veigar": "Veigar", "ornn": "Ornn"}, "wisps": {"forest": "Forest Twins"}})
     pipeline = CapturePipeline("124", ocr=RecordedOCR(output), sink=logs, catalog=catalog, regions={"shop": (0, 0, 1, 1)})
     snapshot = pipeline.tick(Image.new("RGB", (100, 50), "white"), timestamp=start)
+    assert snapshot["fields"]["wisp_complete"]["value"] is True
     assert snapshot["fields"]["slot_count"]["value"] == 4
     assert [slot["unit_id"] for slot in snapshot["fields"]["shop"]["value"]] == ["shen", "yi", "veigar", "ornn"]
-    assert snapshot["fields"]["wisp"]["value"] == {"wisp_id": "forest", "cost": 4, "text": "Gain 2 copies of a 2-cost champion you don't have."}
+    assert snapshot["fields"]["wisp"]["value"] == {"wisp_id": "forest", "slot": 4, "cost": 4, "text": "Gain 2 copies of a 2-cost champion you don't have."}
     assert any(event["kind"] == "shop_offer" for event in logs.read_events("124"))
     assert any(event["kind"] == "keyframe" for event in logs.read_events("124"))
 

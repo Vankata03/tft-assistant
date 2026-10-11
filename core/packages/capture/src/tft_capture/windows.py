@@ -9,7 +9,7 @@ import threading
 import time
 from dataclasses import dataclass
 
-from PIL import Image, ImageGrab
+from tft_capture.frames import RegionFrame
 
 
 class CaptureUnavailable(RuntimeError):
@@ -18,7 +18,7 @@ class CaptureUnavailable(RuntimeError):
 
 @dataclass(frozen=True)
 class CapturedFrame:
-    image: Image.Image
+    image: object
     window_id: str
     source: str
 
@@ -118,7 +118,7 @@ class WindowsCaptureSource:
             buffer = self._frame
             age = time.monotonic() - self._frame_at
         if buffer is not None and not self._closed and age <= 1:
-            image = Image.fromarray(buffer[:, :, 2::-1]).convert("RGB")
+            image = RegionFrame(buffer)
             target_size = (bounds[2]-bounds[0], bounds[3]-bounds[1])
             if image.size == target_size:
                 return CapturedFrame(image, str(hwnd), "wgc")
@@ -126,7 +126,8 @@ class WindowsCaptureSource:
             self._wgc_error = "WGC frame differs from the client rectangle; use BitBlt and check calibration"
         if self.allow_bitblt:
             try:
-                image = ImageGrab.grab(bbox=bounds, all_screens=True, include_layered_windows=False).convert("RGB")
+                from tft_capture.bitblt import capture_bitblt
+                image = capture_bitblt(bounds)
                 return CapturedFrame(image, str(hwnd), "bitblt")
             except (OSError, RuntimeError) as error:
                 raise CaptureUnavailable(f"WGC/BitBlt capture unavailable: {error}") from error
