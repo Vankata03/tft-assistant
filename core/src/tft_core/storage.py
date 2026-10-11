@@ -65,8 +65,10 @@ class SessionStore:
     @classmethod
     def default(cls) -> "SessionStore":
         home = Path.home()
-        root = Path(os.environ.get("LOCALAPPDATA", home / ".local" / "share")) / "tft-assistant"
-        return cls(root, home / ".config" / "tft-assistant")
+        default_root = Path(os.environ.get("LOCALAPPDATA", home / ".local" / "share")) / "tft-assistant"
+        root = Path(os.environ.get("TFT_ASSISTANT_DATA_ROOT", default_root))
+        config_root = Path(os.environ.get("TFT_ASSISTANT_CONFIG_ROOT", home / ".config" / "tft-assistant"))
+        return cls(root, config_root)
 
     @property
     def run(self) -> dict | None:

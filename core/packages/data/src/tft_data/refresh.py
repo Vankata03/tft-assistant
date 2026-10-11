@@ -1,6 +1,7 @@
 """Nonblocking refresh scheduling with publication on the core event loop."""
 
 import asyncio
+import threading
 
 from .models import RefreshResult
 
@@ -31,14 +32,36 @@ class RefreshCoordinator:
         return self.task
 
     async def _run(self, reason):
-        result = await asyncio.to_thread(
-            self.store.refresh,
-            self.patch_dir,
-            trigger=reason,
-            can_publish=lambda: not self.in_game,
-            defer_publication=True,
-            **self.options,
-        )
+        # Network IO cannot be cancelled by cancelling an asyncio executor
+        # future. A dedicated daemon keeps an interrupted refresh from holding
+        # process teardown; it may only stage a candidate, never publish it.
+        loop = asyncio.get_running_loop()
+        result_future = loop.create_future()
+
+        def deliver(result=None, error=None):
+            if result_future.done():
+                return
+            if error:
+                result_future.set_exception(error)
+            else:
+                result_future.set_result(result)
+
+        def fetch():
+            result, error = None, None
+            try:
+                result = self.store.refresh(self.patch_dir, trigger=reason,
+                    can_publish=lambda: not self.in_game,
+                    defer_publication=True, **self.options)
+            except Exception as caught:
+                error = caught
+            try:
+                if not loop.is_closed():
+                    loop.call_soon_threadsafe(deliver, result, error)
+            except RuntimeError:
+                pass  # Shutdown has already reported the interrupted refresh.
+
+        threading.Thread(target=fetch, name="tft-data-refresh", daemon=True).start()
+        result = await result_future
         if not self.in_game:
             published = self.store.publish_pending()
             if published.changed:

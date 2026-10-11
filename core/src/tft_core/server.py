@@ -49,6 +49,7 @@ class CoreServer:
         sessions: SessionStore | None = None,
         game_metadata: Callable[[str], dict] | None = None,
         baseline: BaselineController | None = None,
+        managed_lifecycle: bool = False,
     ) -> None:
         self._token = token
         self._clients: set[ServerConnection] = set()
@@ -57,6 +58,7 @@ class CoreServer:
         self._baseline_clients: set[ServerConnection] = set()
         self.sessions = sessions
         self._game_metadata = game_metadata or (lambda game_id: {})
+        self._managed_lifecycle = managed_lifecycle
         self._mode = sessions.mode if sessions else SessionMode.SILENT
 
     @property
@@ -69,7 +71,7 @@ class CoreServer:
 
     def publish_gameflow(self, update: GameflowUpdate) -> None:
         self._gameflow = update
-        if self.sessions:
+        if self.sessions and not self._managed_lifecycle:
             try:
                 if update.phase in {"InProgress", "Reconnect"}:
                     if update.game_id:
@@ -115,6 +117,10 @@ class CoreServer:
         log.info(
             "Gameflow: client_running=%s phase=%s", update.client_running, update.phase
         )
+        if self.sessions and self._managed_lifecycle:
+            self._mode = self.sessions.mode
+            broadcast(self._clients, dump(self._mode_message()))
+            self._publish_baseline_state()
         broadcast(self._clients, dump(self._gameflow_message()))
 
     def publish_baseline(
