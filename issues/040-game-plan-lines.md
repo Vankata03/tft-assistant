@@ -2,10 +2,10 @@
 id: 40
 title: Game plan, transitions and seeded Line simulation
 labels: [implementation:task]
-status: open
+status: closed
 assignee: implement/ticket-40
 parent: 34
-blocked_by: [39, 50]
+blocked_by: [39]
 ---
 
 # Game plan, transitions and seeded Line simulation
@@ -74,3 +74,10 @@ Full capture ticket 37 retains partial typed board observations while exposing `
 ### 2026-10-11 — Independent phase integration review
 
 Exact phase follow-up `aaaf442` is merged in `27aeb7f`. Independent source/API review found no phase-guard blocker. The first worktree Engine run exited 1 with 73 passed and an unchanged inference subprocess exceeding its one-second timeout. The phase/planning public module then passed all 52 tests, and the unchanged inference test passed in a single targeted control in 0.33 s. No test timeout or inference code changed. The merged-root Engine suite passed all 74 tests in 5.67 s, process exit 0; both import contracts, schema, lock, scoped F821 and diff checks also passed. The initial timing failure remains part of the evidence. These software checks do not qualify target-device latency or resolve ticket 50's historical native abort.
+
+
+### 2026-10-11 — Resolution: Engine software boundary
+
+Closed the deterministic Engine domain after independent ownership and phase integration review. The merged-root Engine suite passed all 74 tests in both the merger and root checks (5.67 s and 4.85 s respectively), process exit 0; the phase worktree full train-group suite passed 209 tests with process exit 0. Import contracts, schema, lock, scoped undefined-name and diff checks passed. The initial independent one-second inference timeout remains recorded above.
+
+Ticket 50 retains the unresolved historical native shutdown failure and its supported startup-prevention work as an explicit parent/final-runtime gate. It is no longer a prerequisite for implementing decision consumers of the independently verified Engine API. This closure does not resolve that abort or declare the whole branch green. Production data and actual fits remain ticket 48; the unmet 100 ms budget, Windows/live capture and owner-data qualification remain ticket 49. Interface and projection contracts are in `docs/agents/engine-contracts.md`.

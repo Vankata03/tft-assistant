@@ -3,7 +3,7 @@ id: 41
 title: Shop, Wisp, item, augment, carousel and positioning advice
 labels: [implementation:task]
 status: open
-assignee:
+assignee: codex-decision-engines
 parent: 34
 blocked_by: [40]
 ---

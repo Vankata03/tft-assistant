@@ -18,7 +18,7 @@ Source: [MVP spec](../docs/spec.md), its area files, and the resolved planning t
 - [37: Automatic screen capture and purchase tracking](037-capture-pipeline.md); blocked by [47, 38].
 - [38: Own-board recognition and crop training](038-board-reader-training.md); blocked by [47].
 - [39: Board power, classification and trait-only opponent inference](039-board-power-opponents.md); blocked by [46].
-- [40: Game plan, transitions and seeded Line simulation](040-game-plan-lines.md); blocked by [39, 50].
+- [40: Game plan, transitions and seeded Line simulation](040-game-plan-lines.md); blocked by [39].
 - [41: Shop, Wisp, item, augment, carousel and positioning advice](041-decision-sub-engines.md); blocked by [40].
 - [42: Replay, post-game review and evaluation harness](042-replay-review-harness.md); blocked by [35, 41].
 - [43: Baseline Guides and permitted hints](043-baseline-surfaces.md); blocked by [36, 39].
@@ -32,6 +32,8 @@ Source: [MVP spec](../docs/spec.md), its area files, and the resolved planning t
 - [50: Native macOS teardown abort after the full Python suite](050-native-test-teardown.md); blocked by nothing.
 
 ## Decisions so far
+
+- 2026-10-11: Ticket 40's Engine software boundary is closed after ownership merge `472bea4` and phase merge `27aeb7f`. Independent merged-root Engine checks passed 74 tests; the phase worktree passed 209 full-suite tests with process exit 0. The recorded inference timeout and historical native abort remain explicit. Native investigation/prevention stays open in ticket 50 as a parent/final-runtime gate; closing this domain does not declare complete integration or device qualification. Ticket 41 is now unblocked.
 
 - 2026-10-11: Corrected ticket 40 merged in `33b83b1`. All 191 Python assertions pass, but the process aborts during native shutdown. Ticket 50 retains this blocking verification failure; ticket 37 continues independently. A passing subset or macOS software check does not qualify Windows/live capture.
 
