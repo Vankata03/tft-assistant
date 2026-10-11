@@ -167,7 +167,7 @@ class BoardReader:
             hex_position,
         )
 
-        frame = np.asarray(image.convert("RGB"))[:, :, ::-1].copy()
+        frame = image.bgr_view() if hasattr(image, "bgr_view") else np.asarray(image.convert("RGB"))[:, :, ::-1].copy()
         samples = []
         for sample in crops(frame):
             allowed = (

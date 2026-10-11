@@ -1,0 +1,64 @@
+"""Capture validation tables projected from the immutable pinned data snapshot.
+
+This projection uses source trait rules and refund tables. It supplies no patch
+fallbacks or recognition guesses; missing tables leave their validations closed.
+"""
+from itertools import combinations
+from collections.abc import Mapping
+
+from tft_capture.ocr import NameCatalog
+from tft_data.models import TaggedValue
+
+
+def project_data(data):
+    names = {kind: {} for kind in ('units', 'traits', 'augments', 'items', 'wisps', 'effects')}
+    kinds = {'unit': 'units', 'trait': 'traits', 'augment': 'augments', 'item': 'items', 'wisp': 'wisps'}
+    rules = data.static.get('trait_rules')
+    refunds = data.static.get('sell_values')
+    known_items = {identity for identity, entity in data.entities.items()
+        if entity.kind == 'item' and identity == entity.id and identity and identity.strip() == identity}
+    known_traits = {identity for identity, entity in data.entities.items()
+        if entity.kind == 'trait' and identity == entity.id and identity and identity.strip() == identity}
+    unit_variants, sale_values, effect_sources, item_traits, item_trait_sources = {}, {}, {}, {}, {}
+    for entity in data.entities.values():
+        if entity.kind in kinds:
+            names[kinds[entity.kind]][entity.id] = entity.name
+        if entity.kind in {'augment', 'wisp', 'opening_encounter'}:
+            names['effects'][entity.id] = entity.name
+            effect_sources[entity.id] = entity.kind
+        if entity.kind == 'item':
+            grants = entity.values.get('trait_grants')
+            if (entity.id in known_items and isinstance(grants, TaggedValue)
+                and isinstance(grants.value, Mapping) and all(
+                    trait in known_traits and isinstance(count, int) and not isinstance(count, bool) and count > 0
+                    for trait, count in grants.value.items())):
+                item_traits[entity.id] = dict(grants.value)
+                item_trait_sources[entity.id] = {'value': dict(grants.value), 'source': grants.source,
+                    'citation': grants.citation, 'family': grants.family,
+                    'data_snapshot_id': data.snapshot_id}
+        if entity.kind != 'unit':
+            continue
+        if refunds and str(entity.cost) in refunds.value:
+            sale_values[entity.id] = dict(refunds.value[str(entity.cost)])
+        if rules is None:
+            continue
+        rule = rules.value.get(entity.id, {})
+        if 'replace' in rule:
+            unit_variants[entity.id] = [dict(choice) for choice in rule['replace']]
+            continue
+        counts = {trait: 1 for trait in entity.traits}
+        counts.update(rule.get('counts', {}))
+        variants = []
+        optional = tuple(rule.get('optional_traits', ()))
+        for choice in rule.get('choose_one', ({},)):
+            for size in range(len(optional)+1):
+                for subset in combinations(optional, size):
+                    variant = dict(counts)
+                    for trait, count in choice.items():
+                        variant[trait] = variant.get(trait, 0) + count
+                    for trait in subset:
+                        variant[trait] = variant.get(trait, 0) + 1
+                    variants.append(variant)
+        unit_variants[entity.id] = variants
+    return {'catalog': NameCatalog(names), 'unit_variants': unit_variants, 'sale_values': sale_values,
+        'effect_sources': effect_sources, 'item_traits': item_traits, 'item_trait_sources': item_trait_sources}

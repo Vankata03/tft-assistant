@@ -21,7 +21,7 @@ class CaptureRunner:
             captured = self.source.capture()
             status = {"state": "capturing", "source": captured.source, "window_id": captured.window_id}
             if self._last_window and captured.window_id != self._last_window and not self._gap:
-                self.pipeline.sink.append_event("capture_gap", {"reason": "window_replaced", "start": self._last_time.isoformat(), "end": now.isoformat()}, timestamp=now.isoformat())
+                self.pipeline.record_gap(reason="window_replaced", start=self._last_time, end=now)
             self._last_window, self._last_time, self._gap = captured.window_id, now, False
             frame = captured.image
         except CaptureUnavailable as error:

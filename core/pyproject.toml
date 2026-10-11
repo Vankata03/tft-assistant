@@ -17,6 +17,7 @@ dependencies = [
 [project.scripts]
 tft-core = "tft_core.app:main"
 tft-schemas = "tft_core.schemas:main"
+tft-capture = "tft_core.capture_cli:main"
 
 [dependency-groups]
 dev = [

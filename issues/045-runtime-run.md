@@ -29,3 +29,9 @@ Implement all referenced requirements. Verify through the approved public seams 
 Runtime wiring must preserve ticket 44's delivered-advice and surface-acknowledgement mapping for replay. Engine evaluation is not evidence that advice was shown. Unknown or absent acknowledgement remains unavailable; replay never fabricates an ignored advice event from a generated recommendation.
 
 Capture shutdown must precede `SessionStore.end_game`: stop/join the runner, close its pipeline and flush final media/fight/gap events while the game is still active, then end the session and launch review. Current `CoreServer.publish_gameflow` ends sessions synchronously for terminal phases; runtime wiring must account for that ordering. Delayed review-ready notifications use the completed game's mode and review lock, not a later next-session default.
+
+### 2026-10-11 — Runtime lifecycle preflight
+
+Read-only implementation preparation is saved at `/tmp/tft-assistant-45-preflight.md`, based on integration `8e3c406`. Core startup currently wires only the session server and LCU watcher; capture, Engine, safe refresh and review jobs still need a single lifecycle owner. Marshal thread results to the event loop, coalesce repeated phase triggers and preserve each game's pinned data/model identity.
+
+The shell's current three-second graceful-stop deadline can expire before capture media finishes flushing. Align it with a bounded core shutdown contract; test final log/media ordering through the public process/session boundary. A forced timeout must remain visible as a failure or gap rather than a successful flush. This preparation does not implement runtime behavior or close ticket 50's historical native failure.
