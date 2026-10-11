@@ -27,3 +27,5 @@ Implement all referenced requirements. Verify through the approved public seams 
 ### 2026-10-11 — Delivered versus shown advice
 
 Runtime wiring must preserve ticket 44's delivered-advice and surface-acknowledgement mapping for replay. Engine evaluation is not evidence that advice was shown. Unknown or absent acknowledgement remains unavailable; replay never fabricates an ignored advice event from a generated recommendation.
+
+Capture shutdown must precede `SessionStore.end_game`: stop/join the runner, close its pipeline and flush final media/fight/gap events while the game is still active, then end the session and launch review. Current `CoreServer.publish_gameflow` ends sessions synchronously for terminal phases; runtime wiring must account for that ordering. Delayed review-ready notifications use the completed game's mode and review lock, not a later next-session default.
