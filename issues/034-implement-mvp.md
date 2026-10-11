@@ -36,6 +36,8 @@ Source: [MVP spec](../docs/spec.md), its area files, and the resolved planning t
 
 ## Decisions so far
 
+- 2026-10-11: Frozen replay contracts (52) closed after different-merger integration `b5c3d88` of exact `7cbb71d`. The root passed 308 Python tests in 18.99 seconds without skips, process exit 0; independent replay/storage checks and import/schema/lock gates passed. Causal prefixes, retrospective validity, immutable historical data, cache identity and locked review access are verified software boundaries. Full policy/cost/grouping/metrics/fitting/CLI work remains in 42, which still waits for 41; full-game resource use remains unqualified.
+
 - 2026-10-11: Ticket 53 extracts capture/session/data lifecycle wiring from 45. Its software dependencies are closed, so it proceeds alongside 41 and 52. Final Live/Engine dispatch, review jobs, run workflows and complete runtime verification remain in 45; native cause 50 still gates final qualification.
 
 - 2026-10-11: Source-provenance software ticket 51 closed after independent merge `91465f1` of exact `3e8a8de`. Root passed 281 Python tests in 14.61 s, no skips, process exit 0, plus both import contracts, schema and lock checks. Payload publication/identity remains distinct from donor hints; rejected attempts cannot relabel qualified last-good data. Production source/patch/cohort qualification stays in 48, and the historical native cause stays in 50.
