@@ -58,3 +58,9 @@ A host that imports or initializes ORT before capture must apply the startup fla
 ### 2026-10-11 — Independent integration verification
 
 The separate merger reviewed the four-file startup-prevention change and passed its three public process tests before merging exact commit `5d8157e` as `29b3d26`. The integration root then passed all 212 Python tests in 21.98 s, with the two existing ONNX-export warnings and process exit 0. Both import contracts, schema generation and the frozen lock check passed. No UI files changed; the prior 31-test UI/type/generated-type/build verification remains dated evidence. The unknown initiating cause and missing minimal abort reproduction remain open.
+
+### 2026-10-11 — Bounded historical process reproduction search
+
+A separate detached diagnostic worktree at exact `33b83b1` was synchronized with its frozen lock and the training group. Six sequential fresh processes ran the original complete 191-test command with the same cached pinned reader assets. Startup opt-out, unit-test and known CI suppression flags were explicitly removed from these child environments; this establishes the probe conditions, not their values in the historical failed processes. No source, dependency, lifecycle or test omission was introduced.
+
+All six passed 191 tests with the two existing ONNX-export warnings and exited 0. Their pytest durations were 36.24, 9.73, 10.12, 10.16, 10.06 and 10.48 seconds. The exact symptom was not observed. Full command outputs and conditions are retained in ignored `worktrees/native-teardown-2026-10-11/18-historical-full-reproduction.json` and its six stdout/stderr pairs. The diagnostic worktree is `worktrees/native-control-33b`; it contains no implementation edits. This bounded search does not provide a minimized red reproduction or causal repair, so the ticket remains unresolved.
