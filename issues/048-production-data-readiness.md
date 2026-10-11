@@ -51,3 +51,7 @@ The refreshed CommunityDragon payload is not sufficient evidence that all its nu
 ### 2026-10-10 — codex (enrichment metadata provenance)
 
 The checked global augment response carries its own `updated` value, `1791641438134` (`2026-10-10T14:10:38.134Z`), and `content.updated_at=2026-10-10T05:21:29.598Z`. It identifies `TFTSet18` and queue 1100 but supplies no confirming patch, rank or region. `data/sources.toml` currently points this enrichment's `metadata_url` at the different `unit_items_processed` payload. Candidate qualification must preserve the tier response's own publication timestamps and explicit unknown patch/cohort rather than present the unit response's patch or freshness as established tier metadata. The bounded preflight notes remain outside tracked production data until this ticket is unblocked and the provenance handling is implemented and verified.
+
+### 2026-10-11 — codex (post-Engine contract inventory)
+
+After the ticket 40 merge, runtime inspection of `tft_data.config` confirms 24 required static fields and 58 required Set-18 tunables: family 1 has 14, family 2 has 10, family 3 has 7, hand-set has 25, and computed has 2. The October 10 preflight's count of 56 predates `terminal_gold_weight` (family 1) and `opponent_inference_state_cap` (hand-set). Recheck final consumer shapes after ticket 41; these counts and the preflight are not a qualified production candidate or fitted parameters.
