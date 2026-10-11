@@ -12,18 +12,19 @@ class CompSimilarity:
 
 
 def classify(board: Board | Mapping[str, float], data, *, limit: int | None = None):
+    from .shop_math import canonical_id
     if isinstance(board, Board):
-        present = {u.unit_id: 1.0 for u in board.units}
+        present = {canonical_id(u.unit_id,data): 1.0 for u in board.units}
         bench_weight = float(tunable(data, 'classifier_weights')['bench'])
         for unit in board.bench:
-            present.setdefault(unit.unit_id, bench_weight)
+            present.setdefault(canonical_id(unit.unit_id,data), bench_weight)
     else:
-        present = board
+        present = {canonical_id(id,data):p for id,p in board.items()}
     weights = tunable(data, 'classifier_weights')
     threshold = float(tunable(data, 'classifier_threshold'))
     results = []
     for guide in data.guides.values():
-        scores = {id: float(weights['carry'] if id in guide.carry_ids else weights['key'] if id in getattr(guide,'key_ids',()) else weights['other']) for id in set(guide.units)}
+        scores = {canonical_id(id,data): float(weights['carry'] if id in guide.carry_ids else weights['key'] if id in getattr(guide,'key_ids',()) else weights['other']) for id in set(guide.units)}
         total = sum(scores.values())
         similarity = sum(weight * min(1.0, max(0.0, present.get(id, 0.0))) for id,weight in scores.items()) / total if total else 0.0
         results.append(CompSimilarity(guide.id, similarity, guide.id if similarity >= threshold else 'no comp'))

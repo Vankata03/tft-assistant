@@ -31,6 +31,10 @@ Record commands, asset/model/data versions, observations and failures. Do not st
 
 ## Comments
 
+### 2026-10-10 — Ticket 40 Mac timing evidence
+
+Ticket 40's final bounded Mac15,10/M3 Max smoke exceeds 100 ms: 36 concrete Lines × 64 rollouts across 3 comps, plus 3 reason counterfactual Lines, from 65 synthetic Guides/types. Five combat runs have median 0.301558 s (range 0.277688–0.474923); five PvE runs have median 0.351528 s (range 0.286245–0.433240). See ticket 40 for the reproducible benchmark, public CRN/parity tests and profile pointer. All schedule families and configured floors remain available. This does not qualify the Ryzen target or game-running interference; further measured optimization remains required if the target benchmark fails.
+
 ### 2026-10-10 — codex (qualification split)
 
 Ticket 38's software tests exercise pinned CPU inference, all nine bench slots, tall-healthbar retention and reviewed offset calibration, tracking disagreements, crop labeling, game-group holdout, class regression rejection and export parity. No full owner-labeled dataset, measured Maokai foot offset, Windows recognition accuracy or live latency result is available. Those conditions remain here; the parent task remains unfinished.

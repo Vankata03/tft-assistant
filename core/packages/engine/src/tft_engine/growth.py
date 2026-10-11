@@ -55,6 +55,8 @@ def average_unit_power(level, round_id, data):
 
 
 def growth_curve_lookup(round_id, data, *, curve=None):
+    if curve is None and 'opponent_growth_curve' in data.tunables:
+        curve=tunable(data,'opponent_growth_curve')
     if curve is not None and round_id in curve:
         return float(curve[round_id])
     level = standard_level(round_id,data)
@@ -65,13 +67,14 @@ def growth_curve_lookup(round_id, data, *, curve=None):
 def growth_curve(data, *, observations=()):
     """Build round powers and a weighted correction from (round, power, confidence) observations."""
     rounds = static(data,'round_order') if 'round_order' in data.static else tuple(static(data,'level_calendar'))
-    base = {r:growth_curve_lookup(r,data) for r in rounds}
+    # A refresh recomputes from the new snapshot, never from the carried curve.
+    base = {r:growth_curve_lookup(r,data,curve={}) for r in rounds}
     by_stage = {}
     for round_id,power,confidence in observations:
         if confidence <= 0:
             continue
         stage = round_id.split('-')[0]
-        residual = power - growth_curve_lookup(round_id,data)
+        residual = power - growth_curve_lookup(round_id,data,curve={})
         weighted, total = by_stage.get(stage,(0.0,0.0))
         by_stage[stage] = weighted + confidence * residual, total + confidence
     return freeze({r:p + (by_stage[r.split('-')[0]][0] / by_stage[r.split('-')[0]][1] if r.split('-')[0] in by_stage else 0) for r,p in base.items()})

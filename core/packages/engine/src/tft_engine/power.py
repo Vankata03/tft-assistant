@@ -61,8 +61,10 @@ def unit_power(unit_id, stars, data):
     if baseline is None:
         raise DataError(f'Missing cost-star baseline: cost {entity.cost}, stars {stars}')
     baseline = float(baseline)
-    stats = [s for s in data.statistics if s.entity_id == unit_id and s.unit_star == stars and getattr(s, 'top4_rate', None) is not None]
-    stats.sort(key=lambda s: (s.source != 'tactics.tools', s.stale, s.changed))
+    pool=entity.values.get('canonical_id') or entity.values.get('pool_id')
+    statistic_id=pool.value if pool else unit_id
+    stats = [s for s in data.statistics if s.entity_id in (unit_id,statistic_id) and s.unit_star == stars and getattr(s, 'top4_rate', None) is not None]
+    stats.sort(key=lambda s: (s.entity_id!=unit_id,s.source != 'tactics.tools', s.stale, s.changed))
     statistic = stats[0] if stats else None
     rate = getattr(statistic, 'top4_rate', None)
     samples = statistic.sample_count if statistic else None

@@ -32,10 +32,11 @@ Owner: [Econ, level and roll Line simulation](../../issues/018-econ-level-roll-l
 | --- | --- | --- |
 | `line_margin` | 2 (z = 1) | Starting floor about 0.1 placement |
 | `terminal_hp_weight` | 1 | `b` in `placement()` |
+| `terminal_gold_weight` | 1 | Held-gold buying-capacity approximation at the bounded terminal horizon; applied only to surviving states and clipped to valid placement bounds. Default or carried until the harness fits and gates it |
 | `opponent_growth_curve` | Computed; correction is 1 | Computed from statistics at each refresh; corrected against sightings |
 | `rollouts_full` | Hand-set | Set by the 100 ms budget |
 | `rollouts_reroll` | Hand-set | Set by the 100 ms budget; also used for gold-price pairs |
-| `line_candidate_cap` | Hand-set | About 7 |
+| `line_candidate_cap` | Hand-set | About 7 schedule families before expansion over every configured gold floor; concrete Line count can exceed the cap. Widened-candidate checks must widen both this cap and `gold_floors` |
 | `challengers_simulated` | Hand-set | About 2 |
 | `gold_floors` | Hand-set | 50, 30, 10, 0 |
 | `all_in_rounds_left` | Hand-set | 2; below it, floor 0 is always a candidate |
@@ -69,6 +70,7 @@ Owner: [Opponent model from trait-only sightings](../../issues/030-opponent-mode
 | `emblem_count_prior` | 1 | Fitted on match final boards, then on game logs |
 | `size_level_prior` | 1 | Distinct units against level; fitted like `emblem_count_prior` |
 | `emblem_slack_max` | Hand-set | 2; trait counts the solver may assign to emblems |
+| `opponent_inference_state_cap` | Hand-set | Deterministic symbolic-state budget. Exhaustion returns an empty posterior and a zero-confidence par-growth fallback, never a truncated posterior |
 | `sighting_persistence_weight` | 1 | Prior boost for units on the opponent's previous inferred board; start 2 (the prior is doubled). Fades with the sighting's age weight |
 | `sighting_full_weight_rounds` | 1 | Rounds a sighting keeps full age weight; start 2 |
 | `sighting_half_life_rounds` | 1 | After full weight ends, the age weight halves every this many rounds; start 1 |

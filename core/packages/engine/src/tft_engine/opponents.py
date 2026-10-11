@@ -6,9 +6,15 @@ def unit_trait_variants(unit_id, data):
     entity = data.entities[unit_id]
     counts = {t: 1 for t in entity.traits}
     rules = data.static.get('trait_rules')
-    rule = rules.value.get(unit_id, {}) if rules else {}
+    pool = entity.values.get('pool_id') or entity.values.get('canonical_id')
+    rule = rules.value.get(unit_id, rules.value.get(pool.value, {}) if pool else {}) if rules else {}
     if 'replace' in rule:
-        return tuple(dict(v) for v in rule['replace'])
+        result=tuple(dict(v) for v in rule['replace'])
+        if entity.kind=='unit_form':
+            result=tuple(v for v in result if set(v)==set(entity.traits))
+            if not result:
+                raise DataError(f'No trait rule matches active form: {unit_id}')
+        return result
     counts.update(rule.get('counts', {}))
     choices = rule.get('choose_one', ({},))
     optional = tuple(rule.get('optional_traits', ()))
@@ -23,6 +29,10 @@ def unit_trait_variants(unit_id, data):
                     value[trait] = value.get(trait, 0) + 1
                 if value not in result:
                     result.append(value)
+    if entity.kind=='unit_form' and pool and rule:
+        result=[v for v in result if set(v)==set(entity.traits)]
+        if not result:
+            raise DataError(f'No trait rule matches active form: {unit_id}')
     return tuple(result)
 
 from dataclasses import dataclass
@@ -40,6 +50,7 @@ class InferredBoard:
     probabilities: Mapping[str, float]
     certainty: float
     candidate_count: int
+    fallback_reason: str | None = None
     def __post_init__(self):
         object.__setattr__(self, 'probabilities', freeze(self.probabilities))
 
@@ -87,9 +98,9 @@ def infer_opponent(sighting: TraitSighting, data, *, previous: InferredBoard | N
     for entity in data.entities.values():
         if entity.kind == 'trait':
             value = entity.values.get('breakpoints')
-            if value is None or not value.value:
-                raise DataError(f'Missing trait breakpoints: {entity.id}')
-            first_breakpoint[entity.id] = min(map(int, value.value))
+            points=tuple(int(n) for n in value.value if n is not None and int(n)>0) if value else ()
+            if points:
+                first_breakpoint[entity.id]=min(points)
     for trait in visible:
         if trait not in first_breakpoint:
             raise DataError(f'Unknown sighting trait: {trait}')
@@ -123,104 +134,67 @@ def infer_opponent(sighting: TraitSighting, data, *, previous: InferredBoard | N
     if not isinstance(size_table, Mapping):
         raise DataError(f'Missing size prior for level {sighting.level}')
     emblem_prior = tunable(data,'emblem_count_prior')
-    if all(len(variants) == 1 for _,variants,_ in roster):
-        # Symbolically enumerate identical trait states, retaining exact set counts,
-        # first moments and the largest individual set weight. This avoids visiting
-        # hundreds of millions of trait-identical subsets one by one.
-        traits = tuple(sorted(first_breakpoint))
-        trait_index = {t:i for i,t in enumerate(traits)}
-        empty = (0,) * len(traits)
-        states = {(empty,0):(1.0,1,1.0,{})}
-        for unit_id,variants,log_prior in roster:
-            rate = exp(log_prior)
-            vector = tuple(variants[0].get(t,0) for t in traits)
-            next_states = dict(states)
-            for (counts,size),(weight,number,maximum,moments) in states.items():
-                if size >= sighting.level:
-                    continue
-                merged = tuple(a+b for a,b in zip(counts,vector))
-                if any(merged[trait_index[t]] > n for t,n in visible.items()):
-                    continue
-                outside = [(t,merged[trait_index[t]]) for t in traits if t not in visible and merged[trait_index[t]]]
-                if len(outside) > hidden or any(n >= first_breakpoint[t] for t,n in outside):
-                    continue
-                key = (merged,size+1)
-                old_weight,old_number,old_maximum,old_moments = next_states.get(key,(0.0,0,0.0,{}))
-                updated = dict(old_moments)
-                for id,moment in moments.items():
-                    updated[id] = updated.get(id,0.0) + moment * rate
-                updated[unit_id] = updated.get(unit_id,0.0) + weight * rate
-                next_states[key] = (old_weight+weight*rate,old_number+number,max(old_maximum,maximum*rate),updated)
-            states = next_states
-        total = maximum = 0.0
-        candidate_count = 0
-        moments = {}
-        for (counts,size),(weight,number,top,first_moments) in states.items():
-            outside = {t:counts[trait_index[t]] for t in traits if t not in visible and counts[trait_index[t]]}
-            missing_hidden = hidden - len(outside)
-            possible_hidden = sum(t not in visible and t not in outside and first_breakpoint[t] > 1 for t in traits)
-            if missing_hidden > possible_hidden:
+    # A state stores all feasible trait vectors for a distinct unit set. Grouping
+    # equivalent vector families is exact even when a unit has several forms;
+    # alternative forms never become extra posterior votes for that unit set.
+    traits=tuple(sorted(first_breakpoint))
+    trait_index={t:i for i,t in enumerate(traits)}
+    empty=(0,)*len(traits)
+    states={((empty,),0):(1.0,1,1.0,{})}
+    tagged_cap=data.tunables.get('opponent_inference_state_cap')
+    cap=int(tagged_cap.value) if tagged_cap else None
+    if cap is not None and cap<1:
+        raise DataError('Opponent inference state cap must be positive')
+    def feasible(counts):
+        if any(counts[trait_index[t]]>n for t,n in visible.items()):
+            return False
+        outside=[(t,counts[i]) for i,t in enumerate(traits) if t not in visible and counts[i]]
+        return len(outside)<=hidden and all(n<first_breakpoint[t] for t,n in outside)
+    for unit_id,variants,log_prior in roster:
+        rate=exp(log_prior)
+        vectors=tuple(set(tuple(v.get(t,0) for t in traits) for v in variants))
+        next_states=dict(states)
+        for (family,size),(weight,number,maximum,moments) in states.items():
+            if size>=sighting.level:
                 continue
-            residual = sum(n-counts[trait_index[t]] for t,n in visible.items()) + missing_hidden
-            if residual > slack:
+            merged=tuple(sorted({tuple(a+b for a,b in zip(counts,vector)) for counts in family for vector in vectors if feasible(tuple(a+b for a,b in zip(counts,vector)))}))
+            if not merged:
                 continue
-            emblem, size_prior = keyed(emblem_prior,residual),keyed(size_table,size)
-            if emblem is None or size_prior is None or emblem <= 0 or size_prior <= 0:
+            key=(merged,size+1)
+            old_weight,old_number,old_maximum,old_moments=next_states.get(key,(0.0,0,0.0,{}))
+            updated=dict(old_moments)
+            for id,moment in moments.items():
+                updated[id]=updated.get(id,0.0)+moment*rate
+            updated[unit_id]=updated.get(unit_id,0.0)+weight*rate
+            next_states[key]=(old_weight+weight*rate,old_number+number,max(old_maximum,maximum*rate),updated)
+            if cap is not None and len(next_states)>cap:
+                return InferredBoard(sighting.opponent_id,sighting.round_id,sighting.level,{},0.0,0,f'Opponent inference state cap {cap} exhausted; no posterior retained')
+        states=next_states
+    total=maximum=0.0
+    candidate_count=0
+    moments={}
+    for (family,size),(weight,number,top,first_moments) in states.items():
+        best_prior=0.0
+        for counts in family:
+            outside={t:counts[i] for i,t in enumerate(traits) if t not in visible and counts[i]}
+            missing_hidden=hidden-len(outside)
+            possible_hidden=sum(t not in visible and t not in outside and first_breakpoint[t]>1 for t in traits)
+            if missing_hidden>possible_hidden:
                 continue
-            prior = float(emblem) * float(size_prior)
-            total += weight * prior
-            maximum = max(maximum,top*prior)
-            candidate_count += number
-            for unit_id,moment in first_moments.items():
-                moments[unit_id] = moments.get(unit_id,0.0) + moment * prior
-        return InferredBoard(sighting.opponent_id,sighting.round_id,sighting.level,{id:moment/total for id,moment in moments.items()} if total else {},maximum/total if total else 0.0,candidate_count)
-    candidates = {}
-    def search(index, units, counts, log_prior):
-        if len(units) > sighting.level:
-            return
-        if sum(max(0,n-counts.get(t,0)-suffix[index][t]) for t,n in visible.items()) > slack:
-            return
-        outside = {t:n for t,n in counts.items() if t not in visible and n > 0}
-        if len(outside) > hidden or any(n >= first_breakpoint[t] for t,n in outside.items()):
-            return
-        if index == len(roster):
-            missing_hidden = hidden - len(outside)
-            # Each still-hidden row needs at least one emblem on an absent inactive trait.
-            possible_hidden = sum(t not in visible and t not in outside and first_breakpoint[t] > 1 for t in first_breakpoint)
-            if missing_hidden > possible_hidden:
-                return
-            residual = sum(n-counts.get(t,0) for t,n in visible.items()) + missing_hidden
-            if residual < 0 or residual > slack:
-                return
-            emblem = keyed(emblem_prior,residual)
-            size = keyed(size_table,len(units))
-            if emblem is None or size is None or emblem <= 0 or size <= 0:
-                return
-            weight = log_prior + log(float(emblem)) + log(float(size))
-            # Variant paths describing the same distinct set are one candidate, not extra votes.
-            key = tuple(units)
-            candidates[key] = max(candidates.get(key,float('-inf')),weight)
-            return
-        unit_id, variants, unit_prior = roster[index]
-        search(index+1,units,counts,log_prior)
-        for variant in variants:
-            merged = dict(counts)
-            for trait,n in variant.items():
-                merged[trait] = merged.get(trait,0) + n
-            if any(merged.get(t,0) > count for t,count in visible.items()):
+            residual=sum(n-counts[trait_index[t]] for t,n in visible.items())+missing_hidden
+            if residual>slack:
                 continue
-            search(index+1,units+(unit_id,),merged,log_prior+unit_prior)
-    search(0,(),{},0.0)
-    if not candidates:
-        return InferredBoard(sighting.opponent_id,sighting.round_id,sighting.level,{},0.0,0)
-    maximum = max(candidates.values())
-    weights = {units:exp(weight-maximum) for units,weight in candidates.items()}
-    total = sum(weights.values())
-    probabilities = {}
-    for units,weight in weights.items():
-        for unit in units:
-            probabilities[unit] = probabilities.get(unit,0.0) + weight / total
-    return InferredBoard(sighting.opponent_id,sighting.round_id,sighting.level,probabilities,max(weights.values())/total,len(candidates))
+            emblem,size_prior=keyed(emblem_prior,residual),keyed(size_table,size)
+            if emblem is not None and size_prior is not None and emblem>0 and size_prior>0:
+                best_prior=max(best_prior,float(emblem)*float(size_prior))
+        if not best_prior:
+            continue
+        total+=weight*best_prior
+        maximum=max(maximum,top*best_prior)
+        candidate_count+=number
+        for unit_id,moment in first_moments.items():
+            moments[unit_id]=moments.get(unit_id,0.0)+moment*best_prior
+    return InferredBoard(sighting.opponent_id,sighting.round_id,sighting.level,{id:moment/total for id,moment in moments.items()} if total else {},maximum/total if total else 0.0,candidate_count)
 
 @dataclass(frozen=True)
 class OpponentEstimate:
@@ -245,7 +219,7 @@ def estimate_opponent(sighting: TraitSighting | None, inferred: InferredBoard | 
     from .power import trait_term, stage_items
     from .classifier import classify
     if sighting is None or inferred is None or not inferred.candidate_count:
-        return OpponentEstimate(sighting.opponent_id if sighting else opponent_id,growth_curve_lookup(round_id,data,curve=curve),standard_level(round_id,data),0.0,age_weight(max(0,round_index(round_id,data)-round_index(sighting.round_id,data)),data) if sighting else 0.0,0.0,{}, {},(),('No supported inference; par growth used',))
+        return OpponentEstimate(sighting.opponent_id if sighting else opponent_id,growth_curve_lookup(round_id,data,curve=curve),standard_level(round_id,data),0.0,age_weight(max(0,round_index(round_id,data)-round_index(sighting.round_id,data)),data) if sighting else 0.0,0.0,{}, {},(),((inferred.fallback_reason if inferred and inferred.fallback_reason else 'No supported inference; par growth used'),))
     if inferred.opponent_id != sighting.opponent_id or inferred.round_id != sighting.round_id:
         raise ValueError('Inference does not match its sighting')
     rounds_old = max(0,round_index(round_id,data)-round_index(sighting.round_id,data))
