@@ -42,6 +42,13 @@ def _game_id(value: str | int) -> str:
     return value
 
 
+def _observation_hash(events: list[dict]) -> str:
+    import hashlib
+    observations = [event for event in events if event["kind"] != "replay_cache"]
+    return hashlib.sha256(json.dumps(observations, sort_keys=True,
+        separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+
+
 class SessionStore:
     """Capture writes events; replay, review and the harness consume them."""
 
@@ -329,26 +336,40 @@ class SessionStore:
             return {"bytes": total, "deleted": deleted, "over_cap": total > cap_bytes}
 
     def write_replay_cache(self, game_id: str | int, records: list[dict], *, engine_version: str,
-                           tunables_hash: str, data_snapshot_id: str) -> None:
+                           tunables_hash: str, data_snapshot_id: str, cache_identity: dict | None = None) -> None:
         """Store reusable replay output; dirty engine output is never reusable."""
         import hashlib
 
         game_id = _game_id(game_id)
         with self._lock:
-            if not self.read_events(game_id):
+            events = self.read_events(game_id)
+            if not events:
                 raise ValueError("replay requires a game log")
+            if cache_identity is not None:
+                observations = [event for event in events if event["kind"] != "replay_cache"]
+                current_hash = _observation_hash(events)
+                if (cache_identity.get("dirty") is not False or cache_identity.get("finished") is not True
+                    or not any(event["kind"] == "game_end" for event in observations)
+                    or current_hash != cache_identity.get("log_hash")):
+                    raise ValueError("replay cache inputs changed or are not reusable")
             key = {"engine_version": engine_version, "tunables_hash": tunables_hash, "data_snapshot_id": data_snapshot_id}
+            if cache_identity is not None:
+                key["cache_identity"] = cache_identity
             digest = hashlib.sha256(json.dumps(key, sort_keys=True).encode()).hexdigest()
             relative = f"replay/{game_id}/{digest}.json"
             _atomic_json(self.root / relative, {"key": key, "records": records})
-            self._append(game_id, "replay_cache", {**key, "path": relative})
+            content_hash = hashlib.sha256((self.root / relative).read_bytes()).hexdigest()
+            self._append(game_id, "replay_cache", {**key, "path": relative, "content_hash": content_hash})
             self.rebuild_index()
 
     def read_replay_cache(self, game_id: str | int, *, engine_version: str, tunables_hash: str,
-                          data_snapshot_id: str) -> list[dict] | None:
+                          data_snapshot_id: str, cache_identity: dict | None = None) -> list[dict] | None:
+        import hashlib
         if "dirty" in engine_version:
             return None
         key = {"engine_version": engine_version, "tunables_hash": tunables_hash, "data_snapshot_id": data_snapshot_id}
+        if cache_identity is not None:
+            key["cache_identity"] = cache_identity
         with self._lock, closing(sqlite3.connect(self.root / "index.sqlite3")) as connection:
             for (raw,) in connection.execute("SELECT record FROM replay_cache WHERE game_id = ?", (_game_id(game_id),)):
                 entry = json.loads(raw)
@@ -357,18 +378,28 @@ class SessionStore:
                     if not path.is_relative_to((self.root / "replay").resolve()):
                         raise ValueError("cache path escapes replay directory")
                     if path.exists():
-                        cache = json.loads(path.read_text())
+                        content = path.read_bytes()
+                        if entry.get("content_hash") and hashlib.sha256(content).hexdigest() != entry["content_hash"]:
+                            raise ValueError("corrupt replay cache content")
+                        if cache_identity is not None and not entry.get("content_hash"):
+                            raise ValueError("replay cache lacks checked content identity")
+                        cache = json.loads(content)
                         if cache["key"] == key:
                             return cache["records"]
             return None
 
-    def write_review(self, game_id: str | int, review: dict, *, engine_version: str, data_snapshot_id: str) -> None:
+    def write_review(self, game_id: str | int, review: dict, *, engine_version: str, data_snapshot_id: str,
+                     expected_log_hash: str | None = None) -> None:
         game_id = _game_id(game_id)
-        if not self.read_events(game_id):
-            raise ValueError("review requires a game log")
         with self._lock:
+            events = self.read_events(game_id)
+            if not events:
+                raise ValueError("review requires a game log")
+            if expected_log_hash is not None and _observation_hash(events) != expected_log_hash:
+                raise ValueError("review log evidence changed; regenerate before publication")
             _atomic_json(self.root / "reviews" / f"{game_id}.json", {"engine_version": engine_version,
-                "data_snapshot_id": data_snapshot_id, "review": review})
+                "data_snapshot_id": data_snapshot_id, "review": review,
+                **({"log_hash": expected_log_hash} if expected_log_hash is not None else {})})
 
     def read_review(self, game_id: str | int) -> dict | None:
         game_id = _game_id(game_id)
@@ -382,6 +413,8 @@ class SessionStore:
             if not path.exists():
                 return None
             review = json.loads(path.read_text())
+            if "log_hash" in review and _observation_hash(self.read_events(game_id)) != review["log_hash"]:
+                raise ValueError("review log evidence changed; regeneration required")
             tags_path = self.root / "reviews" / f"{game_id}.tags.json"
             review["tags"] = json.loads(tags_path.read_text()) if tags_path.exists() else {}
             return review
@@ -391,6 +424,14 @@ class SessionStore:
             raise ValueError("tag must be agree, disagree or unsure")
         with self._lock:
             game_id = _game_id(game_id)
+            stored = self.read_review(game_id)
+            review = stored["review"] if stored else {}
+            known = set(review.get("decision_ids", ()))
+            for rows in (review.get("moments", ()), review.get("records", ()),
+                         review.get("replay", {}).get("records", ())):
+                known.update(row["decision_id"] for row in rows if "decision_id" in row)
+            if decision_id not in known:
+                raise ValueError("unknown review decision id")
             path = self.root / "reviews" / f"{game_id}.tags.json"
             tags = json.loads(path.read_text()) if path.exists() else {}
             tags[decision_id] = tag
