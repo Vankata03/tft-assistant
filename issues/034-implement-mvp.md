@@ -23,18 +23,21 @@ Source: [MVP spec](../docs/spec.md), its area files, and the resolved planning t
 - [42: Replay, post-game review and evaluation harness](042-replay-review-harness.md); blocked by [35, 41, 52].
 - [43: Baseline Guides and permitted hints](043-baseline-surfaces.md); blocked by [36, 39].
 - [44: Separable Live advisor, overlay, cockpit and voice](044-live-surfaces.md); blocked by [37, 41, 43].
-- [45: End-to-end runtime, refresh/review jobs and run workflows](045-runtime-run.md); blocked by [38, 42, 44, 50, 53].
+- [45: End-to-end runtime, refresh/review jobs and run workflows](045-runtime-run.md); blocked by [38, 42, 44, 50, 53, 54].
 
 - [46: Immutable data contracts and capture name lists](046-data-contracts.md); blocked by nothing.
 - [47: Capture transport, OCR, tracking and visual-reader contract](047-capture-contracts.md); blocked by [35, 46].
-- [48: First sourced patch-data candidate and qualification](048-production-data-readiness.md); blocked by [36, 40, 41, 51].
+- [48: First sourced patch-data candidate and qualification](048-production-data-readiness.md); blocked by [36, 40, 41, 51, 54].
 - [49: Recognition, capture and target hardware qualification](049-capture-device-qualification.md); blocked by [37, 38, 40, 45].
 - [50: Native macOS teardown abort after the full Python suite](050-native-test-teardown.md); blocked by nothing.
 - [51: Preserve source-owned publication and cohort provenance](051-source-provenance.md); blocked by [36].
 - [52: Frozen replay contexts, records and safe review access](052-replay-contracts.md); blocked by [35, 36, 37, 40].
 - [53: Supervised capture and safe-refresh runtime lifecycle](053-capture-runtime-lifecycle.md); blocked by [35, 36, 37, 38, 40, 43, 51].
+- [54: Sourced unit slot costs and team capacity](054-team-slot-capacity.md); blocked by [36, 39, 40, 41].
 
 ## Decisions so far
+
+- 2026-10-12: Production preparation exposed the unit-count/team-slot mismatch. Ticket 54 implements generic sourced capacity consumption before final candidate/runtime qualification. Cached Riftbeast capacity differs from the dated prelaunch overview, so ticket 48 preserves the conflict rather than selecting an unsupported current constant. Its unfinished preparation worktree remains preserved while the same owner fixes 54 in a fresh worktree.
 
 - 2026-10-12: Decision software (41) closed after different-merger integration `76eacf0` of corrected exact `cfc9c0b7`. All reproduced producer/model/render defects were fixed with public regressions. The merged root passed 358 Python tests in 26.76 seconds without skips, exit 0, plus 33 UI tests and import/schema/lock/type/build gates. Replay (42), Live surfaces (44) and production preparation (48) are now unblocked. Capture lifecycle (53) remains under independent recovery review. Current production data, Windows/device/resource qualification and the historical native cause remain explicit gates.
 
