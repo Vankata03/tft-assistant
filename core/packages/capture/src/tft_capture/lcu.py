@@ -12,6 +12,7 @@ import asyncio
 import base64
 import json
 import logging
+import inspect
 import ssl
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import AbstractAsyncContextManager
@@ -45,6 +46,8 @@ class GameflowUpdate:
     client_running: bool
     phase: str | None
     game_id: str | None = None
+    game_mode: str | None = None
+    error: str | None = None
 
 
 NOT_RUNNING = GameflowUpdate(client_running=False, phase=None)
@@ -146,7 +149,13 @@ class Lcu(Protocol):
 class LcuConnection:
     """One client instance, reached through its port and token."""
 
-    def __init__(self, credentials: LcuCredentials, timeout: float = 2.0, *, transport: httpx.AsyncBaseTransport | None = None) -> None:
+    def __init__(
+        self,
+        credentials: LcuCredentials,
+        timeout: float = 2.0,
+        *,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
         self._credentials = credentials
         self._tls = _local_tls()
         self._http = httpx.AsyncClient(
@@ -170,23 +179,46 @@ class LcuConnection:
             raise LcuUnavailable(type(error).__name__) from error
         if response.status_code != 200:
             raise LcuUnavailable(f"HTTP {response.status_code}")
-        return parse_phase(response.content)
+        try:
+            return parse_phase(response.content)
+        except (ValueError, UnicodeDecodeError) as error:
+            raise LcuUnavailable("Malformed gameflow phase") from error
 
     async def get_game_id(self) -> str | None:
+        return (await self.get_game_identity())[0]
+
+    async def get_game_identity(self) -> tuple[str | None, str | None]:
+        """Read explicit session identity; queue numbers never establish a mode."""
         try:
             response = await self._http.get("/lol-gameflow/v1/session")
         except httpx.HTTPError as error:
             raise LcuUnavailable(type(error).__name__) from error
         if response.status_code in (404, 204):
-            return None
+            return None, None
         if response.status_code != 200:
             raise LcuUnavailable(f"HTTP {response.status_code}")
         try:
-            value = response.json().get("gameData", {}).get("gameId")
+            data = response.json().get("gameData", {})
+            value = data.get("gameId")
+            modes = [
+                mode
+                for mode in (
+                    data.get("gameMode"),
+                    data.get("queue", {}).get("gameMode"),
+                )
+                if mode is not None
+            ]
         except (ValueError, AttributeError):
-            return None
+            return None, None
         value = str(value)
-        return value if value.isdigit() and int(value) > 0 else None
+        game_id = value if value.isdigit() and int(value) > 0 else None
+        mode = (
+            modes[0]
+            if modes
+            and all(isinstance(mode, str) and mode == modes[0] for mode in modes)
+            else None
+        )
+        return game_id, mode
 
     async def subscribe_phase(self) -> AsyncIterator[str | None]:
         basic = base64.b64encode(f"riot:{self._credentials.token}".encode()).decode()
@@ -224,7 +256,9 @@ class GameflowWatcher:
         on_update: Callable[[GameflowUpdate], None],
         *,
         discover: Callable[[], LcuCredentials | None] = find_credentials,
-        connect: Callable[[LcuCredentials], AbstractAsyncContextManager[Lcu]] = LcuConnection,
+        connect: Callable[
+            [LcuCredentials], AbstractAsyncContextManager[Lcu]
+        ] = LcuConnection,
         discovery_interval: float = 2.0,
         poll_interval: float = 1.0,
         resubscribe_interval: float = 10.0,
@@ -237,29 +271,51 @@ class GameflowWatcher:
         self._resubscribe_interval = resubscribe_interval
         self._last: GameflowUpdate | None = None
 
-    def _publish(self, update: GameflowUpdate) -> None:
+    async def _publish(self, update: GameflowUpdate) -> None:
         if update != self._last:
             self._last = update
-            self._on_update(update)
+            result = self._on_update(update)
+            if inspect.isawaitable(result):
+                await result
 
     async def run(self) -> None:
         while True:
-            credentials = await asyncio.to_thread(self._discover)
-            if credentials is None:
-                self._publish(NOT_RUNNING)
-            else:
-                try:
-                    async with self._connect(credentials) as lcu:
-                        await self._follow(lcu)
-                except LcuUnavailable as error:
-                    log.info("League client stopped answering (%s)", error)
+            try:
+                credentials = await asyncio.to_thread(self._discover)
+                if credentials is None:
+                    await self._publish(NOT_RUNNING)
+                else:
+                    try:
+                        async with self._connect(credentials) as lcu:
+                            await self._follow(lcu)
+                    except LcuUnavailable as error:
+                        log.info("League client stopped answering (%s)", error)
+                        await self._publish(GameflowUpdate(True, None))
+            except Exception as error:
+                # Platform enumeration or malformed external adapters cannot
+                # silently terminate the phase watcher. No credentials enter status.
+                message = f"Watcher unavailable: {type(error).__name__}"
+                log.exception("%s", message)
+                await self._publish(GameflowUpdate(False, None, error=message))
             await asyncio.sleep(self._discovery_interval)
 
     async def _publish_phase(self, lcu: Lcu, phase: str | None) -> None:
         # Older phase-only adapters remain usable; production resolves the LCU id.
         get_game_id = getattr(lcu, "get_game_id", None)
-        game_id = await get_game_id() if get_game_id and phase in {"InProgress", "Reconnect", "PreEndOfGame", "EndOfGame"} else None
-        self._publish(GameflowUpdate(True, phase, game_id))
+        game_id, game_mode = None, None
+        if phase in {
+            "InProgress",
+            "Reconnect",
+            "PreEndOfGame",
+            "EndOfGame",
+            "WaitingForStats",
+        }:
+            get_identity = getattr(lcu, "get_game_identity", None)
+            if get_identity:
+                game_id, game_mode = await get_identity()
+            elif get_game_id:
+                game_id = await get_game_id()
+        await self._publish(GameflowUpdate(True, phase, game_id, game_mode))
 
     async def _follow(self, lcu: Lcu) -> None:
         """Follow one client until it stops answering (raises LcuUnavailable)."""

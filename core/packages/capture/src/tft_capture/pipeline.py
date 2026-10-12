@@ -33,9 +33,10 @@ class EventSink(Protocol):
 
 class CapturePipeline:
     def __init__(self, game_id: str, *, ocr: OCR, sink: EventSink, regions: dict[str, tuple] | None = None,
-                 catalog: NameCatalog | None = None, layout: HudLayout | None = None, visual_reader: VisualReader | None = None, own_player_name: str | None = None, tracking_events=(), unit_traits=None, item_traits=None, sale_values=None, video=None, unit_variants=None, data_snapshot_id=None, effect_sources=None, item_trait_sources=None):
+                 catalog: NameCatalog | None = None, layout: HudLayout | None = None, visual_reader: VisualReader | None = None, own_player_name: str | None = None, tracking_events=(), unit_traits=None, item_traits=None, sale_values=None, video=None, unit_variants=None, data_snapshot_id=None, effect_sources=None, item_trait_sources=None, snapshot_projector=None):
         self.game_id, self.ocr, self.sink = str(game_id), ocr, sink
         self.video = video
+        self.snapshot_projector = snapshot_projector
         self._closed = False
         self._media_status = None
         self.regions = regions
@@ -221,6 +222,8 @@ class CapturePipeline:
                 self._media_status = status
         snapshot["capture_copy"] = deepcopy(getattr(frame, "copy_stats", {}))
         snapshot["roll_down"] = self._rolling
+        if self.snapshot_projector is not None:
+            snapshot = self.snapshot_projector(snapshot)
         self.sink.append_event("snapshot", snapshot, timestamp=now.isoformat())
         return snapshot
 

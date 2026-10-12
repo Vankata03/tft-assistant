@@ -118,6 +118,32 @@ describe('CoreSupervisor', () => {
     await vi.advanceTimersByTimeAsync(60_000)
     expect(children).toHaveLength(1)
   })
+
+  it('allows the core capture grace before forcing a stop', async () => {
+    const child = new FakeChild()
+    child.stdin.removeAllListeners('finish')
+    const supervisor = new CoreSupervisor({ spawnCore: () => child, log: () => {} })
+    supervisor.start()
+    const stopped = supervisor.stop()
+    await vi.advanceTimersByTimeAsync(8_500)
+    expect(child.killed).toBe(false)
+    child.exit(0)
+    await stopped
+  })
+
+  it('reports incomplete capture before forcing an overdue child to stop', async () => {
+    const child = new FakeChild()
+    child.stdin.removeAllListeners('finish')
+    const warnings: string[] = []
+    const supervisor = new CoreSupervisor({ spawnCore: () => child, log: () => {} })
+    supervisor.on('stderr', (line) => warnings.push(line))
+    supervisor.start()
+    const stopped = supervisor.stop()
+    await vi.advanceTimersByTimeAsync(10_000)
+    await stopped
+    expect(child.killed).toBe(true)
+    expect(warnings.join(' ')).toContain('media may be incomplete')
+  })
 })
 
 describe('parseReadyLine', () => {
