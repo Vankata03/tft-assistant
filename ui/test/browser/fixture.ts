@@ -83,6 +83,8 @@ const content: BaselineContent = {
       in_guide: true,
       offered: true,
       offer_index: 0,
+      average_placement: null, sample_count: null, pick_stage: null,
+      statistic_source: null, statistic_scope: null, stale: false, changed: false,
     },
     {
       entity: unit('aug-b', 'Fixture augment B', 0),
@@ -91,12 +93,18 @@ const content: BaselineContent = {
       in_guide: false,
       offered: false,
       offer_index: null,
+      average_placement: null, sample_count: null, pick_stage: null,
+      statistic_source: null, statistic_scope: null, stale: false, changed: false,
     },
   ],
   wisps: [
     {
       entity: unit('wisp', 'Fixture Wisp', 0),
       worth: 3.5,
+      worth_label: null,
+      worth_stage: null,
+      paired_standard_error: null,
+      reference_source: null,
       source: 'owner',
       offered_slot: 4,
     },

@@ -89,9 +89,17 @@ class Statistic:
     play_rate: float | None = None
     breakpoint: int | None = None
     positioning: tuple[float, ...] = ()
+    pick_stage: int | None = None
 
     def __post_init__(self):
         import math
+
+        if self.pick_stage is not None and (
+            not isinstance(self.pick_stage, int)
+            or isinstance(self.pick_stage, bool)
+            or self.pick_stage not in (1, 2, 3)
+        ):
+            raise DataError("Statistic pick_stage must be canonical 1, 2 or 3")
 
         if (
             not isinstance(self.sample_count, int)

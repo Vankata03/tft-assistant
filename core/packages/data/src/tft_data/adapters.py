@@ -359,6 +359,14 @@ def statistics(payload: dict, source: str, patch: str, entities=None):
         for row in rows:
             count = row["count"]
             avg = row["avg"]
+            pick_stage = row.get("pick_stage")
+            if source == "metatft" and row["kind"] == "augment" and "order" in row:
+                order = row["order"]
+                if not isinstance(order, int) or isinstance(order, bool) or order not in (0, 1, 2):
+                    raise DataError("MetaTFT augment order must be 0, 1 or 2")
+                if pick_stage is not None and pick_stage != order + 1:
+                    raise DataError("Conflicting augment pick_stage and MetaTFT order")
+                pick_stage = order + 1
             if (
                 not isinstance(count, int)
                 or count < 0
@@ -384,6 +392,7 @@ def statistics(payload: dict, source: str, patch: str, entities=None):
                     play_rate=row.get("play_rate"),
                     breakpoint=row.get("breakpoint"),
                     positioning=tuple(row.get("positioning", ())),
+                    pick_stage=pick_stage,
                 )
             )
         return tuple(result)

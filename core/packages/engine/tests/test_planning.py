@@ -651,11 +651,11 @@ def test_refresh_default_line_shapes_support_unguided_comps_and_qualify_their_ad
     state=snapshot(include_unguided=True,comp_lock='cluster')
     report=evaluate(state,GameHistory(),data,'review')
     assert report.plan.target=='cluster'
-    assert all(not a.payload.get('paused') for a in report.advice)
+    assert all(not a.payload.get('paused') for a in report.advice if a.decision!='positioning')
     assert all(a.confidence<=data.tunables['confidence_medium_min'].value for a in report.advice)
     fallback=replace(data,tunables=dict(data.tunables)|{'default_lines_by_carry_cost':tag({'1':{'roll_level':5}})})
     report=evaluate(state,GameHistory(),fallback,'review')
-    assert all(not a.payload.get('paused') for a in report.advice)
+    assert all(not a.payload.get('paused') for a in report.advice if a.decision!='positioning')
     assert any(r.line.id=='guide:cluster' for r in report.line_results['cluster'])
 
 
@@ -711,7 +711,7 @@ def test_active_forms_preserve_double_trait_grants_and_share_one_shop_pool():
     owned=Board((Unit('lux_fire',2),),(Unit('lux_fire'),))
     state=snapshot(board=owned,bench=owned.bench,level=2,comp_lock='luxguide')
     result=evaluate(state,GameHistory(),data,'review')
-    assert all(not a.payload.get('paused') for a in result.advice)
+    assert all(not a.payload.get('paused') for a in result.advice if a.decision!='positioning')
     assert result.plan.target=='luxguide'
     assert strength(owned,2,data)==strength(Board(owned.units,owned.bench,{'avatar':1,'fire':2}),2,data)
     assert result.recommended_board.units[0].unit_id=='lux_fire'

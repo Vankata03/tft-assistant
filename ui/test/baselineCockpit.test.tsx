@@ -102,6 +102,8 @@ it('Baseline renders Guide picker, static content and a number-only par chip tog
             in_guide: false,
             offered: false,
             offer_index: null,
+            average_placement: null, sample_count: null, pick_stage: null,
+            statistic_source: null, statistic_scope: null, stale: false, changed: false,
           },
           {
             entity: { ...unit, id: 'tier-s', name: 'Fixture S augment' },
@@ -110,6 +112,8 @@ it('Baseline renders Guide picker, static content and a number-only par chip tog
             in_guide: false,
             offered: false,
             offer_index: null,
+            average_placement: null, sample_count: null, pick_stage: null,
+            statistic_source: null, statistic_scope: null, stale: false, changed: false,
           },
         ],
         wisps: [],
@@ -144,4 +148,63 @@ it('Baseline renders Guide picker, static content and a number-only par chip tog
   expect(html.indexOf('Fixture S augment')).toBeLessThan(
     html.indexOf('Fixture A augment'),
   )
+})
+
+it('stage Wisp labels render as static references, preserve unavailable rows and disappear in silent mode', async () => {
+  const { BaselineOverlay } = await import('../src/renderer/src/BaselineOverlay')
+  const content = {
+    patch: 'fixture', snapshot_id: 'fixture', round_id: '3-2', guides: [], selected: null,
+    xp_hint: null, par: { probability: null, paused: 'unread', uncertain: false },
+    shop: [], recipes: [], augments: [], faced: [], warnings: [], phase: 'planning',
+    anchors: [{ kind: 'wisp', index: 4, x: .8, y: .8, width: .15, height: .05 }],
+    overlay_bounds: { x: 0, y: 0, width: 1280, height: 720 }, overlay_allowed: true,
+    wisps: [{ entity: { id: 'wisp', name: 'Fixture Wisp', icon: '', cost: 0 }, worth: .12,
+      worth_label: 'situational', worth_stage: '3', paired_standard_error: .03, source: 'default', reference_source: 'owner', offered_slot: 4 }],
+  } as NonNullable<NonNullable<ShellState['baseline']>['content']>
+  const state: ShellState = {
+    core: 'running', mode: 'baseline', availableModes: ['silent', 'baseline'],
+    gameflow: { clientRunning: true, phase: 'InProgress' },
+    baseline: { v: 1, type: 'baseline_state', mode: 'baseline', status: 'Capture OK', stale: [], voice: null, content },
+  }
+  const cockpit = renderToStaticMarkup(createElement(Cockpit, { state, onSelectGuide: () => {}, onMode: () => {} }))
+  expect(cockpit).toContain('Stage 3 · Situational')
+  expect(cockpit).toContain('Owner override')
+  expect(cockpit).toContain('Reference source: owner · Table source: default')
+  const overlay = renderToStaticMarkup(createElement(BaselineOverlay, { state }))
+  expect(overlay).toContain('Static worth Stage 3 · Situational')
+  expect(overlay).toContain('Owner override')
+  const computed = { ...state, baseline: { ...state.baseline!, content: { ...content,
+    wisps: [{ ...content.wisps[0]!, reference_source: 'engine_standard_state' }] } } }
+  expect(renderToStaticMarkup(createElement(Cockpit, { state: computed, onSelectGuide: () => {}, onMode: () => {} }))).toContain('Standard state reference')
+  expect(renderToStaticMarkup(createElement(BaselineOverlay, { state: computed }))).toContain('Standard state reference')
+  expect(overlay).not.toContain('Buy')
+  const unavailable = { ...state, baseline: { ...state.baseline!, content: { ...content,
+    wisps: [{ ...content.wisps[0]!, worth: null, worth_label: null, paired_standard_error: null }] } } }
+  expect(renderToStaticMarkup(createElement(BaselineOverlay, { state: unavailable }))).toContain('static Wisp worth unavailable')
+  expect(renderToStaticMarkup(createElement(BaselineOverlay, { state: { ...state, mode: 'silent' } }))).toBe('')
+})
+
+it('Baseline renders qualified augment averages with provenance and flags, falling back to tiers', async () => {
+  const { BaselineOverlay } = await import('../src/renderer/src/BaselineOverlay')
+  const row = { entity: { id: 'augment', name: 'Fixture augment', icon: '', cost: 0 },
+    tier: 'A', global_tier: 'A', in_guide: true, offered: true, offer_index: 0,
+    average_placement: 3.2, sample_count: 600, pick_stage: 2, statistic_scope: 'comp',
+    statistic_source: 'qualified', stale: true, changed: true }
+  const content = { patch: 'fixture', snapshot_id: 'fixture', round_id: '3-2', guides: [], selected: null,
+    xp_hint: null, par: { probability: null, paused: 'unread', uncertain: false }, shop: [], recipes: [],
+    augments: [row], wisps: [], faced: [], warnings: [], phase: 'augment',
+    anchors: [{ kind: 'augment', index: 0, x: .2, y: .2, width: .2, height: .05 }],
+    overlay_bounds: { x: 0, y: 0, width: 1280, height: 720 }, overlay_allowed: true,
+  } as NonNullable<NonNullable<ShellState['baseline']>['content']>
+  const state: ShellState = { core: 'running', mode: 'baseline', availableModes: ['silent', 'baseline'],
+    gameflow: { clientRunning: true, phase: 'InProgress' },
+    baseline: { v: 1, type: 'baseline_state', mode: 'baseline', status: 'Capture OK', stale: [], voice: null, content } }
+  for (const html of [renderToStaticMarkup(createElement(Cockpit, { state, onSelectGuide: () => {}, onMode: () => {} })),
+    renderToStaticMarkup(createElement(BaselineOverlay, { state }))]) {
+    for (const text of ['Avg 3.20', '600 games', 'Pick 2', 'Comp', 'Source: qualified', 'stale', 'changed']) expect(html).toContain(text)
+  }
+  const fallback = { ...state, baseline: { ...state.baseline!, content: { ...content,
+    augments: [{ ...content.augments[0]!, average_placement: null }] } } }
+  expect(renderToStaticMarkup(createElement(BaselineOverlay, { state: fallback }))).toContain('Tier A')
+  expect(renderToStaticMarkup(createElement(BaselineOverlay, { state: { ...state, mode: 'silent' } }))).toBe('')
 })
