@@ -27,16 +27,19 @@ Source: [MVP spec](../docs/spec.md), its area files, and the resolved planning t
 
 - [46: Immutable data contracts and capture name lists](046-data-contracts.md); blocked by nothing.
 - [47: Capture transport, OCR, tracking and visual-reader contract](047-capture-contracts.md); blocked by [35, 46].
-- [48: First sourced patch-data candidate and qualification](048-production-data-readiness.md); blocked by [36, 40, 41, 51, 54].
+- [48: First sourced patch-data candidate and qualification](048-production-data-readiness.md); blocked by [36, 40, 41, 51, 54, 56].
 - [49: Recognition, capture and target hardware qualification](049-capture-device-qualification.md); blocked by [37, 38, 40, 55].
 - [50: Native macOS teardown abort after the full Python suite](050-native-test-teardown.md); blocked by nothing.
 - [51: Preserve source-owned publication and cohort provenance](051-source-provenance.md); blocked by [36].
 - [52: Frozen replay contexts, records and safe review access](052-replay-contracts.md); blocked by [35, 36, 37, 40].
 - [53: Supervised capture and safe-refresh runtime lifecycle](053-capture-runtime-lifecycle.md); blocked by [35, 36, 37, 38, 40, 43, 51].
 - [54: Sourced unit slot costs and team capacity](054-team-slot-capacity.md); blocked by [36, 39, 40, 41].
-- [55: Complete Engine, Live, review-job and launcher runtime software](055-runtime-software-integration.md); blocked by [38, 42, 44, 53, 54].
+- [55: Complete Engine, Live, review-job and launcher runtime software](055-runtime-software-integration.md); blocked by [38, 42, 44, 53, 54, 56].
+- [56: Require positive fresh lobby completeness for roster-dependent valuation](056-lobby-completeness.md); blocked by [37, 40, 41].
 
 ## Decisions so far
+
+- 2026-10-12: Public Engine evaluation at `3a7bce2` produces identical unpaused placement scores for positive, false and unknown lobby-completeness certificates. Ticket 56 owns a shared full-roster guard before final runtime/candidate integration. Preserve independently qualified local and pairwise evidence; no smaller implied lobby or live verification claim is acceptable.
 
 - 2026-10-12: Ticket 55 extracts final runtime software after 42/44/53/54. Ticket 45 retains the unresolved historical native qualification gate in 50 and remains open; no requirement is waived. Windows/device qualification in 49 depends on the actual software boundary 55, rather than an unrelated unresolved macOS cause. Production qualification remains 48. This preserves independent implementation and platform evidence without claiming the complete MVP is qualified.
 
