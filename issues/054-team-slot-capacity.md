@@ -15,7 +15,7 @@ Production preparation exposed a concrete representation gap: the current board-
 ## Sources and evidence
 
 - [Engine specification](../docs/spec/engine.md), [decision engines](../docs/spec/sub-engines.md), [trait inference](030-opponent-model-from-trait-only-sightings.md), and final [decision contract](../docs/agents/decision-contracts.md).
-- Checked October 10 CommunityDragon payload at ignored `worktrees/references/cdragon/latest-en_us-2026-10-10.json`, SHA-256 `17d19792f662cec404aa071492ae9144a2d2677d8db9b52a47a9c7`.
+- Checked October 10 CommunityDragon payload at ignored `worktrees/references/cdragon/latest-en_us-2026-10-10.json`, SHA-256 `17d19792f662cec404aa071492ae9144a2d2677d2eeb1e0d7d8db9b52a47a9c7`.
 - Its `DA_18_ApexPredator` description explicitly states Elder Dragon takes two slots and grants two Riftbeast. Playable `DA_18_ElderDragon` carries that trait. The cached `DA_Riftbeast18` effect at `minUnits=10` has `TeamSize=2.0`.
 - Riot's [July 27 prelaunch overview](https://teamfighttactics.leagueoflegends.com/en-sg/news/game-updates/enchanted-wilds-overview/) says Elder Dragon occupies two slots/contributes two Riftbeast, but lists the maximum-team-size bonus as one and warns values may change. Preserve that dated conflict; neither value becomes a hardcoded current rule.
 
