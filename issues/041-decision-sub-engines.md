@@ -2,8 +2,8 @@
 id: 41
 title: Shop, Wisp, item, augment, carousel and positioning advice
 labels: [implementation:task]
-status: open
-assignee: codex-decision-engines
+status: closed
+assignee:
 parent: 34
 blocked_by: [40]
 ---
@@ -32,6 +32,12 @@ The initial full train run before Baseline compatibility passed 351 tests in 22.
 Bounded Mac CPU evidence uses Mac15,10, Apple M3 Max, 14 logical CPUs, with synthetic tagged data. `core/packages/engine/tests/benchmark_engine.py --combat --augment-pool 21 --rollouts 64 --repeats 2 --result-json /tmp/tft-41-final-cached.json` retained 65 unit types/Guides, three projected comps, 36 concrete candidate Lines plus three reason Lines, and 64 rollouts per Line. Cached evaluations took 1.171804 and 1.179692 seconds; `--no-reuse --repeats 1` took 6.314051 seconds. Request-local reuse reported 126 hits in 132 requests, six executed calls and 2,496 rollout-Line states. Every Advice and Line JSON record was byte-identical across the pair: 17,741,188 bytes, SHA-256 `4ac39cd6bbc4c4dfd0dc3c5395f1a4169e2073501b336172773a24473562bf67`. No candidate, conditional outcome or variance was removed. The ordinary 65-Guide combat workload took 0.267644 and 0.256443 seconds. A separate current cached CDragon roster smoke retained 65 independent types and nine Lux forms; trait inference took 0.004275 seconds with symbolic cap 10,000 and no fallback. These are Mac smoke timings, not target-device qualification.
 
 The 100 ms Ryzen/game-running budget remains unmet under ticket 49. The full 17.7 MB evidence payload also needs bounded summary/reference transport and resource qualification in 44/45/49; content-addressed choice bundles now provide resolvable evidence IDs without discarding distributions. Ticket 48 must provide qualified patch effects, component/class/reference statistics, conditional Wisp prices, standard states and the recent-opponent policy. A stage-only offline reference cost does not model conditional free-price or round-gold eligibility rules. Ticket 53 owns the real gap-aware fight-history certificate producer; this consumer never fabricates that certificate. Windows capture accuracy, live games, fitted owner parameters and the remaining runtime/native gates are not established by these tests.
+
+### 2026-10-12 — Independent integration and software closure
+
+A different merger independently reproduced the candidate's row-provenance, item-category, Baseline-statistics, remaining-effect coverage/expiry and current-round sale-value defects. The corrected exact commit `cfc9c0b7fa90a0e04e056c4564d56d615edb04e6` includes public regressions and the synchronized producer/render/schema contracts. It was independently merged as `76eacf0028ed4253422d149be2f71a904ad4896c` after reviewing the fixes and confirming no remaining software blocker.
+
+The exact corrected branch passed 358 Python tests in 26.65 seconds without skips, process exit 0. The merged integration passed 358 tests in 26.76 seconds without skips, process exit 0, with the two existing Torch ONNX warnings. Both import contracts, schema and frozen-lock checks passed. UI passed 33 tests, type checking, generated-type parity and production build; Git whitespace checks passed and the integration worktree was clean. This closes the decision software boundary only. Source, Windows/game/device, transport/resource, complete runtime and historical native qualification remain in 48, 49, 44/45 and 50 respectively; no owner run was started.
 
 
 ### 2026-10-12 — independent review corrections and final candidate gates

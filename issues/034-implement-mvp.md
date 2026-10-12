@@ -36,6 +36,8 @@ Source: [MVP spec](../docs/spec.md), its area files, and the resolved planning t
 
 ## Decisions so far
 
+- 2026-10-12: Decision software (41) closed after different-merger integration `76eacf0` of corrected exact `cfc9c0b7`. All reproduced producer/model/render defects were fixed with public regressions. The merged root passed 358 Python tests in 26.76 seconds without skips, exit 0, plus 33 UI tests and import/schema/lock/type/build gates. Replay (42), Live surfaces (44) and production preparation (48) are now unblocked. Capture lifecycle (53) remains under independent recovery review. Current production data, Windows/device/resource qualification and the historical native cause remain explicit gates.
+
 - 2026-10-11: Frozen replay contracts (52) closed after different-merger integration `b5c3d88` of exact `7cbb71d`. The root passed 308 Python tests in 18.99 seconds without skips, process exit 0; independent replay/storage checks and import/schema/lock gates passed. Causal prefixes, retrospective validity, immutable historical data, cache identity and locked review access are verified software boundaries. Full policy/cost/grouping/metrics/fitting/CLI work remains in 42, which still waits for 41; full-game resource use remains unqualified.
 
 - 2026-10-11: Ticket 53 extracts capture/session/data lifecycle wiring from 45. Its software dependencies are closed, so it proceeds alongside 41 and 52. Final Live/Engine dispatch, review jobs, run workflows and complete runtime verification remain in 45; native cause 50 still gates final qualification.
