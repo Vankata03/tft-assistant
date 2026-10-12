@@ -41,10 +41,22 @@ def simulation(effect,data,snapshot=None,*,remaining=None):
     elif kind=='sale_modifier':
         keys={'sale_gold_by_cost_star':'sale_gold_by_cost_star'}
     elif kind=='combat_buff':
+        if scope not in (None,'current_round') or (duration is not None and (isinstance(duration,bool) or not isinstance(duration,int) or duration!=1)):
+            raise DataError('Combat buff duration/scope has no supported single-round model')
+        if remaining is not None:
+            if set(remaining) != {'remaining_rounds'} or remaining['remaining_rounds'] not in (0,1):
+                raise DataError('Combat buff requires an observed current-round duration of zero or one')
+            if remaining['remaining_rounds']==0:
+                return SimulationEffects()
+        if set(values) != {'buff_id'}:
+            raise DataError('Combat buff fields unavailable or unsupported')
         id=values.get('buff_id')
         if id not in static(data,'combat_buff_power'):
             raise DataError(f'Combat buff power unavailable: {id}')
-        return SimulationEffects(one_round_power_bonus=float(static(data,'combat_buff_power')[id]))
+        power=static(data,'combat_buff_power')[id]
+        if isinstance(power,bool) or not isinstance(power,(int,float)) or not isfinite(power):
+            raise DataError(f'Combat buff power invalid: {id}')
+        return SimulationEffects(one_round_power_bonus=float(power))
     else:
         raise DataError(f'Effect has no simulation model: {kind}')
     if not values or set(values)-keys.keys():
@@ -101,7 +113,7 @@ def captured(snapshot,data):
     econ=static(data,'econ_augments') if 'econ_augments' in data.static else {}
     for id in held or ():
         record=econ.get(id)
-        if record and any(key in record['values'] for key in ('gold_per_round','xp_per_round','roll_cost_delta','shop_slots_delta')):
+        if record and (record['effect_kind'] in ('sale_modifier','combat_buff') or any(key in record['values'] for key in ('gold_per_round','xp_per_round','roll_cost_delta','shop_slots_delta'))):
             recurring.add(id)
     projected=snapshot.fields.get('projected_effect_ids')
     if projected is not None and projected.source=='choice':

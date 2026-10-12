@@ -34,11 +34,18 @@ export interface Messages {
  * via the `definition` "AugmentTier".
  */
 export interface AugmentTier {
+  average_placement: number | null
+  changed: boolean
   entity: EntityDisplay
   global_tier: string | null
   in_guide: boolean
   offer_index: number | null
   offered: boolean
+  pick_stage: number | null
+  sample_count: number | null
+  stale: boolean
+  statistic_scope: ('global' | 'comp') | null
+  statistic_source: string | null
   tier: string | null
 }
 /**
@@ -185,6 +192,7 @@ export interface WispWorth {
   entity: EntityDisplay
   offered_slot: number | null
   paired_standard_error: number | null
+  reference_source: string | null
   source: string
   worth: number | null
   worth_label: ('worth_it' | 'situational' | 'skip' | 'unavailable') | null

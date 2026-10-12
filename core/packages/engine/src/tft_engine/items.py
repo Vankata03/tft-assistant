@@ -6,7 +6,7 @@ from math import exp
 from tft_data.models import DataError
 from .planning import required, owned_board, paused
 from .registry import FitTerm
-from .power import tunable, static, keyed
+from .power import tunable, static, keyed, item_category
 from dataclasses import replace
 from .models import Advice, Board, FieldValue, ScoredOption
 from .lines import paired_value, SimulationEffects
@@ -14,14 +14,7 @@ from .effects import combine, captured
 
 
 def category(id,data):
-    entity=data.entities[id]
-    value=entity.values.get('category')
-    if value:
-        return value.value
-    component=entity.values.get('component')
-    if component is not None:
-        return 'component' if component.value else 'finished'
-    raise DataError(f'Item category unavailable: {id}')
+    return item_category(id,data)
 
 
 def available(context):
@@ -468,8 +461,8 @@ def advice(context):
                 units=tuple(u for i,u in enumerate(board.units) if i!=index)
                 held=tuple(u for i,u in enumerate(board.bench) if i!=index-len(board.units))
                 freed=Board(units,held,None); donor=None; operation='sell_and_transfer'
-                from .bench import sale_value
-                gold_delta=sale_value(unit,data)
+                from .bench import current_sale_value
+                gold_delta=current_sale_value(unit,context)
                 remaining=list(bench)
             else:
                 units=tuple(replace(u,items=()) if on_board and i==index else u for i,u in enumerate(board.units))

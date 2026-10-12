@@ -6,7 +6,7 @@ from .planning import required, owned_board
 from .power import strength, tunable, static, stage_tunable
 from .shop_math import canonical_id, owned_copies, key_goals
 from .transition import strongest_owned_board
-from .bench import bench_priority, sale_value
+from .bench import bench_priority, current_sale_value
 from .decision_shared import add_copy
 
 
@@ -45,7 +45,7 @@ def advice(context):
         priorities=bench_priority(preview,data,target=plan.target,backup=plan.backup,recommended=strongest)
         overflow_indices=tuple(i for _,_,i in priorities[int(static(data,'bench_size')):])
         overflow=tuple(preview.bench[i].unit_id for i in overflow_indices)
-        overflow_gold=sum(sale_value(preview.bench[i],data) for i in overflow_indices)
+        overflow_gold=sum(current_sale_value(preview.bench[i],context) for i in overflow_indices)
         after=Board(preview.units,tuple(u for i,u in enumerate(preview.bench) if i not in overflow_indices),preview.trait_counts)
         if preview.bench and preview.bench[-1].unit_id==id and len(preview.bench)-1 in overflow_indices:
             allowed=False
@@ -67,7 +67,7 @@ def advice(context):
         bottom=[i for category,_,i in reversed(bench_priority(board,data,target=plan.target,backup=plan.backup,recommended=context.recommended_board)) if category==4]
         sell=[]; proceeds=0
         for index in bottom:
-            sell.append(index); proceeds+=sale_value(board.bench[index],data)
+            sell.append(index); proceeds+=current_sale_value(board.bench[index],context)
             if gold+proceeds>=next_tick:
                 items.append(Advice('shop','Sell low-priority units for interest','act_this_phase',float(tunable(data,'confidence_medium_min')),'interest_breakpoint',
                     validity=('gold','board','bench','round'),option_id='shop:interest',payload={'sell':tuple(board.bench[i].unit_id for i in sell),'gold_gain':proceeds,'gold_after':gold+proceeds,'cost_units':'gold'}))

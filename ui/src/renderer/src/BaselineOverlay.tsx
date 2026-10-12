@@ -1,6 +1,7 @@
 import type { ShellState } from '../../shared/state'
 import { displayRevision, useShown } from './shown'
-import { wispWorthText } from './wispWorth'
+import { wispWorthText, wispWorthProvenance } from './wispWorth'
+import { augmentReferenceText, augmentReferenceDetails } from './augmentReference'
 
 export function BaselineOverlay({
   state,
@@ -18,6 +19,7 @@ export function BaselineOverlay({
       ? content.anchors.flatMap((anchor) => {
           let text: string | null = null
           let paused = false
+          let details: string | null = null
           if (
             anchor.kind === 'shop' &&
             ['planning', 'roll_down'].includes(content.phase)
@@ -44,14 +46,17 @@ export function BaselineOverlay({
             const row = content.augments.find(
               (row) => row.offer_index === anchor.index,
             )
-            if (row)
-              text = `Tier ${row.tier ?? 'unavailable'}${row.in_guide ? ' · In Guide' : ''}`
+            if (row) {
+              text = `${augmentReferenceText(row)}${row.in_guide ? ' · In Guide' : ''}`
+              details = augmentReferenceDetails(row)
+            }
           } else if (anchor.kind === 'wisp' && content.phase === 'planning') {
             const row = content.wisps.find(
               (row) => row.offered_slot === anchor.index,
             )
             if (row) {
               const worth = wispWorthText(row)
+              details = wispWorthProvenance(row)
               paused = worth === 'Unavailable'
               text = paused
                 ? 'paused · static Wisp worth unavailable'
@@ -64,7 +69,7 @@ export function BaselineOverlay({
           ) {
             text = `Guide priority: ${content.selected.carousel.map((row) => row.name).join(' · ')}`
           }
-          return text ? [{ anchor, text, paused }] : []
+          return text ? [{ anchor, text, paused, details }] : []
         })
       : []
   useShown(
@@ -76,7 +81,7 @@ export function BaselineOverlay({
   if (!tags.length) return null
   return (
     <div className="baseline-overlay" aria-label="Baseline overlay">
-      {tags.map(({ anchor, text, paused }, index) => (
+      {tags.map(({ anchor, text, paused, details }, index) => (
         <div
           key={index}
           className={`overlay-tag ${paused ? 'paused' : ''}`}
@@ -86,10 +91,10 @@ export function BaselineOverlay({
             width: `${anchor.width * 100}%`,
             minHeight: `${anchor.height * 100}vh`,
           }}
-          title={text}
+          title={details ? `${text} · ${details}` : text}
         >
           {text}
-          <span className="overlay-tooltip">{text}</span>
+          <span className="overlay-tooltip">{details ? `${text} · ${details}` : text}</span>
         </div>
       ))}
     </div>

@@ -3,6 +3,25 @@
     "AugmentTier": {
       "additionalProperties": false,
       "properties": {
+        "average_placement": {
+          "anyOf": [
+            {
+              "maximum": 8,
+              "minimum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Average Placement"
+        },
+        "changed": {
+          "default": false,
+          "title": "Changed",
+          "type": "boolean"
+        },
         "entity": {
           "$ref": "#/$defs/EntityDisplay"
         },
@@ -40,6 +59,66 @@
           "title": "Offered",
           "type": "boolean"
         },
+        "pick_stage": {
+          "anyOf": [
+            {
+              "maximum": 3,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pick Stage"
+        },
+        "sample_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sample Count"
+        },
+        "stale": {
+          "default": false,
+          "title": "Stale",
+          "type": "boolean"
+        },
+        "statistic_scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "global",
+                "comp"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Statistic Scope"
+        },
+        "statistic_source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Statistic Source"
+        },
         "tier": {
           "anyOf": [
             {
@@ -58,7 +137,14 @@
         "global_tier",
         "in_guide",
         "offered",
-        "offer_index"
+        "offer_index",
+        "average_placement",
+        "sample_count",
+        "pick_stage",
+        "statistic_source",
+        "statistic_scope",
+        "stale",
+        "changed"
       ],
       "title": "AugmentTier",
       "type": "object"
@@ -1123,6 +1209,18 @@
           "default": null,
           "title": "Paired Standard Error"
         },
+        "reference_source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Source"
+        },
         "source": {
           "title": "Source",
           "type": "string"
@@ -1176,6 +1274,7 @@
         "worth_stage",
         "paired_standard_error",
         "source",
+        "reference_source",
         "offered_slot"
       ],
       "title": "WispWorth",

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field, replace
 from typing import Mapping
 from tft_data.models import DataError, Guide, freeze
 from .models import Advice, ScoredOption, Board, Unit, rank_advice, _encode
-from .power import tunable, estimate_strength, stage_tunable
+from .power import tunable, estimate_strength, stage_tunable, item_category
 from .lines import Line, guide_line, simulate_lines, candidate_lines, concrete_lines, snapshot_seed
 from .opponents import opponents_from_history, round_index
 from .classifier import classify
@@ -163,7 +163,7 @@ def _commit_trigger(snapshot,data,ordered,fits):
         for unit in board.units:
             if canonical_id(unit.unit_id,data) not in {canonical_id(id,data) for id in guide.carry_ids}:
                 continue
-            if any(not data.entities[item].values['component'].value for item in unit.items):
+            if any(item_category(item, data) == 'finished' for item in unit.items):
                 return id
     if len(ordered)>1:
         top,second=fits[ordered[0]],fits[ordered[1]]

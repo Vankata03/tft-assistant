@@ -162,6 +162,25 @@ def stage_items(stage, data):
     return generic_items(values['finished'], values['component'], values['high_cost_finished'], data)
 
 
+def item_category(item_id, data):
+    entity = data.entities.get(item_id)
+    if entity is None or entity.kind != 'item':
+        raise DataError(f'Item metadata unavailable: {item_id}')
+    category = entity.values.get('category')
+    component = entity.values.get('component')
+    if component is not None and not isinstance(component.value, bool):
+        raise DataError(f'Invalid item component certificate: {item_id}')
+    if category is not None:
+        if category.value not in ('component', 'finished', 'tool'):
+            raise DataError(f'Item category unavailable: {item_id}')
+        if component is not None and component.value != (category.value == 'component'):
+            raise DataError(f'Conflicting item category certificates: {item_id}')
+        return category.value
+    if component is not None:
+        return 'component' if component.value else 'finished'
+    raise DataError(f'Item category unavailable: {item_id}')
+
+
 def estimate_strength(board: Board, level: int, data: DataSnapshot) -> PowerEstimate:
     if len(board.units) > level:
         raise ValueError('Board exceeds its unit cap')
@@ -177,15 +196,14 @@ def estimate_strength(board: Board, level: int, data: DataSnapshot) -> PowerEsti
         confidence = min(confidence, certainty)
         warnings.extend(flags)
         for item_id in unit.items:
-            item = data.entities[item_id]
-            component = item.values.get('component')
-            if component is None:
-                raise DataError(f'Missing item component flag: {item_id}')
-            if component.value:
+            category = item_category(item_id, data)
+            if category == 'component':
                 components += 1
-            else:
+            elif category == 'finished':
                 finished += 1
                 bonus += entity.cost >= 3
+            else:
+                raise DataError(f'Tool cannot be equipped for board power: {item_id}')
     # Duplicate units contribute power separately but their traits only once.
     from .opponents import unit_trait_variants
     for unit_id in sorted({u.unit_id for u in board.units}):

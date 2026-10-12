@@ -21,6 +21,96 @@ def item_patch():
     return replace(data,entities=entities,guides=guides,static=static,tunables=tunables)
 
 
+def test_equipped_category_only_items_match_component_certificates_and_missing_metadata_pauses():
+    data=item_patch()
+    state=snapshot('2-3',board=Board((Unit('a',items=('ADitem',)),)),bench=(),level=1,gold=0,
+        item_bench=(),item_inventory_complete=True)
+    expected=evaluate(state,GameHistory(),data,'review')
+    entities=dict(data.entities)
+    entities['ADitem']=replace(entities['ADitem'],values={k:v for k,v in entities['ADitem'].values.items() if k!='component'})
+    actual=evaluate(state,GameHistory(),replace(data,entities=entities),'review')
+    assert actual.comp_fits==expected.comp_fits and actual.line_results==expected.line_results
+    assert actual.plan.status=='committed' and actual.plan.target=='A'
+    entities['ADitem']=replace(entities['ADitem'],values={k:v for k,v in entities['ADitem'].values.items() if k!='category'})
+    missing=evaluate(state,GameHistory(),replace(data,entities=entities),'review')
+    assert not missing.comp_fits and any(a.payload.get('paused') for a in missing.advice)
+    entities['ADitem']=replace(data.entities['ADitem'],values=dict(data.entities['ADitem'].values)|{'component':tag(True)})
+    conflict=evaluate(state,GameHistory(),replace(data,entities=entities),'review')
+    assert not conflict.comp_fits and any(a.payload.get('paused') for a in conflict.advice)
+
+
+def test_expired_captured_combat_buff_matches_no_buff_and_active_buff_changes_current_fight():
+    data=item_patch()
+    data=replace(data,static=dict(data.static)|{'round_types':tag(dict(data.value('round_types'))|{'3-1':'combat'}),
+        'wisps':tag({'buff':{'effect_kind':'combat_buff','values':{'buff_id':'strong'}}}),
+        'combat_buff_power':tag({'strong':100})})
+    state=snapshot('3-1',board=Board((Unit('a'),)),bench=(),level=1,gold=0,hp=10,comp_lock='A',
+        pinned_line={'id':'hold','levels':{},'rolls':{}},remaining_effects=(),remaining_effects_complete=True)
+    baseline=evaluate(state,GameHistory(),data,'review',seed=123)
+    def report(counter):
+        return evaluate(replace(state,fields=dict(state.fields)|{'remaining_effects':replace(state.fields['remaining_effects'],
+            value=({'effect_id':'buff','source_kind':'wisp',**counter},))}),GameHistory(),data,'review',seed=123)
+    expired=report({'remaining_rounds':0})
+    assert expired.line_results==baseline.line_results
+    active=report({'remaining_rounds':1})
+    assert active.line_results!=baseline.line_results
+    unsupported=report({'remaining_rolls':1})
+    assert not unsupported.comp_fits and any(a.payload.get('paused') for a in unsupported.advice)
+    active_state=replace(state,fields=dict(state.fields)|{'remaining_effects':replace(state.fields['remaining_effects'],
+        value=({'effect_id':'buff','source_kind':'wisp','remaining_rounds':1},))})
+    for unsupported_values in ({'duration_rounds':True},{'scope':'rest_of_game'}):
+        invalid=replace(data,static=dict(data.static)|{'wisps':tag({'buff':{'effect_kind':'combat_buff',
+            'values':{'buff_id':'strong',**unsupported_values}}})})
+        invalid_report=evaluate(active_state,GameHistory(),invalid,'review')
+        assert not invalid_report.comp_fits and any(a.payload.get('paused') for a in invalid_report.advice)
+
+
+def test_held_duration_effects_require_complete_remaining_inventory_and_matching_rows():
+    data=item_patch()
+    records={'sale':{'effect_kind':'sale_modifier','values':{'sale_gold_by_cost_star':{'1':{'1':2}},'duration_rounds':5}},
+        'buff':{'effect_kind':'combat_buff','values':{'buff_id':'strong','duration_rounds':1}}}
+    data=replace(data,static=dict(data.static)|{'econ_augments':tag(records),'combat_buff_power':tag({'strong':100})})
+    for id in records:
+        state=snapshot(held_augments=(id,),held_augments_complete=True)
+        missing=evaluate(state,GameHistory(),data,'review')
+        assert not missing.comp_fits and any(a.payload.get('paused') for a in missing.advice)
+        empty=snapshot(held_augments=(id,),held_augments_complete=True,remaining_effects=(),remaining_effects_complete=True)
+        assert not evaluate(empty,GameHistory(),data,'review').comp_fits
+        for duration in (0,1):
+            positive=snapshot(held_augments=(id,),held_augments_complete=True,
+                remaining_effects=({'effect_id':id,'source_kind':'augment','remaining_rounds':duration},),remaining_effects_complete=True)
+            assert evaluate(positive,GameHistory(),data,'review').comp_fits
+
+
+def test_current_sale_modifier_prices_public_interest_sales_and_physical_item_handover():
+    data=item_patch()
+    data=replace(data,static=dict(data.static)|{'wisps':tag({'barter':{'effect_kind':'sale_modifier',
+        'values':{'sale_gold_by_cost_star':{'3':{'1':10}},'duration_rounds':1}}})})
+    counters={'remaining_effects':({'effect_id':'barter','source_kind':'wisp','remaining_rounds':1},),
+        'remaining_effects_complete':True}
+    owned=Board((Unit('a'),),(Unit('d'),))
+    state=snapshot(board=owned,bench=owned.bench,level=1,gold=29,comp_lock='A',
+        pinned_line={'id':'hold','levels':{},'rolls':{}},shop=(),**counters)
+    sale=next(a for a in evaluate(state,GameHistory(),data,'review').advice if a.option_id=='shop:interest')
+    assert sale.payload['gold_gain']==13 and sale.payload['gold_after']==42
+    expired=replace(state,fields=dict(state.fields)|{'remaining_effects':replace(state.fields['remaining_effects'],
+        value=({'effect_id':'barter','source_kind':'wisp','remaining_rounds':0},))})
+    sale=next(a for a in evaluate(expired,GameHistory(),data,'review').advice if a.option_id=='shop:interest')
+    assert sale.payload['gold_gain']==3 and sale.payload['gold_after']==32
+    small=replace(data,static=dict(data.static)|{'bench_size':tag(1)})
+    overflow=replace(state,fields=dict(state.fields)|{'shop':replace(state.fields['shop'],value=({'slot':0,'unit_id':'a','cost':1},))})
+    shop=next(a for a in evaluate(overflow,GameHistory(),small,'review').advice if a.payload.get('buys'))
+    assert shop.payload['buys'][0]['overflow_sells']==('d',) and shop.payload['buys'][0]['overflow_gold']==13
+    data=replace(data,tunables=dict(data.tunables)|{'cost_star_baseline':tag(dict(data.tunable('cost_star_baseline'))|{'3':{'1':0,'2':4,'3':5}}),
+        'item_values':tag({'finished':.1,'component':.035,'high_cost_bonus':.025})})
+    equipped=Board((Unit('a'),),(Unit('d',items=('ADitem',)),))
+    state=snapshot(board=equipped,bench=equipped.bench,level=1,gold=0,comp_lock='A',
+        item_bench=(),item_inventory_complete=True,**counters)
+    handover=next(a for a in evaluate(state,GameHistory(),data,'review').advice
+        if a.payload.get('operation')=='sell_and_transfer')
+    assert handover.payload['gold_gain']==13
+
+
 def test_shop_buys_target_key_and_pair_analytically_but_respects_hold_allowance():
     data=patch()
     data=replace(data,tunables=dict(data.tunables)|{'board_power_buy_min':tag(0.1)})

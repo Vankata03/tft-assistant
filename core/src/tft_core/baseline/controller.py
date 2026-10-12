@@ -9,6 +9,7 @@ from typing import Any
 
 from tft_data import DataError, DataSnapshot
 from tft_data.models import Guide, freeze
+from tft_data.config import STATISTICS_MIN_SAMPLES
 from tft_engine.allowlist import growth_curve_lookup, strength, win_probability
 
 from .contracts import (
@@ -304,8 +305,23 @@ class BaselineController:
             | set(comp_tiers)
             | set(data.augment_tiers)
             | offered_ids
+            | {row.entity_id for row in data.statistics if row.kind == 'augment'}
         )
+        pick_rounds = data.static.get('augment_pick_rounds')
+        pick_stage = pick_rounds.value.get(round_id) if pick_rounds and round_id else None
+        if not isinstance(pick_stage,int) or isinstance(pick_stage,bool) or pick_stage not in (1,2,3):
+            pick_stage = None
         for id in sorted(ids):
+            comp_ids = {guide.id, guide.cluster_id} - {None} if guide else set()
+            rows = [row for row in data.statistics
+                if row.kind == 'augment' and row.entity_id == id
+                and row.sample_count >= STATISTICS_MIN_SAMPLES
+                and (row.patch == data.patch or row.stale)
+                and (row.pick_stage is None or row.pick_stage == pick_stage)
+                and (row.comp_id is None or row.comp_id in comp_ids)
+                and (row.source not in data.sources or data.sources[row.source].qualified)]
+            statistic = max(rows, key=lambda row: (row.comp_id is not None,
+                pick_stage is not None and row.pick_stage == pick_stage, row.sample_count), default=None)
             augments.append(
                 AugmentTier(
                     entity=entity(id),
@@ -314,6 +330,13 @@ class BaselineController:
                     in_guide=guide is not None and id in guide.augment_tiers,
                     offered=id in offered_ids,
                     offer_index=offer_index.get(id),
+                    average_placement=statistic.average_placement if statistic else None,
+                    sample_count=statistic.sample_count if statistic else None,
+                    pick_stage=statistic.pick_stage if statistic else None,
+                    statistic_source=statistic.source if statistic else None,
+                    statistic_scope=('comp' if statistic.comp_id else 'global') if statistic else None,
+                    stale=statistic.stale if statistic else False,
+                    changed=statistic.changed if statistic else False,
                 )
             )
         offered_wisp = field("wisp") or {}
@@ -325,10 +348,12 @@ class BaselineController:
                 raise DataError(f"Wisp entity unavailable: {id}")
             label = None
             error = None
+            reference_source = None
             source = worth_table.source if worth_table else data.static["wisps"].source
             if stage_table is not None:
                 source = stage_table.source
                 row = stage_table.value.get(id, {}).get(worth_stage, {})
+                reference_source = row.get('source') if isinstance(row.get('source'), str) else None
                 label = row.get("label")
                 worth = row.get("placement_gain")
                 error = row.get("paired_standard_error")
@@ -353,6 +378,7 @@ class BaselineController:
                     entity=entity(id),
                     worth=worth,
                     source=source,
+                    reference_source=reference_source,
                     worth_label=label,
                     worth_stage=worth_stage if stage_table is not None else None,
                     paired_standard_error=error,

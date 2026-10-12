@@ -400,3 +400,54 @@ def test_baseline_reads_only_current_stage_wisp_reference_and_preserves_unavaila
     assert missing.worth is None and missing.worth_label is None
     assert missing.worth_stage=='4' and missing.paired_standard_error is None
     assert controller.state('silent',now=now).content is None
+
+
+def test_baseline_preserves_wisp_row_provenance_separately_from_table_tag():
+    from dataclasses import replace
+    from datetime import UTC, datetime
+    from tft_data import TaggedValue
+    from tft_core.baseline import BaselineController
+
+    now=datetime(2026,10,12,tzinfo=UTC)
+    table={'wisp':{stage:{'label':'situational','placement_gain':.12,'source':source}
+        for stage,source in (('3','owner'),('4','engine_standard_state'))}}
+    data=replace(fixture_data(),static=dict(fixture_data().static)|{'wisp_worth_table':TaggedValue(table,'default')})
+    controller=BaselineController()
+    for stage,source in (('3','owner'),('4','engine_standard_state')):
+        controller.update(data=data,snapshot={'round_id':f'{stage}-2','fields':{}},now=now)
+        row=controller.state('baseline',now=now).content.wisps[0]
+        assert row.source=='default' and row.reference_source==source
+
+
+def test_baseline_augment_statistics_select_pick_stage_and_guide_with_disclosed_flags():
+    from dataclasses import replace
+    from datetime import UTC, datetime
+    from tft_data import Statistic, TaggedValue
+    from tft_core.baseline import BaselineController
+
+    now=datetime(2026,10,12,tzinfo=UTC)
+    data=fixture_data()
+    rows=(Statistic('augment','augment',4.1,800,data.patch,'qualified',pick_stage=1),
+        Statistic('augment','augment',3.7,900,data.patch,'qualified',pick_stage=2),
+        Statistic('augment','augment',3.2,600,data.patch,'qualified',comp_id='guide-a',pick_stage=2,stale=True,changed=True))
+    data=replace(data,statistics=rows,static=dict(data.static)|{'augment_pick_rounds':TaggedValue({'3-2':2},'owner')})
+    controller=BaselineController()
+    controller.update(data=data,snapshot={'round_id':'3-2','fields':{}},now=now)
+    row=controller.state('baseline',now=now).content.augments[0]
+    assert row.average_placement==3.7 and row.statistic_scope=='global'
+    controller.select('guide-a')
+    row=controller.state('baseline',now=now).content.augments[0]
+    assert row.average_placement==3.2 and row.pick_stage==2
+    assert row.statistic_scope=='comp' and row.statistic_source=='qualified'
+    assert row.sample_count==600 and row.stale and row.changed
+    thin=replace(data,statistics=tuple(replace(s,sample_count=499) for s in rows))
+    controller.update(data=thin,now=now)
+    row=controller.state('baseline',now=now).content.augments[0]
+    assert row.average_placement is None and row.tier=='A'
+    # Another pick stage must never leak into an unknown/current round.
+    controller.update(data=data,snapshot={'round_id':'4-2','fields':{}},now=now)
+    assert controller.state('baseline',now=now).content.augments[0].average_placement is None
+    from tft_data.models import SourceState
+    rejected=SourceState('qualified',data.patch,now,now,'augment_statistics',qualified=False)
+    controller.update(data=replace(data,sources={'qualified':rejected}),snapshot={'round_id':'3-2','fields':{}},now=now)
+    assert controller.state('baseline',now=now).content.augments[0].average_placement is None
