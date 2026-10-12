@@ -143,3 +143,24 @@ def test_crash_during_first_event_can_reattach(tmp_path):
     recovered.start_game("800", patch="18.3")
     recovered.append_event("snapshot", {"gold": 10})
     assert [e["kind"] for e in recovered.read_events("800")] == ["game_start", "capture_gap", "snapshot"]
+
+
+def test_detach_preserves_unfinished_identity_and_mode_for_later_reattach(tmp_path):
+    session = store(tmp_path, live_installed=False)
+    session.start_game("123", patch="test.1", data_snapshot_id="old-pin", model_version="old-model")
+    session.set_mode("silent")
+    header = session.read_events("123")[0]
+    session.detach_game("123", reason="different_positive_tft_game")
+    assert session.active_game_id is None
+    assert session.read_events("123")[0] == header
+    assert not any(event["kind"] == "game_end" for event in session.read_events("123"))
+    assert session.list_games()[0]["finished"] is False
+    session.start_game("456", data_snapshot_id="new-pin")
+    assert session.mode.value == "baseline"
+    session.detach_game("456", reason="recovery")
+    session.start_game("123", data_snapshot_id="replacement-must-not-win")
+    assert session.mode.value == "silent"
+    assert session.read_events("123")[0] == header
+    assert sum(event["kind"] == "game_start" for event in session.read_events("123")) == 1
+    with pytest.raises(ValueError, match="active game"):
+        session.detach_game("456", reason="wrong-owner")

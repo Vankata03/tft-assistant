@@ -324,6 +324,9 @@ def test_stalled_native_worker_timeout_keeps_log_unfinished(tmp_path, transition
         assert not any(
             event["kind"] == "game_end" for event in sessions.read_events("123")
         )
+        await runtime.update(GameflowUpdate(True, "InProgress", "456", "TFT"))
+        assert sessions.active_game_id == "123"
+        assert sessions.read_events("456") == []
         devices.closed.set()
         await runtime.shutdown()
 
@@ -743,6 +746,9 @@ def test_native_close_failure_is_durable_and_does_not_end_the_game(tmp_path):
         assert not any(event["kind"] == "game_end" for event in events)
         assert any(event["kind"] == "capture_finalization_failed" for event in events)
         assert "close failed" in runtime.status
+        await runtime.update(GameflowUpdate(True, "InProgress", "456", "TFT"))
+        assert sessions.active_game_id == "123"
+        assert sessions.read_events("456") == []
         await runtime.shutdown()
 
     asyncio.run(scenario())
@@ -938,6 +944,137 @@ def test_queued_capture_callbacks_cannot_deliver_after_source_failure(tmp_path):
             with pytest.raises(TimeoutError):
                 await asyncio.wait_for(runtime.next_snapshot(), 0.05)
         finally:
+            await runtime.shutdown()
+
+    asyncio.run(scenario())
+
+
+def test_unknown_loss_can_detach_for_new_game_and_reattach_original_pins(tmp_path):
+    async def scenario():
+        runtime, sessions, data, server = fixture_runtime(tmp_path)
+        await runtime.update(GameflowUpdate(True, "InProgress", "123", "TFT"))
+        await wait_snapshot(runtime)
+        sessions.set_mode("silent")
+        original = sessions.read_events("123")[0]
+        old_names = runtime.settings.names.read_text()
+        await runtime.update(GameflowUpdate(False, None))
+        entities = runtime.settings.patch_dir / "entities.json"
+        entities.write_text(
+            entities.read_text().replace(
+                "Reaches the backline", "Recorded updated fixture text"
+            )
+        )
+        new_pin = data.refresh(runtime.settings.patch_dir).snapshot
+        assert new_pin.snapshot_id != original["payload"]["data_snapshot_id"]
+        names = json.loads(old_names)
+        names["snapshot_id"] = new_pin.snapshot_id
+        runtime.settings.names.write_text(json.dumps(names))
+        try:
+            await runtime.update(GameflowUpdate(True, "Lobby", "456", "TFT"))
+            await runtime.update(GameflowUpdate(True, "InProgress", "456", "TFT"))
+            current = await wait_snapshot(runtime)
+            assert current["game_id"] == "456"
+            assert current["data_snapshot_id"] == new_pin.snapshot_id
+            assert sessions.mode.value == "baseline"
+            assert sessions.read_events("123")[0] == original
+            assert not any(
+                event["kind"] == "game_end" for event in sessions.read_events("123")
+            )
+            await runtime.update(GameflowUpdate(False, None))
+            runtime.settings.names.write_text(old_names)
+            await runtime.update(GameflowUpdate(True, "Reconnect", "123", "TFT"))
+            restored = await wait_snapshot(runtime)
+            assert (
+                restored["data_snapshot_id"] == original["payload"]["data_snapshot_id"]
+            )
+            assert sessions.mode.value == "silent"
+            assert (
+                sum(
+                    event["kind"] == "game_start"
+                    for event in sessions.read_events("123")
+                )
+                == 1
+            )
+            assert not any(
+                event["kind"] == "game_end" for event in sessions.read_events("456")
+            )
+        finally:
+            await runtime.shutdown()
+
+    asyncio.run(scenario())
+
+
+def test_old_queued_failure_cannot_clear_the_new_games_first_snapshot(tmp_path):
+    class OldSource(Devices):
+        def __init__(self):
+            super().__init__()
+            self.writer_exited = threading.Event()
+
+        def capture(self):
+            raise RuntimeError("recorded old-game failure")
+
+        def close(self):
+            super().close()
+            writer = threading.current_thread()
+
+            def confirm_exit():
+                writer.join()
+                self.writer_exited.set()
+
+            threading.Thread(target=confirm_exit, daemon=True).start()
+
+    class NewSource(Devices):
+        def __init__(self):
+            super().__init__()
+            self.frames = 0
+            self.pending = threading.Event()
+            self.release = threading.Event()
+
+        def capture(self):
+            self.frames += 1
+            if self.frames > 1:
+                self.pending.set()
+                self.release.wait(5)
+            return super().capture()
+
+    old, new = OldSource(), NewSource()
+
+    class ExternalDevices:
+        def __init__(self):
+            self.opens = 0
+
+        def open(self, settings, data):
+            self.opens += 1
+            source = old if self.opens == 1 else new
+            return source, source, None
+
+    async def scenario():
+        runtime, sessions, data, server = fixture_runtime(
+            tmp_path, devices=ExternalDevices()
+        )
+        await runtime.update(GameflowUpdate(True, "InProgress", "123", "TFT"))
+        try:
+            assert old.writer_exited.wait(
+                2
+            )  # All old writes ended; its callback remains queued.
+            await runtime.update(GameflowUpdate(True, "InProgress", "456", "TFT"))
+            assert new.pending.wait(2)  # First new-frame callback is also queued.
+            snapshot = await wait_snapshot(runtime)
+            assert snapshot["game_id"] == "456"
+            assert "old-game failure" not in runtime.status
+            assert (await asyncio.wait_for(runtime.next_snapshot(), 1))[
+                "game_id"
+            ] == "456"
+            assert not any(
+                event["kind"] == "game_end" for event in sessions.read_events("123")
+            )
+            assert not any(
+                event["kind"] == "capture_status"
+                and "old-game failure" in event["payload"].get("error", "")
+                for event in sessions.read_events("456")
+            )
+        finally:
+            new.release.set()
             await runtime.shutdown()
 
     asyncio.run(scenario())

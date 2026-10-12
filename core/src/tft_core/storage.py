@@ -132,7 +132,7 @@ class SessionStore:
         with self._lock:
             if self.active_game_id is None:
                 raise ValueError("no active game")
-            if kind in {"game_start", "mode_change", "game_end"}:
+            if kind in {"game_start", "mode_change", "game_end", "session_detached"}:
                 raise ValueError("session events must use the session lifecycle API")
             return self._append(self.active_game_id, kind, payload, timestamp)
 
@@ -189,6 +189,21 @@ class SessionStore:
                 self._append(self.active_game_id, "mode_change", {"mode": mode.value})
             _atomic_json(self.config_root / "session.json", {"mode": mode.value})
             self._mode = mode
+            self.rebuild_index()
+
+    def detach_game(self, game_id: str | int, *, reason: str, timestamp: str | None = None) -> None:
+        """Release ownership without declaring an outcome; caller must stop all writers first."""
+        with self._lock:
+            game_id = _game_id(game_id)
+            if self.active_game_id != game_id:
+                raise ValueError("detach requires the expected active game")
+            if not isinstance(reason, str) or not reason.strip():
+                raise ValueError("detach requires an explicit recovery reason")
+            self._append(game_id, "session_detached", {"reason": reason}, timestamp)
+            next_mode = self.default_mode
+            _atomic_json(self.config_root / "session.json", {"mode": next_mode.value})
+            self.active_game_id = None
+            self._mode = next_mode
             self.rebuild_index()
 
     def end_game(self, *, placement: int | None = None, timestamp: str | None = None) -> None:

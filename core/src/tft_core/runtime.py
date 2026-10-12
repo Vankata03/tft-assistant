@@ -602,6 +602,7 @@ class CaptureRuntime:
         self._incoming_lock = threading.Lock()
         self._incoming = None
         self._incoming_scheduled = False
+        self._worker_generation = 0
         self._resume_task = None
         self._last_update = None
         self._last_positive_at = None
@@ -696,7 +697,9 @@ class CaptureRuntime:
             faced=faced,
         )
 
-    def _failure(self, message):
+    def _failure(self, message, *, generation):
+        if generation != self._worker_generation:
+            return
         self.status = message
         self.latest_snapshot = None
         self._clear_handoff()
@@ -704,11 +707,11 @@ class CaptureRuntime:
             self._incoming = None
         self._publish()
 
-    def _receive_snapshot(self, snapshot):
+    def _receive_snapshot(self, snapshot, *, generation):
         # One scheduled drain plus one replaceable frame, even if Baseline is
         # busy. A thread cannot accumulate a callback for every captured frame.
         with self._incoming_lock:
-            self._incoming = snapshot
+            self._incoming = (generation, snapshot)
             if self._incoming_scheduled:
                 return
             self._incoming_scheduled = True
@@ -720,15 +723,17 @@ class CaptureRuntime:
             self._incoming = None
             self._incoming_scheduled = False
         if snapshot:
-            self._snapshot(snapshot)
+            generation, value = snapshot
+            self._snapshot(value, generation=generation)
 
     def _clear_handoff(self):
         while not self._handoff.empty():
             self._handoff.get_nowait()
 
-    def _snapshot(self, snapshot):
+    def _snapshot(self, snapshot, *, generation):
         if (
             self._closed
+            or generation != self._worker_generation
             or self.worker is None
             or self.worker.stop_requested.is_set()
             or self.worker.error is not None
@@ -770,10 +775,18 @@ class CaptureRuntime:
                             "Capture unavailable: LCU has no positively identified TFT game",
                         )
                     elif self.sessions.active_game_id not in {None, update.game_id}:
-                        await self._pause_capture(
+                        old_game_id = self.sessions.active_game_id
+                        if await self._pause_capture(
                             "different_game_identity",
-                            "Capture unavailable: previous game outcome is unknown; retain its log for recovery",
-                        )
+                            "Previous outcome unknown; retaining its unfinished log",
+                        ):
+                            self.sessions.detach_game(
+                                old_game_id, reason="different_positive_tft_game"
+                            )
+                            self._worker_generation += 1
+                            self.pinned_data = None
+                            self._last_positive_at = None
+                            self._begin(update.game_id)
                     elif self.worker is None:
                         self._begin(update.game_id)
                     if (
@@ -861,6 +874,7 @@ class CaptureRuntime:
         self.latest_snapshot = None
         self._clear_handoff()
         self.status = message if finalized else self.status + "; " + message
+        return finalized
 
     def _begin(self, game_id):
         if not self.settings:
@@ -899,13 +913,17 @@ class CaptureRuntime:
         )
         original = self.sessions.read_events(game_id)[0]["payload"]
         self.pinned_data = data
+        self._worker_generation += 1
+        generation = self._worker_generation
         self.worker = _CaptureWorker(
             self.settings,
             data,
             self.sessions,
             self.devices,
-            self._receive_snapshot,
-            lambda error: self._marshal(self._failure, error),
+            lambda snapshot: self._receive_snapshot(snapshot, generation=generation),
+            lambda error: self._marshal(
+                lambda message: self._failure(message, generation=generation), error
+            ),
             original=original,
         )
         self.worker.thread.start()
@@ -925,9 +943,9 @@ class CaptureRuntime:
         # finalization happen exactly once on their owning capture thread.
         worker.stop()
         deadline = asyncio.get_running_loop().time() + self.shutdown_seconds
-        while not worker.done.is_set() and asyncio.get_running_loop().time() < deadline:
+        while worker.thread.is_alive() and asyncio.get_running_loop().time() < deadline:
             await asyncio.sleep(0.01)
-        if not worker.done.is_set():
+        if worker.thread.is_alive():
             self.status = "Capture shutdown timed out; media may be incomplete; active log remains recoverable"
             self.sessions.append_event(
                 "capture_shutdown_timeout",
