@@ -28,6 +28,10 @@ Production preparation exposed a concrete representation gap: the current board-
 - Verify through approved public Engine/data boundaries: two-slot selection versus ordinary units, legal and over-budget boards, explicit breakpoint bonuses, malformed/missing metadata, forced-Guide limits, same-seed Line/choice valuation and applicable inference constraints. Use source-tagged fixtures with declared rules; tests are not current patch or device qualification.
 - Preserve other planning/ownership/freshness/phase gates and paired evidence. Merge current integration before a clean exact handoff and obtain a different merger agent. Reconcile the final consumer shapes with ticket 48's isolated preparation before any production candidate claim.
 
+## Public reproduction
+
+At integration `b7db707`, a bounded call through actual `CommunityDragon.entities()` and public `estimate_strength()` accepted a board containing only `DA_18_ElderDragon` at level 1. The checked unit and trait identity/text were retained from the cached primary payload; power/statistical inputs came from the explicitly synthetic `test_planning.patch()` fixture, with neutral tagged trait priors. The call returned power 5.0 rather than rejecting a two-slot unit under a one-slot budget. This reproduces the capacity defect through the public software boundary; the power number is a fixture result, not a qualified current-game estimate.
+
 ## Qualification boundary
 
 This implements consuming sourced rules. Ticket 48 still qualifies real slot costs, capacity bonuses, grants and other patch mechanics. Ticket 49 retains Windows capture and target-device evidence. No owner API, game, run, fit or production data publication is authorized by these software fixtures.
