@@ -2,7 +2,7 @@
 id: 53
 title: Supervised capture and safe-refresh runtime lifecycle
 labels: [implementation:task]
-status: open
+status: closed
 assignee: codex-capture-runtime
 parent: 34
 blocked_by: [35, 36, 37, 38, 40, 43, 51]
@@ -50,7 +50,13 @@ The UI passed **33 tests**, TypeScript checks, generated-type parity and product
 
 ## Qualification and integration limits
 
-No owner API, real game, production data publication or Windows device run was performed. Missing production assets and rejected sources remain unavailable. Ticket 48 owns production qualification; ticket 49 owns Windows recognition/driver/latency checks; ticket 50 retains the unknown native-abort cause and final runtime gate. Tickets 44/45 must retain physical client bounds currently discarded by CapturedFrame, perform checked desktop DIP conversion and supply profile anchors before enabling overlays. This runtime leaves overlay permission false. Final Live dispatch, review jobs and run eligibility/numbering remain in ticket 45. This ticket stays open pending independent merger verification.
+No owner API, real game, production data publication or Windows device run was performed. Missing production assets and rejected sources remain unavailable. Ticket 48 owns production qualification; ticket 49 owns Windows recognition/driver/latency checks; ticket 50 retains the unknown native-abort cause and final runtime gate. Tickets 44/45 must retain physical client bounds currently discarded by CapturedFrame, perform checked desktop DIP conversion and supply profile anchors before enabling overlays. This runtime leaves overlay permission false. Final Live dispatch, review jobs and run eligibility/numbering remain in ticket 45. The independently integrated software boundary is closed; those qualifications and remaining workflows are not.
+
+## Resolution
+
+Closed on 2026-10-12 after a different merger independently reviewed exact `4b32427a0ad37e071b11a7c71a1d79e8aa950356` and integrated it as `5fbdf5b3d852e43b44d09ac668a03616de592aaa`. Review reproduced and corrected the retained-session recovery and pre-initialization refresh-publication defects before integration. The final candidate passed 403 Python tests in 30.66 seconds without skips, process exit 0; a separate public build without Live passed 67 cases in 6.72 seconds, and Live was restored afterward.
+
+The integration root passed all 403 Python tests with the frozen training group and cached pinned reader assets in 31.73 seconds, without skips and with process exit 0. Both existing ONNX-export warnings remain. UI passed 35 tests, TypeScript checks, generated-type parity and production build. Both import contracts, schema, frozen synchronization/lock and whitespace checks passed. Author verification also passed scoped F821. The integration root is clean. Windows/device, production data and the historical native cause remain separate unmet qualification conditions in tickets 48–50; this software closure does not close the MVP map.
 
 
 ## Independent-review recovery correction
