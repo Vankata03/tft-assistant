@@ -5,7 +5,7 @@ labels: [implementation:task]
 status: open
 assignee:
 parent: 34
-blocked_by: [38, 42, 44, 50, 53, 54]
+blocked_by: [50, 55]
 ---
 
 # End-to-end runtime, refresh/review jobs and run workflows
@@ -19,6 +19,8 @@ blocked_by: [38, 42, 44, 50, 53, 54]
 ## Acceptance
 
 Wire capture/Engine threads and persistent sessions to supervised core, data refresh at safe lifecycle points, below-normal post-game jobs, baseline refresh and explicit start-run CLI freeze/unlock/numbering/blocks, shortcut/login settings, integration verification and operator documentation. Do not start the owner's run or claim completion of 50 human-played games.
+
+The independently implementable software is tracked in [ticket 55](055-runtime-software-integration.md), after the capture lifecycle prerequisite in 53. This ticket remains open until that software is independently integrated and its final runtime qualification gate in 50 is fulfilled. Windows/client/model/device qualification remains 49. Splitting the software work does not waive any referenced acceptance condition.
 
 Implement all referenced requirements. Verify through the approved public seams in [implementation contract](../docs/agents/implementation.md). Record platform checks separately; keep unmet acceptance explicit.
 
@@ -39,3 +41,7 @@ The shell's current three-second graceful-stop deadline can expire before captur
 ### 2026-10-11 — Capture lifecycle prerequisite extracted
 
 Ticket 53 implements the serialized capture/session/data lifecycle through the already closed software boundaries. This allows concrete runtime wiring before full Live surfaces and replay finish. This ticket retains final Live/Engine dispatch, review jobs, run workflows and complete runtime verification; ticket 50 remains its historical native qualification gate.
+
+### 2026-10-12 — Final software work separated from historical qualification
+
+Ticket 53 is independently integrated and closed. Ticket 55 now owns the remaining Engine/Live dispatch, supervised review jobs, run workflows, launcher/settings and end-to-end software verification after 42/44/54. Ticket 50 still has no minimized red-capable abort or verified causal repair; keeping it as this ticket's final qualification gate must not prevent implementation of those independent software requirements. This ticket and the parent remain open until their full conditions are fulfilled.

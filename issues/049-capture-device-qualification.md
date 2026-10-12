@@ -5,7 +5,7 @@ labels: [qualification:capture, qualification:device]
 status: open
 assignee:
 parent: 34
-blocked_by: [37, 38, 40, 45]
+blocked_by: [37, 38, 40, 55]
 ---
 
 # Qualify recognition, capture and target hardware budgets

@@ -23,19 +23,22 @@ Source: [MVP spec](../docs/spec.md), its area files, and the resolved planning t
 - [42: Replay, post-game review and evaluation harness](042-replay-review-harness.md); blocked by [35, 41, 52].
 - [43: Baseline Guides and permitted hints](043-baseline-surfaces.md); blocked by [36, 39].
 - [44: Separable Live advisor, overlay, cockpit and voice](044-live-surfaces.md); blocked by [37, 41, 43].
-- [45: End-to-end runtime, refresh/review jobs and run workflows](045-runtime-run.md); blocked by [38, 42, 44, 50, 53, 54].
+- [45: End-to-end runtime, refresh/review jobs and run workflows](045-runtime-run.md); blocked by [50, 55].
 
 - [46: Immutable data contracts and capture name lists](046-data-contracts.md); blocked by nothing.
 - [47: Capture transport, OCR, tracking and visual-reader contract](047-capture-contracts.md); blocked by [35, 46].
 - [48: First sourced patch-data candidate and qualification](048-production-data-readiness.md); blocked by [36, 40, 41, 51, 54].
-- [49: Recognition, capture and target hardware qualification](049-capture-device-qualification.md); blocked by [37, 38, 40, 45].
+- [49: Recognition, capture and target hardware qualification](049-capture-device-qualification.md); blocked by [37, 38, 40, 55].
 - [50: Native macOS teardown abort after the full Python suite](050-native-test-teardown.md); blocked by nothing.
 - [51: Preserve source-owned publication and cohort provenance](051-source-provenance.md); blocked by [36].
 - [52: Frozen replay contexts, records and safe review access](052-replay-contracts.md); blocked by [35, 36, 37, 40].
 - [53: Supervised capture and safe-refresh runtime lifecycle](053-capture-runtime-lifecycle.md); blocked by [35, 36, 37, 38, 40, 43, 51].
 - [54: Sourced unit slot costs and team capacity](054-team-slot-capacity.md); blocked by [36, 39, 40, 41].
+- [55: Complete Engine, Live, review-job and launcher runtime software](055-runtime-software-integration.md); blocked by [38, 42, 44, 53, 54].
 
 ## Decisions so far
+
+- 2026-10-12: Ticket 55 extracts final runtime software after 42/44/53/54. Ticket 45 retains the unresolved historical native qualification gate in 50 and remains open; no requirement is waived. Windows/device qualification in 49 depends on the actual software boundary 55, rather than an unrelated unresolved macOS cause. Production qualification remains 48. This preserves independent implementation and platform evidence without claiming the complete MVP is qualified.
 
 - 2026-10-12: Supervised capture and safe-refresh lifecycle software (53) closed after different-merger integration `5fbdf5b` of corrected exact `4b32427`. Session recovery retains unfinished original logs and pins while safely releasing stopped writers; observed active LCU phases block publication even without initialized capture. Root verification passed 403 Python tests without skips in 31.73 seconds, process exit 0, plus 35 UI tests and required import/schema/lock/type/build gates. Full replay/review/harness (42) now proceeds from this integration; final Live/Engine dispatch and jobs remain in 45. Production, Windows/device and historical native-cause qualification remain open.
 
