@@ -3,7 +3,7 @@ id: 44
 title: Separable Live advisor, overlay, cockpit and voice
 labels: [implementation:task]
 status: open
-assignee:
+assignee: codex-live-surfaces
 parent: 34
 blocked_by: [37, 41, 43]
 ---
