@@ -25,6 +25,8 @@ Qualify the reader against held-out, owner-labeled game/keyframe groups with the
 
 Run the automatic capture and supervised runtime on Windows against the game window. Verify WGC and BitBlt behavior, overlay exclusion, aspect ratios, UI scale, locales and window modes; own-view identity, full captured fields, event reconciliation, capture gaps, calibration and retained logs/media. Preserve explicit unavailable fields and original timestamps when reads fail.
 
+Check the actual client's `lol-end-of-game/v1/tft-eog-stats` response as the spec's optional faster outcome source. Record its observed schema, identity, availability and missing fields; a terminal gameflow phase alone does not supply placement or final boards. Confirm the match-ID/LCU-ID join (`EUN1_<gameId>` against the numeric client game ID) with actual matching observations. Software fixtures can verify normalization and rejection rules but do not qualify either current client build fact. Keep private outcome evidence and account identifiers outside Git.
+
 Measure normal and roll-down capture cadence, offer-to-advice latency and the complete Engine snapshot budget on the specified Ryzen 7800X3D/RX 6800 system while the game runs. Keep macOS timings separate. If the Engine exceeds its 100 ms budget, apply and verify the required optimization or compiled inner loop before claiming target qualification.
 
 Record commands, asset/model/data versions, observations and failures. Do not start the owner's measurement run or fabricate played games. If the device or labeled data is unavailable, retain the exact unmet conditions and their evidence requirements rather than closing this ticket.
