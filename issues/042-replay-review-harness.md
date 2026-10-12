@@ -3,7 +3,7 @@ id: 42
 title: Replay, post-game review and evaluation harness
 labels: [implementation:task]
 status: open
-assignee:
+assignee: codex-review-harness
 parent: 34
 blocked_by: [35, 41, 52]
 ---
