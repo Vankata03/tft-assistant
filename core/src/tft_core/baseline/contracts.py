@@ -63,12 +63,23 @@ class AugmentTier(DisplayModel):
     in_guide: bool
     offered: bool = False
     offer_index: int | None = Field(default=None, ge=0, le=20)
+    average_placement: float | None = Field(default=None, ge=1, le=8, allow_inf_nan=False)
+    sample_count: int | None = Field(default=None, ge=0)
+    pick_stage: int | None = Field(default=None, ge=1, le=3)
+    statistic_source: str | None = None
+    statistic_scope: Literal['global','comp'] | None = None
+    stale: bool = False
+    changed: bool = False
 
 
 class WispWorth(DisplayModel):
     entity: EntityDisplay
     worth: float | None
+    worth_label: Literal['worth_it','situational','skip','unavailable'] | None = None
+    worth_stage: str | None = None
+    paired_standard_error: float | None = Field(default=None,ge=0,allow_inf_nan=False)
     source: str
+    reference_source: str | None = None
     offered_slot: int | None = Field(default=None, ge=0, le=4)
 
 

@@ -329,6 +329,8 @@ def validate_static(fields):
         "polymorph",
         "duplicator",
         "item_grant",
+        "sale_modifier",
+        "risky",
         "unmodelled",
     }
     for name in ("wisps", "econ_augments", "opening_encounters"):

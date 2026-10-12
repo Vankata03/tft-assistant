@@ -12,6 +12,8 @@ import {
 } from '../../shared/state'
 import { SessionModeSelector } from './ModeSelector'
 import { displayRevision, useShown } from './shown'
+import { wispWorthText, wispWorthProvenance } from './wispWorth'
+import { augmentReferenceText, augmentReferenceDetails } from './augmentReference'
 
 const TIER_ORDER: Record<string, number> = {
   'S+': 0,
@@ -185,6 +187,7 @@ function ReferencePanels({
     (a, b) =>
       Number(b.offered) - Number(a.offered) ||
       Number(b.in_guide) - Number(a.in_guide) ||
+      (a.average_placement !== null && b.average_placement !== null ? a.average_placement - b.average_placement : Number(a.average_placement === null) - Number(b.average_placement === null)) ||
       (TIER_ORDER[a.tier ?? ''] ?? 99) - (TIER_ORDER[b.tier ?? ''] ?? 99) ||
       a.entity.name.localeCompare(b.entity.name),
   )
@@ -202,21 +205,21 @@ function ReferencePanels({
   return (
     <aside className="reference-column">
       <section className="panel">
-        <h2>Augment tiers</h2>
+        <h2>Augment references</h2>
         <div className="reference-rows">
           {(allAugments ? augments : augments.slice(0, 8)).map((row) => (
             <div
               className={`reference-row ${row.offered ? 'offered' : ''}`}
               key={row.entity.id}
             >
-              <strong className="tier">{row.tier ?? '—'}</strong>
+              <strong className="tier" title={augmentReferenceDetails(row)}>{augmentReferenceText(row)}</strong>
               <EntityName entity={row.entity} small />
               <span className="in-guide">{row.in_guide ? 'In Guide' : ''}</span>
             </div>
           ))}
         </div>
         {augments.length === 0 ? (
-          <p className="subtle">Tier data unavailable.</p>
+          <p className="subtle">Augment references unavailable.</p>
         ) : null}
         {augments.length > 8 ? (
           <button
@@ -224,12 +227,12 @@ function ReferencePanels({
             onClick={() => setAllAugments(!allAugments)}
           >
             {allAugments
-              ? 'Show fewer tiers'
-              : `Show all ${augments.length} tiers`}
+              ? 'Show fewer references'
+              : `Show all ${augments.length} references`}
           </button>
         ) : null}
         <p className="subtle">
-          Verified comp tiers take precedence over global tiers.
+          Qualified comp statistics take precedence over global statistics. Tiers remain the fallback.
         </p>
       </section>
       <section className="panel">
@@ -261,8 +264,8 @@ function ReferencePanels({
                 <td>
                   <EntityName entity={row.entity} small />
                 </td>
-                <td title={`Source: ${row.source}`}>
-                  {row.worth ?? 'Unavailable'}
+                <td title={wispWorthProvenance(row)}>
+                  {wispWorthText(row)}
                 </td>
               </tr>
             ))}

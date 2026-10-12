@@ -13,3 +13,5 @@ from .lines import Line, LineResult, SimulationEffects, simulate_lines, snapshot
 from .comp_fit import CompFit
 from .planning import best_choice_fit
 from .lines import paired_value, candidate_lines
+
+from .wisps import compute_wisp_worth

@@ -9,6 +9,7 @@ from typing import Any
 
 from tft_data import DataError, DataSnapshot
 from tft_data.models import Guide, freeze
+from tft_data.config import STATISTICS_MIN_SAMPLES
 from tft_engine.allowlist import growth_curve_lookup, strength, win_probability
 
 from .contracts import (
@@ -304,8 +305,23 @@ class BaselineController:
             | set(comp_tiers)
             | set(data.augment_tiers)
             | offered_ids
+            | {row.entity_id for row in data.statistics if row.kind == 'augment'}
         )
+        pick_rounds = data.static.get('augment_pick_rounds')
+        pick_stage = pick_rounds.value.get(round_id) if pick_rounds and round_id else None
+        if not isinstance(pick_stage,int) or isinstance(pick_stage,bool) or pick_stage not in (1,2,3):
+            pick_stage = None
         for id in sorted(ids):
+            comp_ids = {guide.id, guide.cluster_id} - {None} if guide else set()
+            rows = [row for row in data.statistics
+                if row.kind == 'augment' and row.entity_id == id
+                and row.sample_count >= STATISTICS_MIN_SAMPLES
+                and (row.patch == data.patch or row.stale)
+                and (row.pick_stage is None or row.pick_stage == pick_stage)
+                and (row.comp_id is None or row.comp_id in comp_ids)
+                and (row.source not in data.sources or data.sources[row.source].qualified)]
+            statistic = max(rows, key=lambda row: (row.comp_id is not None,
+                pick_stage is not None and row.pick_stage == pick_stage, row.sample_count), default=None)
             augments.append(
                 AugmentTier(
                     entity=entity(id),
@@ -314,14 +330,44 @@ class BaselineController:
                     in_guide=guide is not None and id in guide.augment_tiers,
                     offered=id in offered_ids,
                     offer_index=offer_index.get(id),
+                    average_placement=statistic.average_placement if statistic else None,
+                    sample_count=statistic.sample_count if statistic else None,
+                    pick_stage=statistic.pick_stage if statistic else None,
+                    statistic_source=statistic.source if statistic else None,
+                    statistic_scope=('comp' if statistic.comp_id else 'global') if statistic else None,
+                    stale=statistic.stale if statistic else False,
+                    changed=statistic.changed if statistic else False,
                 )
             )
         offered_wisp = field("wisp") or {}
+        stage_table = data.static.get("wisp_worth_table")
         worth_table = data.static.get("wisp_worth")
+        worth_stage = str(round_id).split("-")[0] if round_id else None
         for id, rule in data.value("wisps").items():
             if id not in data.entities:
                 raise DataError(f"Wisp entity unavailable: {id}")
-            worth = worth_table.value.get(id) if worth_table else rule.get("worth")
+            label = None
+            error = None
+            reference_source = None
+            source = worth_table.source if worth_table else data.static["wisps"].source
+            if stage_table is not None:
+                source = stage_table.source
+                row = stage_table.value.get(id, {}).get(worth_stage, {})
+                reference_source = row.get('source') if isinstance(row.get('source'), str) else None
+                label = row.get("label")
+                worth = row.get("placement_gain")
+                error = row.get("paired_standard_error")
+                if label not in (None, "worth_it", "situational", "skip", "unavailable"):
+                    warnings.append(f"Wisp worth label unavailable: {id}")
+                    label = None
+                    worth = error = None
+                if label in (None, "unavailable"):
+                    worth = error = None
+                if error is not None and (isinstance(error, bool) or not isinstance(error, (int, float)) or not isfinite(error) or error < 0):
+                    warnings.append(f"Wisp paired error unavailable: {id}")
+                    error = None
+            else:
+                worth = worth_table.value.get(id) if worth_table else rule.get("worth")
             if worth is not None and (
                 not isinstance(worth, (int, float)) or not isfinite(worth)
             ):
@@ -331,9 +377,11 @@ class BaselineController:
                 WispWorth(
                     entity=entity(id),
                     worth=worth,
-                    source=worth_table.source
-                    if worth_table
-                    else data.static["wisps"].source,
+                    source=source,
+                    reference_source=reference_source,
+                    worth_label=label,
+                    worth_stage=worth_stage if stage_table is not None else None,
+                    paired_standard_error=error,
                     offered_slot=offered_wisp.get("slot", 4)
                     if offered_wisp.get("wisp_id") == id
                     else None,

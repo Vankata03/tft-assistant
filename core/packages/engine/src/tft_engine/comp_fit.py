@@ -34,7 +34,8 @@ def damage_divisor(round_id,data):
 
 
 def rounds_left_to_live(snapshot,data,opponents=()):
-    board=snapshot.field('board'); level=int(snapshot.field('level'))
+    from .planning import read
+    board=read(snapshot,data,'board'); level=int(read(snapshot,data,'level'))
     own=strength(board,level,data)
     stage=int(snapshot.round_id.split('-')[0])
     powers=[o.power for o in opponents] or [growth_curve_lookup(snapshot.round_id,data)]
@@ -44,15 +45,16 @@ def rounds_left_to_live(snapshot,data,opponents=()):
         survivors=surviving_units(max(0,power-own),stage,standard_level(snapshot.round_id,data),data)
         loss+=(1-win_probability(own,power,stage,data))*(float(keyed(damage['stage_base'],stage))+float(damage['per_survivor'])*survivors)
     loss/=len(powers)
-    return float(snapshot.field('hp'))/loss if loss>0 else float('inf')
+    return float(read(snapshot,data,'hp'))/loss if loss>0 else float('inf')
 
 
 def screen_comp(snapshot,data,guide,context,domain_terms,*,opponents=(),rounds_left=None):
+    from .planning import read
     line=guide_line(guide,data)
     owned=owned_copies(context.recommended_board,data)
     goals=key_goals(guide,data)
     rules=static(data,'rules_flags')
-    slots=snapshot.field('slot_count')
+    slots=read(snapshot,data,'slot_count')
     if slots is None:
         slots=rules['unknown_wisp_slots']
     contested={}
@@ -63,15 +65,15 @@ def screen_comp(snapshot,data,guide,context,domain_terms,*,opponents=(),rounds_l
     rolls=[r for r in line.rolls if round_index(r,data)>=round_index(snapshot.round_id,data)]
     target_round=min(rolls,key=lambda r:round_index(r,data)) if rolls else snapshot.round_id
     wait=max(0,order.index(target_round)-order.index(snapshot.round_id))
-    gold=float(snapshot.field('gold'))
+    gold=float(read(snapshot,data,'gold'))
     for round_id in order[order.index(snapshot.round_id):order.index(target_round)]:
         gold+=float(static(data,'gold_by_round').get(round_id,static(data,'gold_by_round').get('default',0)))
     floor=float(line.rolls.get(target_round,gold))
     shops=int(max(0,(gold-floor)//float(rules['roll_cost'])))
-    target_level=current_level_target(line,target_round,data,int(snapshot.field('level')))
+    target_level=current_level_target(line,target_round,data,int(read(snapshot,data,'level')))
     # The screen cannot borrow unfunded XP: spend its explicit XP cost before roll gold.
-    xp=float(snapshot.field('xp'))+wait*float(rules['passive_xp'])
-    level=int(snapshot.field('level')); buy_cost=float(rules['xp_buy_cost']); buy_amount=float(rules['xp_buy_amount'])
+    xp=float(read(snapshot,data,'xp'))+wait*float(rules['passive_xp'])
+    level=int(read(snapshot,data,'level')); buy_cost=float(rules['xp_buy_cost']); buy_amount=float(rules['xp_buy_amount'])
     while level<target_level:
         required=keyed(static(data,'xp_table'),level)
         if required is None:
@@ -88,16 +90,16 @@ def screen_comp(snapshot,data,guide,context,domain_terms,*,opponents=(),rounds_l
         prior_hit.append(hit_probability(id,goal,shops,float(slots),level,data,contested=contested))
         actual_hit.append(hit_probability(id,max(0,goal-owned.get(id,0)),shops,float(slots),level,data,owned=owned,contested=contested))
     old=min(prior_hit,default=1.0); hit=min(actual_hit,default=1.0)
-    hp=float(snapshot.field('hp'))
+    hp=float(read(snapshot,data,'hp'))
     from .lobby import alive_lobby
-    hp_map=alive_lobby(snapshot)
+    hp_map=alive_lobby(snapshot,data)
     health=tuple(hp_map.values())
     by_id={o.opponent_id:o.power for o in opponents}
     opposing=tuple(by_id[id] if id in by_id else growth_curve_lookup(snapshot.round_id,data) for id in hp_map)
     from .shop_math import canonical_id
-    ideal=Board(tuple(Unit(id,3 if goals.get(canonical_id(id,data),0)>=9 else 2 if canonical_id(id,data) in goals else 1) for id in guide.units[:int(snapshot.field('level'))]))
-    ideal_power=strength(ideal,int(snapshot.field('level')),data)
-    missing_power=strength(snapshot.field('board'),int(snapshot.field('level')),data)
+    ideal=Board(tuple(Unit(id,3 if goals.get(canonical_id(id,data),0)>=9 else 2 if canonical_id(id,data) in goals else 1) for id in guide.units[:int(read(snapshot,data,'level'))]))
+    ideal_power=strength(ideal,int(read(snapshot,data,'level')),data)
+    missing_power=strength(read(snapshot,data,'board'),int(read(snapshot,data,'level')),data)
     divisor=damage_divisor(snapshot.round_id,data)
     ideal_placement=placement(ideal_power,opposing,hp,health,divisor,data)
     miss_placement=placement(missing_power,opposing,hp,health,divisor,data)

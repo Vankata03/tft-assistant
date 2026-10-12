@@ -304,6 +304,7 @@ class DataStore:
                         r.item_id,
                         r.comp_id,
                         r.breakpoint,
+                        r.pick_stage,
                         r.source,
                     ): r
                     for r in self.current.statistics
@@ -322,6 +323,7 @@ class DataStore:
                         row.item_id,
                         row.comp_id,
                         row.breakpoint,
+                        row.pick_stage,
                         row.source,
                     )
                     if key in seen:

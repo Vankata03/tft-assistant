@@ -18,6 +18,8 @@ def main():
     parser.add_argument('--rollouts',type=int,default=64)
     parser.add_argument('--state-cap',type=int,default=10000)
     parser.add_argument('--repeats',type=int,default=1)
+    parser.add_argument('--augment-pool',type=int,default=0)
+    parser.add_argument('--no-reuse',action='store_true')
     args=parser.parse_args()
     spec=importlib.util.spec_from_file_location('synthetic_engine_examples',Path(__file__).with_name('test_planning.py'))
     fixture=importlib.util.module_from_spec(spec); spec.loader.exec_module(fixture)
@@ -38,17 +40,36 @@ def main():
     data=replace(data,tunables=dict(data.tunables)|{'opponent_growth_curve':tag(growth_curve(data))})
     board=Board(tuple(Unit(ids[i],2 if i==0 else 1) for i in range(6)),tuple(Unit(ids[i]) for i in range(6,15)))
     state=fixture.snapshot(board=board,bench=board.bench,level=6,gold=34,hp=40)
+    if args.augment_pool:
+        if args.augment_pool<3:
+            parser.error('--augment-pool must include at least three shown options')
+        from tft_engine import FieldValue
+        ids_aug=tuple(f'augment{i}' for i in range(args.augment_pool))
+        entities={id:replace(entity,values=dict(entity.values)|{'item_class':tag('AD'),'item_reference':tag(0)}) if entity.kind=='unit' else entity for id,entity in entities.items()}
+        entities['synthetic_item']=Entity('synthetic_item','item','Synthetic item',values={'category':tag('finished'),'item_class':tag('AD'),'component':tag(False)})
+        guides={id:replace(guide,items={guide.carry_ids[0]:('synthetic_item',)}) for id,guide in guides.items()}
+        tunables=dict(data.tunables)|{'item_class_prior':tag({'AD':{'AD':.5}}),'item_prior_strength':tag(100),
+            'component_income_by_stage':tag({str(i):{} for i in range(1,9)}),'component_discount_by_stage':tag({str(i):0 for i in range(1,9)}),
+            'augment_tier_delta':tag({'S':-.3,'A':-.15,'B':0,'silver':0}),'augment_prior_strength':tag(100),'augment_flag_prior_multiplier':tag(2)}
+        static=dict(data.static)|{'rules_flags':tag(dict(data.value('rules_flags'))|{'item_slots_max':3}),
+            'item_recipes':tag({}),'econ_augments':tag({}),'augment_pools':tag({'silver':ids_aug})}
+        data=replace(data,entities=entities,guides=guides,tunables=tunables,static=static,augment_tiers={id:('S','A','B')[i%3] for i,id in enumerate(ids_aug)})
+        values={'phase':'augment','planning_phase':False,'comp_lock':'g00','item_bench':(),'item_inventory_complete':True,
+            'held_augments':(),'held_augments_complete':True,'augment_tier':'silver','augment_offers_complete':True,
+            'augments':tuple({'slot':i,'augment_id':id,'reroll_available':True} for i,id in enumerate(ids_aug[:3]))}
+        state=replace(state,fields=dict(state.fields)|{name:FieldValue(value,state.captured_at,'benchmark_fixture',1) for name,value in values.items()})
     if args.repeats<1:
         parser.error('--repeats must be positive')
     elapsed=[]
     for _ in range(args.repeats):
-        start=perf_counter(); result=evaluate(state,fixture.GameHistory(),data,'review'); elapsed.append(perf_counter()-start)
-    if any(a.payload.get('paused') for a in result.advice):
-        raise RuntimeError([a.to_dict() for a in result.advice])
+        start=perf_counter(); result=evaluate(state,fixture.GameHistory(),data,'review',reuse_simulations=not args.no_reuse); elapsed.append(perf_counter()-start)
+    if any(a.payload.get('paused') and a.decision in (('augment',) if args.augment_pool else ('econ','plan','transition')) for a in result.advice):
+        raise RuntimeError([(a.decision,a.payload.get('reason')) for a in result.advice if a.payload.get('paused')])
     if args.result_json:
         args.result_json.write_text(json.dumps({'advice':[a.to_dict() for a in result.advice],'line_results':{id:[r.to_dict() for r in values] for id,values in result.line_results.items()}},sort_keys=True,allow_nan=False))
-    output={'qualification':'Mac CPU smoke, synthetic statistics; no Ryzen/live/fitted qualification',
-        'guides':len(guides),'roster_units':len(units),'rollouts':args.rollouts,'evaluation_seconds':elapsed,'workload':dict(result.workload),
+    projected=next((a.options[0].payload['after_lines'] for a in result.advice if a.decision=='augment' and a.options and 'after_lines' in a.options[0].payload),{})
+    output={'projected_comps':len(projected),'projected_concrete_lines':sum(len(rows) for rows in projected.values()),'qualification':'Mac CPU smoke, synthetic statistics; no Ryzen/live/fitted qualification',
+        'augment_pool':args.augment_pool,'simulation_reuse':not args.no_reuse,'guides':len(guides),'roster_units':len(units),'rollouts':args.rollouts,'evaluation_seconds':elapsed,'workload':dict(result.workload),'simulation_diagnostics':dict(result.simulation_diagnostics),
         'simulated_comps':sum(f.simulated for f in result.comp_fits.values()),'scored_lines':sum(len(v) for v in result.line_results.values())}
     if args.roster_cache:
         from tft_data.adapters import CommunityDragon

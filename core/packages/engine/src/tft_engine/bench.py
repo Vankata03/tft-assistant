@@ -23,5 +23,17 @@ def roll_sale_indices(board,data,*,target=None,backup=None):
     return tuple(index for category,_,index in bench_priority(board,data,target=target,backup=backup) if category>1)
 
 
-def sale_value(unit,data):
-    return float(keyed(keyed(static(data,'sell_values'),data.entities[unit.unit_id].cost),unit.stars))
+def sale_value(unit,data,*,effects=None,round_id=None):
+    cost=data.entities[unit.unit_id].cost
+    result=float(keyed(keyed(static(data,'sell_values'),cost),unit.stars))
+    if effects is not None:
+        tables=(effects.sale_gold_by_cost_star,
+            effects.round_modifiers.get(round_id,{}).get('sale_gold_by_cost_star',{}))
+        result+=sum(float(keyed(keyed(table,cost) or {},unit.stars) or 0) for table in tables)
+    return result
+
+
+def current_sale_value(unit,context):
+    from .effects import captured, combine
+    effects=combine(captured(context.snapshot,context.data),context.effects)
+    return sale_value(unit,context.data,effects=effects,round_id=context.snapshot.round_id)
