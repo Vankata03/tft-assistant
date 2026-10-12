@@ -264,7 +264,11 @@ def test_refresh_coalesces_and_cannot_replace_active_pin(tmp_path):
         await wait_snapshot(runtime)
         pin = runtime.pinned_data
         await runtime.update(GameflowUpdate(True, "Lobby"))
-        assert runtime.refresh.task is first
+        lobby_refresh = runtime.refresh.task
+        await runtime.update(GameflowUpdate(True, "Lobby"))
+        assert runtime.refresh.task is lobby_refresh
+        assert runtime.pinned_data is pin
+        await runtime.refresh.wait()
         (runtime.settings.patch_dir / "static.toml").unlink()
         await runtime.update(GameflowUpdate(True, "Reconnect", "123", "TFT"))
         await wait_snapshot(runtime)
@@ -1075,6 +1079,79 @@ def test_old_queued_failure_cannot_clear_the_new_games_first_snapshot(tmp_path):
             )
         finally:
             new.release.set()
+            await runtime.shutdown()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("missing", ["data", "model_pointer", "settings"])
+@pytest.mark.parametrize("safe_phase", ["EndOfGame", "Lobby"])
+def test_positive_game_gates_blocked_startup_refresh_even_when_capture_cannot_start(
+    tmp_path, missing, safe_phase
+):
+    from datetime import UTC, datetime
+    from tft_core.runtime import CaptureRuntime
+    from tft_data.refresh import RefreshCoordinator
+    from tft_data.sources import SourceMetadata
+
+    entered, release = threading.Event(), threading.Event()
+
+    class SlowSource:
+        name = "recorded-slow-source"
+        kind = "statistics"
+
+        def metadata(self):
+            entered.set()
+            assert release.wait(5)
+            return SourceMetadata("test.1", datetime.now(UTC))
+
+        def fetch(self):
+            return {"rows": []}
+
+    async def scenario():
+        prepared, sessions, previous, server = fixture_runtime(tmp_path)
+        data = (
+            previous
+            if missing == "model_pointer"
+            else DataStore(tmp_path / "empty-snapshots")
+        )
+        settings = None if missing == "settings" else prepared.settings
+        if missing == "model_pointer":
+            settings.model_pointer.unlink()
+        initial = data.current
+        runtime = CaptureRuntime(
+            server, sessions, data, settings=settings, devices=Devices()
+        )
+        # Use the real coordinator; only the external source response is recorded.
+        runtime.refresh = RefreshCoordinator(
+            data, prepared.settings.patch_dir, sources=[SlowSource()]
+        )
+        try:
+            await runtime.start()
+            for _ in range(200):
+                if entered.is_set():
+                    break
+                await asyncio.sleep(0.01)
+            assert entered.is_set()
+            await runtime.update(GameflowUpdate(True, "InProgress", "123", "TFT"))
+            assert sessions.active_game_id is None
+            release.set()
+            await runtime.refresh.wait()
+            assert data.current is initial
+            assert runtime.refresh.in_game is True
+            await runtime.update(GameflowUpdate(False, None))
+            assert data.current is initial
+            assert runtime.refresh.in_game is True
+            await runtime.update(GameflowUpdate(True, "EndOfGame", "999", "TFT"))
+            assert data.current is initial
+            assert runtime.refresh.in_game is True
+            await runtime.update(GameflowUpdate(True, safe_phase, "123", "TFT"))
+            await runtime.refresh.wait()
+            assert data.current is not None
+            assert runtime.refresh.in_game is False
+            assert sessions.read_events("123") == []
+        finally:
+            release.set()
             await runtime.shutdown()
 
     asyncio.run(scenario())

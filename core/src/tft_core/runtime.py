@@ -606,6 +606,8 @@ class CaptureRuntime:
         self._resume_task = None
         self._last_update = None
         self._last_positive_at = None
+        self._phase_blocks_refresh = False
+        self._observed_game_id = None
         self._client_error = None
         self._refresh_task = None
         self._refresh_warnings = ()
@@ -632,7 +634,7 @@ class CaptureRuntime:
         self._trigger_refresh("startup")
 
     def _trigger_refresh(self, reason):
-        if self.refresh:
+        if self.refresh and not self._phase_blocks_refresh:
             task = self.refresh.trigger(reason)
             if task and task is not self._refresh_task:
                 self._refresh_task = task
@@ -644,9 +646,13 @@ class CaptureRuntime:
         try:
             result = task.result()
             self._refresh_warnings = result.warnings
-            if result.warnings and not self.sessions.active_game_id:
+            if (
+                result.warnings
+                and not self._phase_blocks_refresh
+                and not self.sessions.active_game_id
+            ):
                 self.status = "; ".join(result.warnings)
-            elif not self.sessions.active_game_id:
+            elif not self._phase_blocks_refresh and not self.sessions.active_game_id:
                 self.status = "Data ready; waiting for a positively identified TFT game"
         except Exception as error:
             self.status = f"Data refresh unavailable: {error}"
@@ -655,6 +661,7 @@ class CaptureRuntime:
             self._publish()
             if (
                 self._last_update
+                and not self._phase_blocks_refresh
                 and self._last_update.phase in {"InProgress", "Reconnect"}
                 and self.worker is None
             ):
@@ -767,6 +774,12 @@ class CaptureRuntime:
                 return
             self._loop = asyncio.get_running_loop()
             self._last_update = update
+            if update.phase in {"InProgress", "Reconnect", "PreEndOfGame"}:
+                self._phase_blocks_refresh = True
+                if update.game_mode == "TFT" and update.game_id:
+                    self._observed_game_id = update.game_id
+                if self.refresh:
+                    self.refresh.set_in_game(True)
             try:
                 if update.phase in {"InProgress", "Reconnect"}:
                     if not update.game_id or update.game_mode != "TFT":
@@ -821,28 +834,46 @@ class CaptureRuntime:
                             self.latest_snapshot = None
                             self._clear_handoff()
                             self.pinned_data = None
-                            if self.refresh:
-                                self.refresh.set_in_game(False)
-                            self._trigger_refresh("end-of-game")
+                            self._release_refresh_gate("end-of-game")
                     else:
                         await self._pause_capture(
                             "unconfirmed_terminal_identity",
                             "Terminal game identity unavailable; outcome remains unconfirmed",
                         )
+                elif update.phase in {"EndOfGame", "WaitingForStats"}:
+                    if (
+                        update.game_id
+                        and update.game_mode == "TFT"
+                        and self._observed_game_id in {None, update.game_id}
+                    ):
+                        self.status = "Game ended without capture; no outcome or log was synthesized"
+                        self._release_refresh_gate("end-of-game")
+                    else:
+                        self.status = "Terminal game identity unavailable; refresh remains deferred"
                 elif not update.client_running or update.phase in {
                     None,
                     "None",
                     "Lobby",
                 }:
                     if self.sessions.active_game_id:
-                        await self._pause_capture(
+                        finalized = await self._pause_capture(
                             "client_or_game_identity_lost",
                             "Capture paused: game outcome unknown; log retained for reattachment",
                         )
-                    elif update.phase == "Lobby":
-                        self._trigger_refresh("Lobby")
+                        if (
+                            finalized
+                            and update.client_running
+                            and update.phase == "Lobby"
+                        ):
+                            self._release_refresh_gate("Lobby")
+                    elif update.phase == "Lobby" and update.client_running:
+                        self._release_refresh_gate("Lobby")
             except Exception as error:
-                if self.refresh and self.sessions.active_game_id is None:
+                if (
+                    self.refresh
+                    and not self._phase_blocks_refresh
+                    and self.sessions.active_game_id is None
+                ):
                     self.refresh.set_in_game(False)
                 self.status = (
                     f"Session lifecycle unavailable: {type(error).__name__}: {error}"
@@ -852,6 +883,13 @@ class CaptureRuntime:
                 self._client_error = update.error
             self.server.publish_gameflow(update)
             self._publish()
+
+    def _release_refresh_gate(self, reason):
+        self._phase_blocks_refresh = False
+        self._observed_game_id = None
+        if self.refresh:
+            self.refresh.set_in_game(False)
+        self._trigger_refresh(reason)
 
     async def _pause_capture(self, reason, message):
         finalized = True
