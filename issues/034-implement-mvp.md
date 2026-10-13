@@ -34,10 +34,14 @@ Source: [MVP spec](../docs/spec.md), its area files, and the resolved planning t
 - [52: Frozen replay contexts, records and safe review access](052-replay-contracts.md); blocked by [35, 36, 37, 40].
 - [53: Supervised capture and safe-refresh runtime lifecycle](053-capture-runtime-lifecycle.md); blocked by [35, 36, 37, 38, 40, 43, 51].
 - [54: Sourced unit slot costs and team capacity](054-team-slot-capacity.md); blocked by [36, 39, 40, 41].
-- [55: Complete Engine, Live, review-job and launcher runtime software](055-runtime-software-integration.md); blocked by [38, 42, 44, 53, 54, 56].
+- [55: Complete Engine, Live, review-job and launcher runtime software](055-runtime-software-integration.md); blocked by [38, 42, 44, 53, 54, 56, 57].
 - [56: Require positive fresh lobby completeness for roster-dependent valuation](056-lobby-completeness.md); blocked by [37, 40, 41].
 
+- [57: Build-first Windows launcher and operator test handoff](057-windows-test-handoff.md); blocked by [53].
+
 ## Decisions so far
+
+- 2026-10-13: The owner plans Windows testing tonight and authorized commit/push. Ticket 57 extracts the independent build-first launcher and operator handoff from 55; full runtime, current data and device qualification remain open. Push verified work on `implement/mvp`, preserving unfinished worktrees and personal artifacts.
 
 - 2026-10-13: [Ticket 54](054-team-slot-capacity.md) is closed after independent merge `f9e306f` of corrected exact `8ed6c80`. Root passed 464 Python tests (34.44 seconds, no skips, exit 0), 35 UI tests and required gates; actual public no-Live verification passed 145 cases. Independent review found and corrected discarded Baseline hex positions. Production preparation (48) resumes against sourced slot/capacity contracts; actual source values, capture producers and target latency remain unqualified.
 

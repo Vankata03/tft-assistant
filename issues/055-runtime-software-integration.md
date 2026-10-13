@@ -5,7 +5,7 @@ labels: [implementation:task]
 status: open
 assignee:
 parent: 34
-blocked_by: [38, 42, 44, 53, 54, 56]
+blocked_by: [38, 42, 44, 53, 54, 56, 57]
 ---
 
 # Complete Engine, Live, review-job and launcher runtime software
@@ -34,3 +34,7 @@ This extracts the remaining independently implementable software from [ticket 45
 ## Qualification boundary
 
 Fixture/API-adapter tests do not qualify the actual Windows EOG endpoint or match-ID join, recognition accuracy, WGC/BitBlt/DPI/fullscreen behavior, OneCore voice, overlay exclusion or the Ryzen/game-running latency budget. Ticket 49 retains those checks. The historical exit-134 cause remains unresolved in 50 and blocks final runtime ticket 45 and the parent MVP even when this software boundary passes.
+
+### 2026-10-13 — Independent Windows test handoff
+
+Ticket 57 extracts the build-first launcher and operator instructions requested for tonight's Windows tests. This ticket retains optional login/shortcut settings and all final runtime requirements; a platform handoff does not qualify Live/data/model behavior. The owner explicitly authorized committing and pushing verified integration work.
