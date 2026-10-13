@@ -2,7 +2,7 @@
 id: 57
 title: Build-first Windows launcher and operator test handoff
 labels: [implementation:task]
-status: open
+status: closed
 assignee: codex-windows-handoff
 parent: 34
 blocked_by: [53]
@@ -25,3 +25,11 @@ The owner plans Windows tests tonight and explicitly authorized committing and p
 - Distinguish tonight's shell/client/native probes from a complete Live coach. No qualified production patch, profile, glyph set or fitted model is invented. Current source, capture/device, target latency and historical native qualification remain explicit.
 - Verify actual public launcher behavior where the environment supports it. Record unavailable Windows/PowerShell execution honestly; do not add string-matching tests that mirror the script.
 - Use an isolated worktree, preserve latest integration before exact committed handoff and obtain a different merger. Root owns final commit/push verification.
+
+## Comments
+
+### 2026-10-13 — codex-windows-handoff
+
+Implemented the build-first launcher and [Windows operator handoff](../docs/agents/windows-test-handoff.md). Sync, dependency install and build failures stop preview; every native failure retains its exit code, including preview/start. Existing dependencies still rebuild. Updated the probe checklist screenshot interval to match the script.
+
+Six public CLI workflow tests failed against the old launcher and passed against the fix using portable PowerShell 7.5.3 on macOS with external uv/npm stand-ins, including a checkout path containing spaces. These are orchestration checks, not Windows dependency, Electron or native capture results. Windows execution remains pending. Unslop found no confirmed prose defects; preservation retained all 49 extracted draft constraints. LCU session and end-of-game bodies are not collected by the existing probe. Production assets, runtime integration and native qualification remain in their owning tickets.

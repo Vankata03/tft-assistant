@@ -1,6 +1,6 @@
 # Probe game checklist
 
-Companion to `probe.ps1` for the ticket "Probe live game data sources in a real TFT game". The script records port 2999, the client phase and a screenshot of the game's monitor every 10 seconds on its own. This list covers what it cannot see.
+Companion to `probe.ps1` for the ticket "Probe live game data sources in a real TFT game". The script records port 2999, the client phase and a screenshot every 1.5 seconds by default. It captures the game's monitor when the game is foreground, otherwise the primary monitor. This list covers what it cannot see.
 
 **Manual screenshots**: press **Win+PrtScn**. The script copies every capture taken during the run from `Pictures\Screenshots` (and Game Bar captures from `Videos\Captures`) into its output folder when it stops.
 
