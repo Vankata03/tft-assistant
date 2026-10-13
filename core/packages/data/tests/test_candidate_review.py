@@ -47,6 +47,9 @@ def test_bootstrap_installs_reviewed_tagged_overlay_before_immutable_validation(
 def test_review_cli_is_deterministic_offline_and_keeps_unknown_requirements_unpublished(tmp_path):
     from hashlib import sha256
     rules,dragon,overlay=inputs(tmp_path)
+    payload=json.loads(dragon.read_bytes())
+    payload['setData'][0]['champions'][0]['name']='Résumé'
+    dragon.write_bytes(json.dumps(payload,ensure_ascii=False,indent=2).replace('\n','\r\n').encode('utf-8'))
     bundle=tmp_path/'ddragon.json';bundle.write_text('{}')
     outputs=[]
     for name in ('review-one','review-two'):
@@ -55,6 +58,8 @@ def test_review_cli_is_deterministic_offline_and_keeps_unknown_requirements_unpu
             '--cdragon-file',str(dragon),'--ddragon-file',str(bundle),'--entity-overlay-file',str(overlay)])==0
         outputs.append({p.name:p.read_bytes() for p in destination.iterdir()})
     assert outputs[0]==outputs[1]
+    assert 'Résumé'.encode('utf-8') in outputs[0]['entities.json']
+    assert all(b'\r\n' not in body for body in outputs[0].values())
     requirements=json.loads(outputs[0]['requirements.json'])
     assert requirements['qualification_status']=='incomplete_review_input'
     assert all(row['value'] is None for row in requirements['static'])
@@ -80,6 +85,9 @@ def test_review_cli_records_final_capacity_and_consumer_dependencies_without_fil
     assert all(row['qualification_status']=='slot_certificate_unavailable' for row in coverage['rows'])
     dependencies=json.loads((destination/'consumer-inputs.json').read_text())
     by_path={row['path']:row for row in dependencies['rows']}
+    assert by_path['Entity.values.statistics_min_samples']['producer'] == 'accepted_application_policy'
+    assert by_path['Entity.values.statistics_min_samples']['value'] is None
+    assert 'static.statistics_min_samples' not in by_path
     assert by_path['static.team_capacity']['value'] is None
     assert by_path['static.capture_unit_counter']['value'] is None
     assert by_path['fields.lobby_complete']['producer']=='capture_runtime'
@@ -129,4 +137,87 @@ def test_review_overlay_must_match_identity_hash_schema_and_citation(tmp_path,up
     destination=tmp_path/'review'
     assert main(['prepare-review','test.1','--set','18','--review-dir',str(destination),
         '--cdragon-file',str(dragon),'--ddragon-file',str(bundle),'--entity-overlay-file',str(overlay)])==2
+    assert not destination.exists()
+
+
+@pytest.mark.parametrize('bundle_value', [[], {'champion': []}])
+def test_review_rejects_malformed_dragon_bundle_as_cli_error_without_publication(tmp_path, bundle_value, capsys):
+    _, dragon, _ = inputs(tmp_path)
+    bundle = tmp_path / 'bundle.json'
+    bundle.write_text(json.dumps(bundle_value))
+    destination = tmp_path / 'review'
+    assert main(['prepare-review', 'test.1', '--set', '18', '--review-dir', str(destination),
+        '--cdragon-file', str(dragon), '--ddragon-file', str(bundle)]) == 2
+    assert 'tft-data:' in capsys.readouterr().out
+    assert not destination.exists()
+
+
+@pytest.mark.skipif(not hasattr(__import__('os'), 'mkfifo'), reason='POSIX FIFO external input seam')
+@pytest.mark.parametrize('source', ['cdragon', 'ddragon', 'entity_overlay'])
+def test_review_manifest_fingerprints_consumed_bytes_when_input_path_is_replaced(tmp_path, source):
+    from hashlib import sha256
+    import os
+    from threading import Thread
+
+    _, dragon, overlay = inputs(tmp_path)
+    bundle = tmp_path / 'bundle.json'
+    bundle.write_text('{}')
+    paths = {'cdragon': dragon, 'ddragon': bundle, 'entity_overlay': overlay}
+    if source == 'ddragon':
+        bundle.write_text(json.dumps({'champion': {'version': 'fixture', 'data': {
+            'DA_18_Ornn': {'name': 'Consumed A', 'image': {'full': 'fixture.png'}}}}}))
+    original = paths[source].read_bytes()
+    later = json.loads(original)
+    if source == 'cdragon':
+        later['setData'][0]['champions'][0]['name'] = 'Later B'
+    elif source == 'ddragon':
+        later['champion']['data']['DA_18_Ornn']['name'] = 'Later B'
+    else:
+        later['entities']['DA_18_Ornn']['values']['team_slot_cost']['value'] = 2
+    replacement = tmp_path / 'later.json'
+    replacement.write_bytes(json.dumps(later).encode('utf-8'))
+    fifo = tmp_path / 'changing-input.json'
+    os.mkfifo(fifo)
+    paths[source] = fifo
+
+    def replace_after_delivery():
+        with fifo.open('wb') as stream:
+            stream.write(original)
+            stream.flush()
+            # The opened FIFO delivers A; future opens see B before EOF is delivered.
+            os.replace(replacement, fifo)
+
+    writer = Thread(target=replace_after_delivery, daemon=True)
+    writer.start()
+    destination = tmp_path / 'review'
+    try:
+        assert main(['prepare-review', 'test.1', '--set', '18', '--review-dir', str(destination),
+            '--cdragon-file', str(paths['cdragon']), '--ddragon-file', str(paths['ddragon']),
+            '--entity-overlay-file', str(paths['entity_overlay'])]) == 0
+    finally:
+        writer.join(timeout=5)
+    assert not writer.is_alive()
+    manifest = json.loads((destination / 'manifest.json').read_bytes())
+    assert manifest['inputs'][source]['sha256'] == sha256(original).hexdigest()
+    assert fifo.read_bytes() != original
+    entities = json.loads((destination / 'entities.json').read_bytes())['entities']
+    ornn = next(row for row in entities if row['id'] == 'DA_18_Ornn')
+    if source == 'entity_overlay':
+        assert ornn['values']['team_slot_cost']['value'] == 1
+        assert sha256(original).hexdigest() in (destination / 'patch-diff.md').read_text()
+    else:
+        assert ornn['name'] == ('Consumed A' if source == 'ddragon' else 'DA_18_Ornn')
+
+
+@pytest.mark.parametrize('bundle_value', [[], {'champion': []}])
+def test_bootstrap_rejects_malformed_dragon_bundle_without_publication(tmp_path, bundle_value, capsys):
+    rules, dragon, overlay = inputs(tmp_path)
+    bundle = tmp_path / 'bundle.json'
+    bundle.write_text(json.dumps(bundle_value))
+    destination = tmp_path / 'candidate'
+    assert main(['bootstrap', 'test.1', '--data-dir', str(destination),
+        '--static-file', str(rules / 'static.toml'), '--tunables-file', str(rules / 'tunables.toml'),
+        '--cdragon-file', str(dragon), '--ddragon-file', str(bundle),
+        '--entity-overlay-file', str(overlay)]) == 2
+    assert 'tft-data:' in capsys.readouterr().out
     assert not destination.exists()

@@ -19,12 +19,13 @@ def entities_payload(entities):
     } for _,entity in sorted(entities.items())]}
 
 
-def apply_entity_overlay(entities, overlay_file, patch, set_number):
+def apply_entity_overlay(entities, overlay_file, patch, set_number, *, overlay_bytes=None):
     from collections.abc import Mapping
     if overlay_file is None:
         return entities, []
     path=Path(overlay_file)
-    raw=json.loads(path.read_text())
+    consumed=path.read_bytes() if overlay_bytes is None else overlay_bytes
+    raw=json.loads(consumed)
     if not isinstance(raw,dict) or set(raw)-{'schema_version','patch','set_number','catalog_sha256','entities'} or type(raw.get('schema_version')) is not int or raw['schema_version']!=1:
         raise DataError('Unknown entity overlay schema')
     if raw.get('patch')!=patch or raw.get('set_number')!=set_number:
@@ -36,7 +37,7 @@ def apply_entity_overlay(entities, overlay_file, patch, set_number):
     if not isinstance(rows,dict):
         raise DataError('Entity overlay requires an entities table')
     result=dict(entities)
-    report=[f'Entity overlay SHA-256: {sha256(path.read_bytes()).hexdigest()}.',
+    report=[f'Entity overlay SHA-256: {sha256(consumed).hexdigest()}.',
         f'Base catalog SHA-256: {catalog_hash}.',
         'Overlay tags and citations are review declarations, not independent source or fit qualification.']
     for id,row in sorted(rows.items()):

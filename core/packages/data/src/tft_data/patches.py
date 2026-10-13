@@ -14,7 +14,7 @@ from pathlib import Path
 
 import tomli_w
 
-from .adapters import CommunityDragon, DataDragon, merge_entities
+from .adapters import CommunityDragon, DataDragon, merge_entities, dragon_bundle
 from .config import load_patch
 from .models import DataError, plain
 from .entity_overlay import apply_entity_overlay, entities_payload, render
@@ -61,6 +61,8 @@ def new_patch(
         raise DataError(
             "A new set requires a fresh reviewed static file; patch carry is not valid"
         )
+    if ddragon is not None:
+        dragon_bundle(ddragon)
     if not offline:
         cdragon = cdragon or download_json(
             "https://raw.communitydragon.org/latest/cdragon/tft/en_us.json"
@@ -89,7 +91,7 @@ def new_patch(
             entities, CommunityDragon(cdragon, set_number).entities()
         )
     if ddragon:
-        for kind, payload in ddragon.items():
+        for kind, payload in dragon_bundle(ddragon).items():
             entities = merge_entities(
                 entities,
                 DataDragon(
@@ -200,7 +202,7 @@ def bootstrap_patch(
     )
     adapter = CommunityDragon(cdragon, static["set_number"])
     entities = adapter.entities()
-    for kind, payload in (ddragon or {}).items():
+    for kind, payload in dragon_bundle(ddragon if ddragon is not None else {}).items():
         entities = merge_entities(
             entities,
             DataDragon(

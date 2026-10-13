@@ -36,7 +36,7 @@ def consumer_inputs():
         ('static.augment_pick_rounds','round to canonical pick stage 1/2/3','reviewed_patch_data'),
         ('Statistic.pick_stage','optional canonical 1/2/3; provider order 0/1/2 explicitly converts','qualified_source_data'),
         ('Entity.values.global_baseline_placement','same qualified augment cohort baseline; no assumed neutral placement','qualified_source_data'),
-        ('static.statistics_min_samples','tagged policy 500; distinct from provider cohort evidence','accepted_application_policy'),
+        ('Entity.values.statistics_min_samples','tagged augment policy 500; distinct from provider cohort evidence','accepted_application_policy'),
         ('wisp_standard_states','stage-matching locked Guide, sourced median HP and stage-average ownership; no synthetic production state','qualified_source_data'),
         ('source_provenance','own payload identity/publication/patch/cohort; donor hint not authoritative; accepted state separate from rejected attempts','qualified_source_data'),
     ]
@@ -51,7 +51,7 @@ def prepare_review(review_dir, patch, set_number, cdragon_file, ddragon_file, *,
     import re
     import tempfile
     from collections import Counter
-    from .adapters import CommunityDragon, DataDragon, merge_entities
+    from .adapters import CommunityDragon, DataDragon, merge_entities, dragon_bundle
     from .config import REQUIRED_STATIC, TUNABLE_FAMILIES, STATISTICS_MIN_SAMPLES
 
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*',patch):
@@ -62,12 +62,14 @@ def prepare_review(review_dir, patch, set_number, cdragon_file, ddragon_file, *,
     target=Path(review_dir)
     if target.exists():
         raise DataError(f'Review destination already exists: {target}')
-    adapter=CommunityDragon(json.loads(inputs['cdragon'].read_text()),set_number)
+    consumed={name:path.read_bytes() for name,path in inputs.items()}
+    adapter=CommunityDragon(json.loads(consumed['cdragon']),set_number)
     entities=adapter.entities()
-    bundle=json.loads(inputs['ddragon'].read_text())
+    bundle=dragon_bundle(json.loads(consumed['ddragon']))
     for kind,payload in sorted(bundle.items()):
         entities=merge_entities(entities,DataDragon(payload,payload.get('version','unknown'),kind,allowed_ids=set(entities)).entities())
-    entities,report=apply_entity_overlay(entities,entity_overlay_file,patch,set_number)
+    entities,report=apply_entity_overlay(entities,entity_overlay_file,patch,set_number,
+        overlay_bytes=consumed.get('entity_overlay'))
     from .capacity import unit_slot_cost
     for entity in entities.values():
         if entity.kind in ('unit','unit_form') and 'team_slot_cost' in entity.values:
@@ -108,21 +110,22 @@ def prepare_review(review_dir, patch, set_number, cdragon_file, ddragon_file, *,
         f'# Patch {patch} offline review inputs',
         'No production patch, immutable snapshot, fitted coefficients or EUNE deployment time has been qualified. Missing fields remain null in JSON review ledgers; no static or tunables TOML is published.',
         *adapter.warnings,*report])+'\n'
+    encoded={name:body.encode('utf-8') for name,body in encoded.items()}
     contract_root=next((ancestor/'docs'/'agents' for ancestor in Path(__file__).resolve().parents
         if (ancestor/'docs'/'agents'/'capacity-contracts.md').exists()),None)
     encoded['manifest.json']=render({'schema_version':1,'patch':patch,'set_number':set_number,
         'qualification_status':'incomplete_review_input',
-        'inputs':{name:{'file':path.name,'sha256':sha256(path.read_bytes()).hexdigest()} for name,path in inputs.items()},
+        'inputs':{name:{'file':path.name,'sha256':sha256(consumed[name]).hexdigest()} for name,path in inputs.items()},
         'consumer_code':{name:sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
             for name in ('candidate.py','adapters.py','config.py','models.py','entity_overlay.py','capacity.py','traits.py')},
         'consumer_contracts':{name:sha256(path.read_bytes()).hexdigest() if path and path.exists() else None
             for name in ('decision-contracts.md','capacity-contracts.md','capture-boundary.md','engine-contracts.md')
             for path in (contract_root/name if contract_root else None,)},
-        'outputs':{name:sha256(body.encode()).hexdigest() for name,body in encoded.items()}})
+        'outputs':{name:sha256(body).hexdigest() for name,body in encoded.items()}}).encode('utf-8')
     target.parent.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(dir=target.parent) as temporary:
         folder=Path(temporary)/'review';folder.mkdir()
         for name,body in encoded.items():
-            (folder/name).write_text(body,encoding='utf-8')
+            (folder/name).write_bytes(body)
         os.replace(folder,target)
     return target
