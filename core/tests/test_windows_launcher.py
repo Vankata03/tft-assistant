@@ -57,10 +57,18 @@ def test_fresh_checkout_builds_before_start_from_any_working_directory(tmp_path)
     result, calls, repo = launch(tmp_path)
     assert result.returncode == 0, result.stderr
     assert [call["phase"] for call in calls] == ["sync", "install", "build", "start"]
-    assert calls[0]["args"] == ["sync", "--project", str(repo / "core"), "--quiet"]
-    assert calls[1]["args"] == ["ci", "--prefix", str(repo / "ui")]
-    assert calls[2]["args"] == ["--prefix", str(repo / "ui"), "run", "build"]
-    assert calls[3]["args"] == ["--prefix", str(repo / "ui"), "run", "start"]
+    assert len(calls[0]["args"]) == 4
+    assert calls[0]["args"][:2] == ["sync", "--project"]
+    assert Path(calls[0]["args"][2]) == repo / "core"
+    assert calls[0]["args"][3] == "--quiet"
+    assert len(calls[1]["args"]) == 3
+    assert calls[1]["args"][:2] == ["ci", "--prefix"]
+    assert Path(calls[1]["args"][2]) == repo / "ui"
+    for call, phase in zip(calls[2:], ["build", "start"]):
+        assert len(call["args"]) == 4
+        assert call["args"][0] == "--prefix"
+        assert Path(call["args"][1]) == repo / "ui"
+        assert call["args"][2:] == ["run", phase]
 
 
 @pytest.mark.parametrize("fail,expected", [
