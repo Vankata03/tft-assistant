@@ -410,7 +410,7 @@ class BaselineController:
                     if row.get("stars") not in (1, 2, 3) or "items" not in row:
                         raise DataError("own board stars or equipped items unread")
                     units.append(
-                        OwnUnit(row["unit_id"], row["stars"], tuple(row["items"]))
+                        OwnUnit(row["unit_id"], row["stars"], tuple(row["items"]),row.get('position'))
                     )
                 rules=data.value('team_capacity')
                 held=field('held_augments');inventory=field('item_bench')
@@ -421,7 +421,7 @@ class BaselineController:
                     rows=field('bench')
                     if rows is None or inventory is None or field('item_inventory_complete') is not True:
                         raise DataError('fresh complete item and bench inventory required for capacity')
-                    bench=tuple(OwnUnit(row['unit_id'],row['stars'],tuple(row['items'])) for row in rows)
+                    bench=tuple(OwnUnit(row['unit_id'],row['stars'],tuple(row['items']),row.get('position')) for row in rows)
                 observed=field('team_slot_budget')
                 if 'team_slot_budget' in self.snapshot['fields'] and observed is None:
                     raise DataError('observed team slot budget stale')

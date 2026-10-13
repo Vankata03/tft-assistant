@@ -1,5 +1,6 @@
 import asyncio
 import json
+import pytest
 
 from websockets.asyncio.client import connect
 
@@ -202,6 +203,34 @@ def test_baseline_par_uses_fresh_held_capacity_certificate_and_pauses_missing_ev
     state['fields']['held_augments']['read_at']=(now-timedelta(seconds=3)).isoformat()
     controller.update(data=data,snapshot=state)
     assert controller.state('baseline',now=now).content.par.probability is None
+
+
+@pytest.mark.parametrize('positions,valid',[((0,1),True),((0,0),False),((28,1),False)])
+def test_baseline_par_preserves_deployed_hexes_separately_from_bench_slots(positions,valid):
+    from dataclasses import replace
+    from datetime import datetime, UTC
+    from tft_data import TaggedValue
+    from tft_core.baseline import BaselineController
+    data=fixture_data();tag=lambda value:TaggedValue(value,'owner')
+    rules=dict(data.value('team_capacity'))|{'inventory_item_slots':{
+        'finished':{'slots':1,'activation':'continuous','scope':'equipped_anywhere'}}}
+    data=replace(data,static=dict(data.static)|{'team_capacity':tag(rules)},tunables={name:tag(value) for name,value in {
+        'cost_star_baseline':{'3':{'1':1}},'confidence_medium_min':.5,'unit_weight':1,'trait_weight':1,'item_weight':1,
+        'item_values':{'finished':1,'component':.35,'high_cost_bonus':.25},
+        'opponent_growth_curve':{'3-2':0},'fight_scale':1,'win_scale_by_stage':{}}.items()})
+    now=datetime(2026,10,7,tzinfo=UTC)
+    values={'level':6,'board':{'units':[{'unit_id':'carry','stars':1,'items':[],'position':position} for position in positions]},
+        'bench':[{'unit_id':'carry','stars':1,'items':['finished'],'position':0}],
+        'inventory_complete':True,'item_bench':[],'item_inventory_complete':True}
+    state={'game_id':'geometry-game','round_id':'3-2','fields':{name:{'value':value,'read_at':now.isoformat(),'confidence':1} for name,value in values.items()}}
+    controller=BaselineController();controller.update(data=data,snapshot=state)
+    par=controller.state('baseline',now=now).content.par
+    if valid:
+        assert par.probability==pytest.approx(.880797077978)
+        assert par.paused is None # Bench slot 0 is not a second deployed hex 0.
+    else:
+        assert par.probability is None
+        assert 'invalid physical hex positions' in par.paused
 
 
 def test_authenticated_guide_requests_and_downgrade_clear_all_game_content(tmp_path):
