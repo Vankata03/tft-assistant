@@ -17,7 +17,7 @@ import tomli_w
 from .adapters import CommunityDragon, DataDragon, merge_entities
 from .config import load_patch
 from .models import DataError, plain
-from .entity_overlay import apply_entity_overlay
+from .entity_overlay import apply_entity_overlay, entities_payload, render
 
 
 def download_json(url):
@@ -221,23 +221,7 @@ def bootstrap_patch(
         candidate.mkdir()
         (candidate / "static.toml").write_text(tomli_w.dumps(static))
         (candidate / "tunables.toml").write_text(tomli_w.dumps(tunables))
-        (candidate / "entities.json").write_text(
-            json.dumps(
-                {
-                    "entities": [
-                        {
-                            **plain(vars(entity)),
-                            "values": {
-                                key: plain(vars(value))
-                                for key, value in entity.values.items()
-                            },
-                        }
-                        for entity in entities.values()
-                    ]
-                },
-                indent=2,
-            )
-        )
+        (candidate / "entities.json").write_text(render(entities_payload(entities)))
         # Validation fails before any target is published when the rules are incomplete.
         load_patch(candidate)
         report = [
