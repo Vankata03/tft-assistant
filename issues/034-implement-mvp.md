@@ -39,6 +39,8 @@ Source: [MVP spec](../docs/spec.md), its area files, and the resolved planning t
 
 ## Decisions so far
 
+- 2026-10-13: [Ticket 56](056-lobby-completeness.md) is closed after independent merge `85fd5e2` of exact candidate `4f3c782`. Root verification passed 420 Python tests (31.92 seconds, no skips, exit 0), 35 UI tests and required gates; independent public no-Live verification passed 103 cases. Full replay/review/harness (42) resumes. Capacity (54), Live surfaces (44), final runtime software (55), source/device qualification and historical native causality remain unfinished.
+
 - 2026-10-12: Public Engine evaluation at `3a7bce2` produces identical unpaused placement scores for positive, false and unknown lobby-completeness certificates. Ticket 56 owns a shared full-roster guard before final runtime/candidate integration. Preserve independently qualified local and pairwise evidence; no smaller implied lobby or live verification claim is acceptable.
 
 - 2026-10-12: Ticket 55 extracts final runtime software after 42/44/53/54. Ticket 45 retains the unresolved historical native qualification gate in 50 and remains open; no requirement is waived. Windows/device qualification in 49 depends on the actual software boundary 55, rather than an unrelated unresolved macOS cause. Production qualification remains 48. This preserves independent implementation and platform evidence without claiming the complete MVP is qualified.
@@ -88,5 +90,3 @@ Source: [MVP spec](../docs/spec.md), its area files, and the resolved planning t
 ### 2026-10-06 — codex
 
 Ticket 46 extracts the verified contract/name-list prerequisite from ticket 36. Capture and Engine depend on 46; full data refresh and Baseline Guides remain dependent on 36.
-
-- 2026-10-13: [Ticket 56](056-lobby-completeness.md) is closed after independent merge `85fd5e2` of exact candidate `4f3c782`. Root verification passed 420 Python tests (31.92 seconds, no skips, exit 0), 35 UI tests and required gates; independent public no-Live verification passed 103 cases. Full replay/review/harness (42) resumes. Capacity (54), Live surfaces (44), final runtime software (55), source/device qualification and historical native causality remain unfinished.
