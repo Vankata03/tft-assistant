@@ -913,3 +913,31 @@ def test_positive_pick_notification_and_new_held_hud_do_not_double_count_same_au
     after = pipeline.tick(BLACK, timestamp=NOW+timedelta(seconds=.25))
     assert after['fields']['held_augments']['value'] == ['b']
     assert [e['kind'] for e in logs.read_events('900')].count('augment_pick') == 1
+
+
+def test_partial_capture_immediately_invalidates_a_still_fresh_previous_full_lobby(tmp_path):
+    from dataclasses import replace
+    from tests.test_replay_contracts import historical_data, log_snapshot
+    from tft_engine import GameHistory, GameSnapshot, evaluate, snapshot_seed
+    _, data = historical_data(tmp_path)
+    rows = [TextLine(f'{name} {hp}', box=(0, index/8, 1, (index+.7)/8))
+        for index, (name, hp) in enumerate([('Owner', 73), ('Alpha', 84), ('Beta', 66),
+            ('Gamma', 51), ('Delta', 40), ('Echo', 31), ('Foxtrot', 12), ('Gone', 0)])]
+    pipeline, _, external_ocr = capture(tmp_path, {'players': rows})
+    first = pipeline.tick(WHITE, timestamp=NOW)
+    external_ocr.values['players'] = rows[:-1]
+    second = pipeline.tick(BLACK, timestamp=NOW+timedelta(seconds=.25))
+    def state(raw):
+        captured = GameSnapshot.from_dict(raw)
+        own = GameSnapshot.from_dict(log_snapshot(data, at=NOW))
+        fields = dict(own.fields)
+        fields.update({name: captured.fields[name] for name in ('lobby', 'lobby_complete', 'hp')})
+        return replace(own, captured_at=captured.captured_at, fields=fields)
+    qualified, partial = state(first), state(second)
+    assert partial.fields['lobby'].read_at == qualified.fields['lobby'].read_at == NOW
+    assert partial.field('lobby') == qualified.field('lobby')
+    assert partial.fields['lobby_complete'].value is False
+    assert evaluate(qualified, GameHistory(), data, 'review').line_results
+    rejected = evaluate(partial, GameHistory((qualified,)), data, 'review')
+    assert not rejected.line_results and not rejected.comp_fits
+    assert snapshot_seed(qualified, data) != snapshot_seed(partial, data)

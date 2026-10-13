@@ -2,7 +2,6 @@
 from .planning import read
 from datetime import datetime
 from math import log, inf, isfinite
-from collections.abc import Mapping
 from tft_data.models import DataError
 from .models import Advice
 from .planning import paused, observed_phase, owned_board, required
@@ -53,9 +52,8 @@ def assign(costs):
 
 
 def threat_share(state,history,data,tag):
-    lobby=read(state,data,'lobby')
-    if lobby is None:
-        raise DataError('Fresh lobby required for positioning threats')
+    from .lobby import alive_lobby
+    roster=alive_lobby(state,data)
     rule=static(data,'rules_flags').get('recent_opponent_exclusion_count')
     if not isinstance(rule,int) or isinstance(rule,bool) or rule<0:
         raise DataError('Sourced recent-opponent exclusion policy unavailable')
@@ -77,10 +75,7 @@ def threat_share(state,history,data,tag):
         if len(fights)<rule:
             raise DataError('Insufficient confirmed fight history for matchup exclusion')
         recent=tuple(row['opponent_id'] for row in fights[-rule:])
-    if isinstance(lobby,Mapping):
-        lobby=tuple(dict(value,player_id=id) if isinstance(value,Mapping) else {'player_id':id,'alive':value>0} for id,value in lobby.items())
-    possible={str(row.get('player_id',row.get('opponent_id'))) for row in lobby
-        if row.get('alive',True) and not row.get('is_self',False)}-set(recent)
+    possible=set(roster)-set(recent)
     latest={}
     for sighting in history.sightings:
         if sighting.opponent_id not in possible or (sighting.read_at and sighting.read_at>state.captured_at) or round_index(sighting.round_id,data)>round_index(state.round_id,data):
