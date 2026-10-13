@@ -88,3 +88,5 @@ Source: [MVP spec](../docs/spec.md), its area files, and the resolved planning t
 ### 2026-10-06 — codex
 
 Ticket 46 extracts the verified contract/name-list prerequisite from ticket 36. Capture and Engine depend on 46; full data refresh and Baseline Guides remain dependent on 36.
+
+- 2026-10-13: [Ticket 56](056-lobby-completeness.md) is closed after independent merge `85fd5e2` of exact candidate `4f3c782`. Root verification passed 420 Python tests (31.92 seconds, no skips, exit 0), 35 UI tests and required gates; independent public no-Live verification passed 103 cases. Full replay/review/harness (42) resumes. Capacity (54), Live surfaces (44), final runtime software (55), source/device qualification and historical native causality remain unfinished.
