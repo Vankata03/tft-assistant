@@ -68,7 +68,7 @@ def patch():
 
 def snapshot(round_id='3-2', **changes):
     board=Board((Unit('a',2),),(Unit('c'),))
-    values={'board':board,'bench':board.bench,'inventory_complete':True,'phase':'planning','planning_phase':True,'gold':30,'hp':60,'level':5,'xp':0,'streak':-3,'lobby':{'p1':60,'p2':60},'slot_count':5}
+    values={'board':board,'bench':board.bench,'inventory_complete':True,'phase':'planning','planning_phase':True,'gold':30,'hp':60,'level':5,'xp':0,'streak':-3,'lobby':{'p1':60,'p2':60},'lobby_complete':True,'slot_count':5}
     values.update(changes)
     return GameSnapshot('g',round_id,NOW,{k:FieldValue(v,NOW,'fixture',0.9) for k,v in values.items()},f'g:{round_id}')
 
@@ -636,9 +636,14 @@ def test_simulation_inputs_can_price_xp_free_rolls_and_one_round_power_on_the_sa
     free=simulate_lines(state,GameHistory(),data,'A',lines,effects=SimulationEffects(free_rolls=2))[0]
     assert free.projections[0].hit_probability>base.projections[0].hit_probability
     combat=replace(data,static=dict(data.static)|{'round_types':tag({r:'combat' for r in data.static['round_order'].value})})
-    gain,error,before,after=paired_value(state,GameHistory(),combat,'A',lines,SimulationEffects(one_round_power_bonus=10),rollouts=128)
-    assert gain>0
-    assert after[0].projections[0].hp>=before[0].projections[0].hp
+    # A lethal current round isolates the one-round buff's survival value;
+    # a high-HP terminal-gold tie is sensitive to the changed semantic seed.
+    lethal=snapshot('3-2',board=Board((Unit('a'),)),bench=(Unit('a'),Unit('b')),gold=1,level=1,xp=0,hp=5)
+    gain,error,before,after=paired_value(lethal,GameHistory(),combat,'A',lines,SimulationEffects(one_round_power_bonus=10),rollouts=128)
+    assert after[0].projections[0].hp>before[0].projections[0].hp
+    assert after[0].projections[0].hp==5
+    assert after[0].projections[1].hp<5 # The bonus expires after the current round.
+    assert before[0].seed==after[0].seed
     assert error>=0
 
 

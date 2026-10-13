@@ -33,3 +33,22 @@ Every case produces unpaused econ advice and the same six scored placements, `1.
 ## Scope and qualification
 
 This is a narrow software guard. Current production data and actual Windows capture remain 48/49; historical native causality remains 50. Do not access owner credentials, collect matches, start the measurement run or describe fixture outcomes as live evidence.
+
+
+## Implementation evidence
+
+### 2026-10-12 — Public guard and fixture correction
+
+The initial reproduction expanded to literal false/missing/non-boolean coverage, stale and future timestamps, low certificate and roster confidence, and previously qualified history. The shared roster guard now rejects all these states, clears current fits and Lines, and runs before a simulation cache lookup. Required-field gates, original-state choice projection, next-opponent threat probabilities, replay seeds and advice dependency evidence use the same coverage contract. Qualified static tiers and sourced base own-board layouts remain available; observed pairwise models do not require full-roster coverage.
+
+An actual CapturePipeline external-OCR fixture reads all eight rows, then seven rows 0.25 seconds later. The prior full lobby stays fresh with its original read timestamp, but the newer false certificate immediately prevents roster-dependent valuation. No rows or read timestamps are invented. Positive Engine/replay fixtures now declare their own coverage certificates.
+
+The first combined run retained one failure: 148 passed and one existing high-HP one-round-buff `gain > 0` assertion failed after the required semantic seed change. On tape `1893440055913326485`, only surviving rollout 20 differed: placement moved from 2.871278864944699 to 2.878425915098738, with mean paired gain -0.00005583632932842919. Holding the tape and changing only `terminal_gold_weight` from 0.001 to zero changes the gain to +0.000006663670671570865. The terminal subtraction implies surviving held gold of 128 before versus 120 after; the immediate win breaks a loss streak and changes later income. A buff therefore need not improve placement. The revised declared five-HP fixture checks its current-round survival effect, expiry on the next round and identical paired seeds, rather than asserting a universally positive economy-adjusted gain. This is synthetic software evidence, not a current-game rule or owner result.
+
+### 2026-10-13 — Final verification
+
+The final unchanged implementation passed all 420 Python tests with the train group and cached pinned models, no skips, in 31.27 seconds; the process exited zero with two existing Torch ONNX-export deprecation warnings. The earlier 420-test run also exited zero in 40.64 seconds. The last cleanup run started before the usage interruption could not be retrieved (`Unknown process id 81758`), so its result is unknown; the final run records both output and process exit under the ignored worktree proof directory.
+
+Additional checks: Engine 127 tests passed in 7.61 seconds; the final positioning/guard slice passed 53 in 5.11 seconds; the installed public environment without Live passed 95 guard/replay/runtime/Baseline cases in 9.99 seconds. One initial public selector incorrectly included the unconditional owner-build `tft_live` import smoke: 102 passed and that import failed as expected because Live was removed. The corrected public workflow selection passed without changing or skipping tests. Live and train were restored afterward. UI 35 tests, typecheck, generated-type check and build passed. Both import contracts, schema check, frozen lock check, scoped F821 and diff checks exited zero. The bounded documentation preservation check retained all 213 constraints.
+
+The branch includes integration `be571ca699fbe9d2664fb2955f6080c5073f6267`; exact commit and independent integration are reported at handoff. Ticket closure remains with the parent after a different merger reviews it. Production source qualification, Windows capture and historical native causality remain tickets 48, 49 and 50. No owner API, match collection or measurement run was used.

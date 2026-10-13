@@ -87,10 +87,13 @@ def required(snapshot,data,names):
     names=tuple(names)
     if {'board','bench','owned_copies','slot_inventory'}.intersection(names) and 'inventory_complete' not in names:
         names+=('inventory_complete',)
+    if 'lobby' in names and 'lobby_complete' not in names:
+        names+=('lobby_complete',)
     missing=[]
+    from .lobby import lobby_certificate_qualified
     for name in names:
         value=snapshot.field(name,max_age_seconds=field_age(data,name,snapshot))
-        if value is None or (name=='inventory_complete' and value is not True):
+        if value is None or (name=='inventory_complete' and value is not True) or (name=='lobby_complete' and not lobby_certificate_qualified(snapshot,data)):
             missing.append(name)
     return tuple(missing)
 
@@ -248,8 +251,10 @@ def _simulation_reuse():
     from .effects import captured, combine
     memo={}; models={}
     stats={'simulation_requests':0,'simulation_cache_hits':0,'executed_simulation_calls':0,'executed_concrete_lines':0,'executed_rollouts':0}
-    names=('board','bench','gold','hp','level','xp','streak','lobby','slot_count','shop')
+    names=('board','bench','gold','hp','level','xp','streak','lobby','lobby_complete','slot_count','shop')
     def simulate(snapshot,history,data,comp_id,lines,**options):
+        from .lobby import alive_lobby
+        alive_lobby(snapshot,data) # Coverage must qualify before any cache lookup.
         identity=id(data)
         if identity not in models:
             models[identity]=(data,json.dumps(_encode(data),sort_keys=True,separators=(',',':'),allow_nan=False))
@@ -276,7 +281,7 @@ def _step(snapshot,history,data,previous,hooks,*,seed=None,effects=None,rollouts
     board=owned_board(snapshot,data)
     from .lobby import alive_lobby
     ids=tuple(alive_lobby(snapshot,data))
-    opponents=opponents_from_history(history,snapshot.round_id,data,opponent_ids=ids)
+    opponents=tuple(opponent for opponent in opponents_from_history(history,snapshot.round_id,data,opponent_ids=ids) if opponent.opponent_id in ids)
     context=EngineContext(snapshot,history,data,previous,{}, {},board,snapshot_seed(snapshot,data) if seed is None else seed,opponents,effects=explicit_effects,_simulation=_simulation)
     left=rounds_left_to_live(snapshot,data,opponents)
     terms={id:domain_fit(hooks,id,context) for id in data.guides}
@@ -422,7 +427,7 @@ def decision_evidence(advice,context,names):
 
 
 def core_evidence(items,context):
-    names=('board','bench','inventory_complete','gold','hp','level','xp','streak','lobby','slot_count','shop','phase','planning_phase','roll_down','comp_lock','pinned_line','include_unguided','held_augments','held_augments_complete','item_bench','item_inventory_complete','remaining_effects','remaining_effects_complete')
+    names=('board','bench','inventory_complete','gold','hp','level','xp','streak','lobby','lobby_complete','slot_count','shop','phase','planning_phase','roll_down','comp_lock','pinned_line','include_unguided','held_augments','held_augments_complete','item_bench','item_inventory_complete','remaining_effects','remaining_effects_complete')
     return tuple(decision_evidence(a,context,names) if a.decision in ('econ','pivot','plan','transition') else a for a in items)
 
 
@@ -495,8 +500,9 @@ def advise(snapshot,history,data,mode,*,hooks=None):
 def best_choice_fit(context,changes,*,hooks=None,effects=None,rollouts=None):
     """Score a changed choice state on the original snapshot's random tape."""
     from .models import FieldValue
-    if required(context.snapshot,context.data,('inventory_complete',)):
-        return None,EngineEvaluation(context.plan,advice=(paused('Complete own ownership unavailable',missing=('inventory_complete',),domain='econ'),))
+    missing=required(context.snapshot,context.data,('inventory_complete','lobby','lobby_complete'))
+    if missing:
+        return None,EngineEvaluation(context.plan,advice=(paused('Complete own ownership and lobby unavailable',missing=missing,domain='econ'),))
     phase=observed_phase(context.snapshot,context.data)
     if phase not in ('planning','roll_down','augment','carousel'):
         return None,EngineEvaluation(context.plan,advice=(paused('Choice projection unavailable in the observed phase',missing=('phase','planning_phase'),domain='econ'),))

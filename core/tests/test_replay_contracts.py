@@ -57,6 +57,7 @@ def historical_data(tmp_path):
     tunables = {name: 1 for name in TUNABLE_FAMILIES}
     tunables.update({'rollouts_full': 4, 'rollouts_reroll': 2, 'gold_floors': [10, 0],
         'commit_latest_round': '3-2', 'opponent_growth_curve': {}, 'default_lines_by_carry_cost': {},
+        'confidence_show_min': .2, 'confidence_medium_min': .5, 'confidence_high_min': .8,
         'cost_star_baseline': {str(c): {str(s): c+s-1 for s in (1, 2, 3)} for c in range(1, 6)},
         'item_values': {'finished': 1, 'component': .35, 'high_cost_bonus': .25},
         'win_scale_by_stage': {}, 'survivor_scale_by_stage': {str(i): 1 for i in range(1, 9)},
@@ -84,7 +85,7 @@ def log_snapshot(data, *, at=NOW, snapshot_id='original', **changes):
     board = Board((Unit('unit', position=0),))
     fields = {'board': board, 'bench': [], 'inventory_complete': True,
         'phase': 'planning', 'planning_phase': True, 'gold': 18, 'hp': 73, 'level': 1,
-        'xp': 0, 'streak': 0, 'lobby': {'rival': {'hp': 84}}, 'slot_count': 5}
+        'xp': 0, 'streak': 0, 'lobby': {'rival': {'hp': 84}}, 'lobby_complete': True, 'slot_count': 5}
     fields.update(changes)
     snapshot = GameSnapshot('901', '3-2', at,
         {name: FieldValue(value, at, 'recorded-fixture', .95) for name, value in fields.items()}, snapshot_id).to_dict()

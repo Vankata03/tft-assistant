@@ -85,7 +85,7 @@ class ReplayProducer:
             if event['kind'] != 'snapshot':
                 continue
             snapshot = GameSnapshot.from_dict(event['payload'])
-            seed = snapshot_seed(snapshot)
+            seed = snapshot_seed(snapshot, data)
             # Later crash annotations may invalidate capture evidence. They never
             # become causal Engine information or reset an earlier history prefix.
             gaps = [row for row in events if row['kind'] == 'capture_gap'

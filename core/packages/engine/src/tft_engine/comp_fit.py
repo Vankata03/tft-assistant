@@ -38,7 +38,10 @@ def rounds_left_to_live(snapshot,data,opponents=()):
     board=read(snapshot,data,'board'); level=int(read(snapshot,data,'level'))
     own=strength(board,level,data)
     stage=int(snapshot.round_id.split('-')[0])
-    powers=[o.power for o in opponents] or [growth_curve_lookup(snapshot.round_id,data)]
+    from .lobby import alive_lobby
+    roster=alive_lobby(snapshot,data)
+    by_id={opponent.opponent_id:opponent.power for opponent in opponents}
+    powers=[by_id[id] if id in by_id else growth_curve_lookup(snapshot.round_id,data) for id in roster]
     loss=0.0
     for power in powers:
         damage=static(data,'player_damage')

@@ -83,8 +83,13 @@ def snapshot_seed(snapshot,data=None):
     from .planning import read
     # Re-reading unchanged pixels is not a new random experiment. Capture
     # timestamps/nonces remain in evidence; the tape follows semantic values.
-    names=('board','bench','inventory_complete','gold','hp','level','xp','streak','lobby','slot_count','shop','roll_down','comp_lock','pinned_line','held_augments','held_augments_complete','item_bench','item_inventory_complete','remaining_effects','remaining_effects_complete')
+    names=('board','bench','inventory_complete','gold','hp','level','xp','streak','lobby','lobby_complete','slot_count','shop','roll_down','comp_lock','pinned_line','held_augments','held_augments_complete','item_bench','item_inventory_complete','remaining_effects','remaining_effects_complete')
     state={'game_id':snapshot.game_id,'round_id':snapshot.round_id,'fields':{name:_encode(read(snapshot,data,name) if data is not None else snapshot.field(name)) for name in names}}
+    from .lobby import lobby_certificate_qualified
+    certificate=snapshot.fields.get('lobby_complete')
+    state['lobby_qualified']=lobby_certificate_qualified(snapshot,data)
+    if data is None:
+        state['lobby_certificate_confidence']=certificate.confidence if certificate else None
     payload=json.dumps(state,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False).encode()
     return int.from_bytes(sha256(payload).digest()[:8],'big')
 
