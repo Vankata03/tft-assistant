@@ -11,6 +11,7 @@ from .models import DataError, Entity, TaggedValue
 STATISTICS_MIN_SAMPLES = 500
 
 REQUIRED_STATIC = (
+    "team_capacity",
     "xp_table",
     "gold_by_round",
     "streak_gold",
@@ -99,6 +100,7 @@ TUNABLE_FAMILIES = {
             "classifier_threshold",
             "emblem_slack_max",
             "opponent_inference_state_cap",
+            "capacity_transition_state_cap",
             "component_income_by_stage",
             "component_discount_by_stage",
             "slam_candidate_cap",
@@ -184,6 +186,12 @@ def load_patch(path):
         if e.kind == "wisp" and e.id not in fields["wisps"].value:
             raise DataError(f"New Wisp {e.id} needs a static effect entry")
         parsed[e.id] = e
+    from .capacity import validate_capacity, unit_slot_cost, integral
+    validate_capacity(fields,parsed)
+    integral(values['capacity_transition_state_cap'].value,'capacity transition search budget',1)
+    for entity in parsed.values():
+        if entity.kind in ('unit','unit_form'):
+            unit_slot_cost(parsed,entity.id)
     return (
         static["patch"],
         static["set_number"],

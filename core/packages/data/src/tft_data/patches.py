@@ -17,6 +17,7 @@ import tomli_w
 from .adapters import CommunityDragon, DataDragon, merge_entities
 from .config import load_patch
 from .models import DataError, plain
+from .entity_overlay import apply_entity_overlay
 
 
 def download_json(url):
@@ -185,6 +186,7 @@ def bootstrap_patch(
     cdragon=None,
     ddragon=None,
     dragon_version=None,
+    entity_overlay_file=None,
 ):
     """Materialize a candidate from reviewed rule files and checked primary payloads."""
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", patch):
@@ -208,6 +210,7 @@ def bootstrap_patch(
                 allowed_ids=set(entities),
             ).entities(),
         )
+    entities, overlay_report=apply_entity_overlay(entities,entity_overlay_file,patch,static['set_number'])
     parent = Path(data_dir)
     target = parent / patch
     if target.exists():
@@ -242,6 +245,7 @@ def bootstrap_patch(
             "Review and commit the source-tagged static, tunables and entity files before using this candidate in a Live session.",
             "The candidate contains no fitted-parameter or live-game qualification claim.",
             *adapter.warnings,
+            *overlay_report,
         ]
         (candidate / "patch-diff.md").write_text("\n\n".join(report) + "\n")
         os.replace(candidate, target)
@@ -259,6 +263,7 @@ def prepare_new_set(
     cdragon=None,
     ddragon=None,
     dragon_version=None,
+    entity_overlay_file=None,
     overrides=None,
 ):
     """Use fresh rules, carry non-set tunables and archive old owner overrides."""
@@ -295,6 +300,7 @@ def prepare_new_set(
             cdragon=cdragon,
             ddragon=ddragon,
             dragon_version=dragon_version,
+            entity_overlay_file=entity_overlay_file,
         )
     if overrides and Path(overrides).exists():
         owner_file = Path(overrides)

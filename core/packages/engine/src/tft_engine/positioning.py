@@ -8,6 +8,7 @@ from .planning import paused, observed_phase, owned_board, required
 from .power import tunable, static
 from .opponents import round_index, age_weight
 from .transition import strongest_owned_board
+from .capacity_fields import evidence_from_snapshot
 
 
 def assign(costs):
@@ -198,7 +199,7 @@ def advice(context):
         if required(context.snapshot,context.data,('board','bench','level')):
             return ()
         from dataclasses import replace
-        context=replace(context,recommended_board=strongest_owned_board(owned_board(context.snapshot,context.data),int(read(context.snapshot,context.data,'level')),context.data,target=context.plan.target,round_id=context.snapshot.round_id))
+        context=replace(context,recommended_board=strongest_owned_board(owned_board(context.snapshot,context.data),int(read(context.snapshot,context.data,'level')),context.data,target=context.plan.target,round_id=context.snapshot.round_id,capacity=evidence_from_snapshot(context.snapshot,context.data)))
     state,data=context.snapshot,context.data
     settled=read(state,data,'board_settled_since')
     if settled is None:
@@ -226,7 +227,7 @@ def advice(context):
                 if old_board is not None and old_bench is not None:
                     from dataclasses import replace
                     from .models import Board
-                    old_recommended=strongest_owned_board(Board(old_board.units,old_bench,old_board.trait_counts),int(read(old,data,'level')),data,target=context.plan.target,round_id=old.round_id)
+                    old_recommended=strongest_owned_board(Board(old_board.units,old_bench,old_board.trait_counts),int(read(old,data,'level')),data,target=context.plan.target,round_id=old.round_id,capacity=evidence_from_snapshot(old,data))
                     try:
                         old_active,_=adjustments(old,context.history,data)
                     except DataError:

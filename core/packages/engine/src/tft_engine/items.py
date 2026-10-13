@@ -363,7 +363,7 @@ def reforge_options(context,distribution,baseline_fit,baseline_realized,selected
                 holder_delta=realized(changed,data)-baseline_realized
                 if fit_delta>0 and holder_delta>0:
                     holder_delta=max(0,holder_delta-fit_delta)
-                gain,error,before,after=paired_value(context.snapshot,context.history,data,context.plan.target,(selected.line,),SimulationEffects(item_state=changed),
+                gain,error,before,after=paired_value(context.snapshot,context.history,data,context.plan.target,(selected.line,),SimulationEffects(item_state=changed,item_bench_state=tuple(remaining)),
                     rollouts=int(tunable(data,'rollouts_reroll')),opponents=context.opponents,seed=context.seed,base_effects=context.effects,backup_id=context.plan.backup)
                 vector=np.asarray(before[0].rollout_placements)-np.asarray(after[0].rollout_placements)
                 paired=probability*vector if paired is None else paired+probability*vector
@@ -485,7 +485,7 @@ def advice(context):
         options=[]; baseline_result=None
         for operation,changed,remaining,payload,fit_gain,correction,gold_delta,before_realized,after_realized in candidates:
             gain,error,before,after=paired_value(context.snapshot,context.history,data,context.plan.target,(selected.line,),
-                SimulationEffects(item_state=changed,gold_delta=gold_delta),rollouts=int(tunable(data,'rollouts_reroll')),opponents=context.opponents,
+                SimulationEffects(item_state=changed,item_bench_state=tuple(remaining),gold_delta=gold_delta),rollouts=int(tunable(data,'rollouts_reroll')),opponents=context.opponents,
                 seed=context.seed,base_effects=context.effects,backup_id=context.plan.backup)
             total=gain+fit_gain+correction; baseline_result=before[0]
             payload={'operation':operation,**payload,'item_fit_gain':fit_gain,'realized_holder_gain':correction,'before_realized':before_realized,'after_realized':after_realized,

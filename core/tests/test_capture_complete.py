@@ -32,6 +32,9 @@ class VisualFrames:
 
 
 def capture(tmp_path, values, *, visual=None, catalog=None, extra=(), **kwargs):
+    from tft_data import TaggedValue
+    kwargs.setdefault('unit_counter',TaggedValue({'region':'unit_count','semantic':'physical_units'},'owner',
+        citation='Declared recorded-fixture physical counter semantics; not HUD qualification'))
     logs = SessionStore(tmp_path / "app", tmp_path / "config", live_installed=True)
     logs.start_game("900")
     ocr = OCRFrames(values)
@@ -478,7 +481,7 @@ def test_capture_close_flushes_timestamped_real_video_and_open_gap_with_lossless
 
 def test_pinned_lux_trait_variants_validate_complete_ownership_without_inventing_chosen_origin(tmp_path):
     from tft_data.models import DataSnapshot, Entity, TaggedValue
-    data = DataSnapshot('pinned-18', '16.20', 18, static={'trait_rules': TaggedValue({
+    data = DataSnapshot('pinned-18', '16.20', 18, static={'capture_unit_counter': TaggedValue({'region':'unit_count','semantic':'physical_units'},'owner',citation='Declared physical-counter fixture'), 'trait_rules': TaggedValue({
         'lux': {'replace': [{'avatar': 1, 'inferno': 2}, {'avatar': 1, 'ocean': 2}]}}, 'owner'),
         'sell_values': TaggedValue({'5': {'1': 5, '2': 14, '3': 44}}, 'owner')}, tunables={}, entities={
         'lux': Entity('lux', 'unit', 'Lux', cost=5, traits=('avatar',)),
@@ -508,7 +511,7 @@ def equipped_item_capture(tmp_path, item, *, observed_traits=('Defender 1',)):
     from tft_data.models import DataSnapshot, Entity, TaggedValue
 
     data = DataSnapshot('pinned-items', '16.20', 18,
-        static={'trait_rules': TaggedValue({}, 'owner')}, tunables={}, entities={
+        static={'capture_unit_counter': TaggedValue({'region':'unit_count','semantic':'physical_units'},'owner',citation='Declared physical-counter fixture'), 'trait_rules': TaggedValue({}, 'owner')}, tunables={}, entities={
             'shen': Entity('shen', 'unit', 'Shen', traits=('defender',)),
             'defender': Entity('defender', 'trait', 'Defender'),
             'inferno': Entity('inferno', 'trait', 'Inferno'), item.id: item})
@@ -941,3 +944,39 @@ def test_partial_capture_immediately_invalidates_a_still_fresh_previous_full_lob
     rejected = evaluate(partial, GameHistory((qualified,)), data, 'review')
     assert not rejected.line_results and not rejected.comp_fits
     assert snapshot_seed(qualified, data) != snapshot_seed(partial, data)
+
+
+def test_reviewed_slot_counter_certifies_two_slot_capture_without_counting_two_units(tmp_path):
+    from tft_data import DataSnapshot, Entity, TaggedValue
+    tag=lambda value:TaggedValue(value,'owner',citation='Synthetic reviewed counter/slot rule, not HUD qualification')
+    data=DataSnapshot('capacity-fixture','fixture',18,{'trait_rules':tag({'dragon':{'counts':{'rift':2}}}),
+        'capture_unit_counter':tag({'region':'unit_count','semantic':'occupied_team_slots'})},{},
+        entities={'dragon':Entity('dragon','unit','Synthetic dragon',3,('rift',),values={'team_slot_cost':tag(2)}),
+            'rift':Entity('rift','trait','Rift')})
+    row={'zone':'board','position':0,'unit_id':'dragon','identity_confidence':.99,'stars':1,'items':[]}
+    slots={'board_occupied':[0],'board_empty':list(range(1,28)),'bench_occupied':[],'bench_empty':list(range(9))}
+    visual=VisualFrames({'board_observations':[row],'slot_inventory':slots},complete=True)
+    logs=SessionStore(tmp_path/'logs',tmp_path/'config',live_installed=True);logs.start_game('901')
+    ocr=OCRFrames({'scouted':[TextLine('Owner Level 1')],'unit_count':[TextLine('2/2')],
+        'traits':[TextLine('Rift 2'),TextLine('0+')]})
+    pipeline=CapturePipeline.from_data('901',data=data,ocr=ocr,sink=logs,visual_reader=visual,
+        own_player_name='Owner',regions={name:(0,0,1,1) for name in ('scouted','unit_count','traits','board')})
+    result=pipeline.tick(WHITE,timestamp=NOW)
+    assert result['fields']['inventory_complete']['value'] is True
+    assert result['fields']['physical_unit_count']['value']==1
+    assert result['fields']['occupied_team_slots']['value']==2
+    assert result['fields']['team_slot_budget']['value']==2
+    assert result['fields']['owned_copies']['value']=={'dragon':1}
+    assert 'owner' in result['fields']['team_slot_budget']['source']
+    unknown=CapturePipeline.from_data('901',data=__import__('dataclasses').replace(data,static={'trait_rules':data.static['trait_rules']}),
+        ocr=ocr,sink=logs,visual_reader=visual,own_player_name='Owner',regions=pipeline.regions)
+    partial=unknown.tick(WHITE,timestamp=NOW)
+    assert partial['fields']['inventory_complete']['value'] is False
+    assert 'team_slot_budget' not in partial['fields']
+    assert partial['fields']['ownership_capacity_status']['value']=='reviewed_counter_unavailable'
+    from dataclasses import replace
+    missing=replace(data,entities=dict(data.entities)|{'dragon':replace(data.entities['dragon'],values={})})
+    unavailable=CapturePipeline.from_data('901',data=missing,ocr=ocr,sink=logs,visual_reader=visual,
+        own_player_name='Owner',regions=pipeline.regions).tick(WHITE,timestamp=NOW)
+    assert unavailable['fields']['inventory_complete']['value'] is False
+    assert unavailable['fields']['ownership_capacity_status']['value']=='slot_cost_certificate_unavailable'

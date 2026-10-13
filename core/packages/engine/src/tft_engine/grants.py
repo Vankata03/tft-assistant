@@ -10,12 +10,25 @@ from .decision_shared import add_copy
 def distribution(effect,context,offer=None):
     kind=effect['effect_kind']; values=effect['values']; data=context.data
     board=owned_board(context.snapshot,context.data); rows=[]
+    from .capacity import CapacityModel
+    from .capacity_fields import evidence_from_snapshot
+    model=CapacityModel(data);capacity=evidence_from_snapshot(context.snapshot,data)
+    def check(changed,*,polymorph=False):
+        if len(changed.bench)>data.value('bench_size'):
+            raise DataError('Grant bench overflow requires a sourced inventory return rule')
+        try:
+            model.check(changed,int(read(context.snapshot,data,'level')),capacity)
+        except DataError as error:
+            if polymorph:
+                raise DataError(f'Polymorph capacity overflow or activation requires a sourced rule: {error}') from None
+            raise
     if kind in ('unit_grant','item_grant','risky'):
         for outcome in values['outcomes']:
             probability=float(outcome['probability']); changed=board; effects=None; changes={}
             if kind=='unit_grant':
                 for id in outcome['unit_ids']:
                     changed=add_copy(changed,id,data)
+                check(changed)
                 changes={'board':changed,'bench':changed.bench}
             elif kind=='item_grant':
                 if read(context.snapshot,context.data,'item_bench') is None or read(context.snapshot,context.data,'item_inventory_complete') is not True:
@@ -52,6 +65,7 @@ def distribution(effect,context,offer=None):
             if values['copy_star']!='one':
                 raise DataError('Only sourced one-star duplicator copies are supported')
             changed=add_copy(board,unit.unit_id,data)
+            check(changed)
             rows.append((1/len(eligible),{'board':changed,'bench':changed.bench},None,{'target_index':index,'unit_id':unit.unit_id}))
             continue
         outcomes=values['outcomes'][str(data.entities[unit.unit_id].cost+int(values['cost_delta']))]
@@ -62,6 +76,7 @@ def distribution(effect,context,offer=None):
             transformed=Unit(id,unit.stars if values['preserve_stars'] else 1,unit.items if values['preserve_items'] else (),unit.position)
             updated=tuple(transformed if i==index else u for i,u in enumerate(units))
             changed=Board(updated[:len(board.units)],updated[len(board.units):],None)
+            check(changed,polymorph=True)
             changes={'board':changed,'bench':changed.bench}
             if not values['preserve_items'] and unit.items:
                 held=read(context.snapshot,context.data,'item_bench')

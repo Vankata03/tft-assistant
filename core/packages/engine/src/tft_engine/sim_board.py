@@ -2,17 +2,25 @@
 from dataclasses import dataclass
 import numpy as np
 from tft_data.models import DataError
-from .power import unit_power, trait_term, tunable, estimate_strength
-from .opponents import unit_trait_variants
+from .power import unit_power, trait_term, tunable, estimate_strength, stage_tunable
+from .trait_forms import unit_trait_variants
 from .shop_math import owned_copies, canonical_id
 
 class RolloutBoard:
-    def __init__(self,board,data,guide):
+    def __init__(self,board,data,guide,*,level,capacity=None):
         self.data=data
+        from .capacity import CapacityModel
+        self.capacity_model=CapacityModel(data)
+        self.capacity=capacity
+        self.guide=guide
+        self.observed_units=board.units
+        self.equipment_groups=tuple((i,u) for i,u in enumerate(board.units+board.bench) if u.items)
         self._power_cache={}
         self.ids=tuple(sorted(id for id,e in data.entities.items() if e.kind=='unit'))
         forms={}
         for unit in board.units+board.bench:
+            if len(unit_trait_variants(unit.unit_id,data))!=1:
+                raise DataError(f'Rollout requires resolved own trait form: {unit.unit_id}')
             pool=canonical_id(unit.unit_id,data)
             if unit.unit_id!=pool:
                 if pool in forms and forms[pool]!=unit.unit_id:
@@ -23,6 +31,8 @@ class RolloutBoard:
             if pool!=id and pool not in forms:
                 forms[pool]=id
         self.active_ids=tuple(forms.get(id,id) for id in self.ids)
+        self.slot_costs=tuple(self.capacity_model.cost(id) for id in self.active_ids)
+        self.general_capacity=(any(cost!=1 for cost in self.slot_costs) or bool(self.capacity_model.traits) or bool(self.capacity_model.augments) or bool(self.capacity_model.items))
         self.index={id:i for i,id in enumerate(self.ids)}
         self.costs=np.array([data.entities[id].cost for id in self.ids])
         estimates=[[unit_power(id,s,data) for s in (1,2,3)] for id in self.active_ids]
@@ -47,7 +57,7 @@ class RolloutBoard:
             points=data.entities[t].values['breakpoints'].value
             self.trait_values.append(tuple((int(p),trait_term({t:int(p)},data)[0]*float(tunable(data,'trait_weight'))) for p in points))
         self.initial=np.array([owned_copies(board,data).get(id,0) for id in self.ids],dtype=int)
-        self.items=estimate_strength(board,len(board.units),data).item_term
+        self.items=estimate_strength(board,level,data,capacity=capacity).item_term
         self.target=np.array([id in target_pools for id in self.ids])
         weights=tunable(data,'classifier_weights')
         carries={canonical_id(id,data) for id in guide.carry_ids}
@@ -63,22 +73,79 @@ class RolloutBoard:
             result+=value
         return result
 
-    def power(self,copies,level,*,forced=False):
+    def power(self,copies,level,*,forced=False,equipment_retained=None,round_id=None):
         # Identical owned-copy/level states have identical greedy outcomes. Memoize
         # them within this request; individual shops, fights and HP still vary.
-        packed=np.ascontiguousarray(np.column_stack((copies,level)))
+        if equipment_retained is None:
+            equipment_retained=np.ones((len(copies),len(self.equipment_groups)),dtype=int)
+        packed=np.ascontiguousarray(np.column_stack((copies,level,equipment_retained)))
         signature=packed.view(np.dtype((np.void,packed.dtype.itemsize*packed.shape[1]))).reshape(-1)
         _,indices,inverse=np.unique(signature,return_index=True,return_inverse=True)
         states=packed[indices]
-        keys=[(state.tobytes(),forced) for state in states]
+        keys=[(state.tobytes(),forced,round_id.split('-')[0] if round_id else None) for state in states]
         missing=[i for i,key in enumerate(keys) if key not in self._power_cache]
         if missing:
             fresh=states[missing]
-            values=self._power(fresh[:,:-1],fresh[:,-1],forced=forced)
+            width=len(self.ids)
+            values=self._power(fresh[:,:width],fresh[:,width],forced=forced,equipment_retained=fresh[:,width+1:],round_id=round_id)
             self._power_cache.update((keys[i],float(value)) for i,value in zip(missing,values))
         return np.array([self._power_cache[key] for key in keys])[inverse]
 
-    def _power(self,copies,level,*,forced=False):
+    def _power(self,copies,level,*,forced=False,equipment_retained=None,round_id=None):
+        if self.general_capacity:
+            from dataclasses import replace
+            from .models import Board, Unit
+            from .transition import strongest_owned_board, main_roll_down
+            result=[]
+            for amounts,slots,retained in zip(copies,level,equipment_retained):
+                owned=[]
+                loose=list(self.capacity.item_bench or ()) if self.capacity else []
+                equipped={}
+                for keep,(_,unit) in zip(retained,self.equipment_groups):
+                    pool=canonical_id(unit.unit_id,self.data)
+                    if keep:
+                        equipped[pool]=equipped.get(pool,())+unit.items
+                    else:
+                        loose.extend(unit.items)
+                for id,amount in zip(self.active_ids,amounts):
+                    high,rest=divmod(int(amount),9);middle,low=divmod(rest,3)
+                    first=len(owned)
+                    for star,quantity in ((3,high),(2,middle),(1,low)):
+                        owned.extend(Unit(id,star) for _ in range(quantity))
+                    equipment=equipped.get(canonical_id(id,self.data),())
+                    if equipment:
+                        if len(owned)==first:
+                            # A sale returns that holder's equipment to inventory;
+                            # equipped scopes disappear, owned scope remains.
+                            loose.extend(equipment)
+                        else:
+                            limit=self.data.value('rules_flags').get('item_slots_max')
+                            if limit is None:
+                                raise DataError('Rollout equipment merge capacity requires sourced item slots and overflow handling')
+                            from .capacity import integral
+                            integral(limit,'equipment slots',1)
+                            if len(equipment)>limit:
+                                raise DataError('Rollout equipment merge capacity requires sourced item slots and overflow handling')
+                            owned[first]=replace(owned[first],items=equipment)
+                evidence=replace(self.capacity,item_bench=tuple(loose)) if self.capacity else None
+                # Preserve observed deployed identities when still owned. An
+                # already legal self-supporting trait board cannot be rebuilt
+                # as though its active capacity vanished between frames.
+                anchor=[];remaining=list(owned)
+                for old in self.observed_units:
+                    match=next((u for u in remaining if canonical_id(u.unit_id,self.data)==canonical_id(old.unit_id,self.data)),None)
+                    if match is not None:
+                        anchor.append(match);remaining.remove(match)
+                anchored=Board(tuple(anchor),tuple(remaining))
+                if self.capacity_model.state(anchored,int(slots),evidence).occupied_slots>self.capacity_model.budget(anchored,int(slots),evidence):
+                    raise DataError('Rollout owned-state change collapses deployed capacity; sourced overflow rule unavailable')
+                selected=strongest_owned_board(anchored,int(slots),self.data,
+                    target=self.guide.id if forced else None,
+                    round_id=round_id,
+                    capacity=evidence,generic_item_power=self.items)
+                estimate=estimate_strength(selected,int(slots),self.data,capacity=evidence)
+                result.append(estimate.unit_term+estimate.trait_term+self.items)
+            return np.asarray(result)
         n=len(copies); rows=np.arange(n)
         # Auto-combines are exact: nine ->3-star, remaining threes ->2-star, remainder ->1-star.
         high=copies//9; rest=copies%9; middle=rest//3; low=rest%3
@@ -87,7 +154,8 @@ class RolloutBoard:
         counts=np.zeros((n,len(self.traits)),dtype=int)
         seen=np.zeros((n,len(self.ids)),dtype=bool)
         total=np.full(n,self.items)
-        for slot in range(int(max(level))):
+        budgets=np.minimum(28,np.asarray([self.capacity_model.base(int(value)) for value in level]))
+        for slot in range(int(max(budgets))):
             best_tier=np.argmax(np.where(available>0,self.powers[None,:,:],-np.inf),axis=2)
             unit_values=np.take_along_axis(np.broadcast_to(self.powers,(n,)+self.powers.shape),best_tier[:,:,None],axis=2)[:,:,0]
             absent=~seen
@@ -101,7 +169,7 @@ class RolloutBoard:
                 eligible=np.where(preferred.any(axis=1)[:,None],preferred,eligible)
             scores=np.where(eligible,scores,-np.inf)
             maximum=scores.max(axis=1)
-            within=(scores>=maximum[:,None]-float(tunable(self.data,'transition_tolerance')))&eligible
+            within=(scores>=maximum[:,None]-stage_tunable(self.data,'transition_tolerance',round_id))&eligible
             preference=np.where(within,self.progress[None,:],-np.inf)
             priorities=preference.max(axis=1)
             chosen=np.argmax(np.where(within&(preference==priorities[:,None]),scores,-np.inf),axis=1)
@@ -113,7 +181,7 @@ class RolloutBoard:
                 solo=unit_values+self.traits_power(self.contributions)[None,:]
                 forced_choice=np.argmax(np.where(preferred&(forced_progress==priority[:,None]),solo,-np.inf),axis=1)
                 chosen=np.where(preferred.any(axis=1),forced_choice,chosen)
-            valid=(slot<level)&exists.any(axis=1)
+            valid=(slot<budgets)&exists.any(axis=1)
             tier=best_tier[rows,chosen]
             total+=np.where(valid,scores[rows,chosen],0)
             add=valid&~seen[rows,chosen]
@@ -121,12 +189,12 @@ class RolloutBoard:
             seen[rows,chosen]|=valid
             available[rows,chosen,tier]-=valid
             selected[rows,chosen,tier]+=valid
-        return self._refine(selected,available,forced=forced)
+        return self._refine(selected,available,forced=forced,round_id=round_id)
 
-    def _refine(self,selected,available,*,forced):
+    def _refine(self,selected,available,*,forced,round_id):
         """Batch every one-unit swap; reuse the transition's strict improvement rule."""
         n=len(selected); rows=np.arange(n)
-        tolerance=float(tunable(self.data,'transition_tolerance'))
+        tolerance=stage_tunable(self.data,'transition_tolerance',round_id)
         seen=[{state.tobytes()} for state in selected]
         def score():
             present=selected.sum(axis=2)>0

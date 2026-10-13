@@ -23,7 +23,7 @@ def combine(base,extra):
     values={}
     for field in fields(SimulationEffects):
         a,b=getattr(base,field.name),getattr(extra,field.name)
-        values[field.name]=(b or a) if field.name=='item_state' else add_maps(a,b) if isinstance(a,Mapping) else a+b
+        values[field.name]=(b if b is not None else a) if field.name in ('item_state','item_bench_state') else add_maps(a,b) if isinstance(a,Mapping) else a+b
     return SimulationEffects(**values)
 
 

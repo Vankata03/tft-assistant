@@ -36,6 +36,7 @@ def historical_data(tmp_path):
     path.mkdir()
     rounds = [f'{stage}-{round_number}' for stage in range(1, 7) for round_number in range(1, 8)]
     rules = {
+        'team_capacity': {'levels': {str(level):level for level in range(1,11)}, 'trait_bonuses': [], 'held_augment_slots': {}, 'inventory_item_slots': {},'transition_policy':{'deploy':'reserve_before','swap':'remove_then_reserve','bench':'validate_after'}},
         'xp_table': {str(i): 2*i for i in range(1, 10)}, 'gold_by_round': {'default': 5},
         'streak_gold': {'2': 1}, 'interest': {'gold_per_tick': 10, 'gold_per_interest': 1, 'cap': 5},
         'player_damage': {'stage_base': {str(i): i+1 for i in range(1, 9)}, 'per_survivor': 1},
@@ -73,7 +74,7 @@ def historical_data(tmp_path):
         for name, value in tunables.items()}}))
     (path / 'entities.json').write_text(json.dumps({'entities': [{'id': 'unit', 'kind': 'unit',
         'name': 'Fixture unit', 'cost': 1, 'traits': [],
-        'values': {'play_rate': {'value': .5, 'source': 'owner'}}}]}))
+        'values': {'team_slot_cost': {'value':1, 'source':'owner'},'play_rate': {'value': .5, 'source': 'owner'}}}]}))
     store = DataStore(tmp_path / 'data')
     result = store.refresh(path, now=NOW, sources=(GuideFeed(),))
     assert result.error is None

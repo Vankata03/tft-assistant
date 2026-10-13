@@ -394,8 +394,8 @@ def test_polymorph_highest_star_is_deterministic_and_barter_modifies_actual_roll
     data=item_patch(); entities=dict(data.entities)
     entities['a']=replace(entities['a'],cost=3)
     entities['b']=replace(entities['b'],cost=2)
-    entities['e']=Entity('e','unit','E',2,('fire',),values={'play_rate':tag(.5),'item_class':tag('AD'),'item_reference':tag(0)})
-    entities['f']=Entity('f','unit','F',1,('fire',),values={'play_rate':tag(.5),'item_class':tag('tank'),'item_reference':tag(0)})
+    entities['e']=Entity('e','unit','E',2,('fire',),values={'team_slot_cost':tag(1),'play_rate':tag(.5),'item_class':tag('AD'),'item_reference':tag(0)})
+    entities['f']=Entity('f','unit','F',1,('fire',),values={'team_slot_cost':tag(1),'play_rate':tag(.5),'item_class':tag('tank'),'item_reference':tag(0)})
     effects={'morph':{'effect_kind':'polymorph','values':{'eligible_costs':(2,),'target':'highest_star','cost_delta':1,
         'preserve_stars':True,'preserve_items':True,'outcomes':{'3':({'probability':1.0,'unit_id':'a'},)}},'cost':0,'offer_stages':('3',)},
         'barter':{'effect_kind':'sale_modifier','values':{'sale_gold_by_cost_star':{'3':{'2':8}},'scope':'rest_of_game'},'cost':0,'offer_stages':('3',)}}

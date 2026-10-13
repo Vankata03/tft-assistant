@@ -41,12 +41,14 @@ class OwnUnit:
     unit_id: str
     stars: int
     items: tuple[str, ...]
+    position: int | None = None
 
 
 @dataclass(frozen=True)
 class OwnBoard:
     units: tuple[OwnUnit, ...]
     trait_counts: Mapping[str, int] | None
+    bench: tuple[OwnUnit, ...] = ()
 
 
 class BaselineController:
@@ -410,9 +412,22 @@ class BaselineController:
                     units.append(
                         OwnUnit(row["unit_id"], row["stars"], tuple(row["items"]))
                     )
-                own = OwnBoard(tuple(units), board_value.get("trait_counts"))
+                rules=data.value('team_capacity')
+                held=field('held_augments');inventory=field('item_bench')
+                if rules['held_augment_slots'] and (held is None or field('held_augments_complete') is not True):
+                    raise DataError('fresh complete held augments required for capacity')
+                bench=()
+                if rules['inventory_item_slots']:
+                    rows=field('bench')
+                    if rows is None or inventory is None or field('item_inventory_complete') is not True:
+                        raise DataError('fresh complete item and bench inventory required for capacity')
+                    bench=tuple(OwnUnit(row['unit_id'],row['stars'],tuple(row['items'])) for row in rows)
+                observed=field('team_slot_budget')
+                if 'team_slot_budget' in self.snapshot['fields'] and observed is None:
+                    raise DataError('observed team slot budget stale')
+                own = OwnBoard(tuple(units), board_value.get("trait_counts"),bench)
                 curve = data.tunables.get("opponent_growth_curve")
-                own_power = strength(own, level_value, data)
+                own_power = strength(own, level_value, data,capacity={'held_augments':held,'item_bench':inventory,'observed_budget':observed})
                 par_power = growth_curve_lookup(
                     round_id, data, curve=curve.value if curve else None
                 )

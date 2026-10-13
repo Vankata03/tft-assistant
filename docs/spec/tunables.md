@@ -23,6 +23,7 @@ Owner: [Transition and pivot domain model](../../issues/012-transition-and-pivot
 | `open_candidate_count` | Hand-set | k = 3, the Open plan's candidate comps; set by the 100 ms budget |
 | `commit_latest_round` | Hand-set | 3-2. The other commitment triggers are fixed rules ([engine.md](engine.md#state)) |
 | `transition_tolerance` | 2 (z = 1) | Ties within it are broken by progress toward the target comp. Starting floor: 2 % of the stage's par board power |
+| `capacity_transition_state_cap` | Hand-set | Deterministic owned-board transition search budget. Missing budget or exhaustion pauses the action; no truncated path becomes an executable recommendation |
 
 ## Econ, level and roll Line simulation
 

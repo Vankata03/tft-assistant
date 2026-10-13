@@ -33,6 +33,7 @@ class Line:
 @dataclass(frozen=True)
 class SimulationEffects:
     item_state: Board | None = None
+    item_bench_state: tuple[str,...] | None = None
     one_round_power_bonus: float = 0.0
     gold_delta: float = 0.0
     gold_reduction: float = 0.0
@@ -46,6 +47,8 @@ class SimulationEffects:
     sale_gold_by_cost_star: Mapping = field(default_factory=dict)
     round_modifiers: Mapping = field(default_factory=dict)
     def __post_init__(self):
+        if self.item_bench_state is not None:
+            object.__setattr__(self,'item_bench_state',tuple(self.item_bench_state))
         object.__setattr__(self,'round_income',freeze(self.round_income))
         object.__setattr__(self,'sale_gold_by_cost_star',freeze(self.sale_gold_by_cost_star))
         object.__setattr__(self,'round_modifiers',freeze(self.round_modifiers))
@@ -83,7 +86,7 @@ def snapshot_seed(snapshot,data=None):
     from .planning import read
     # Re-reading unchanged pixels is not a new random experiment. Capture
     # timestamps/nonces remain in evidence; the tape follows semantic values.
-    names=('board','bench','inventory_complete','gold','hp','level','xp','streak','lobby','lobby_complete','slot_count','shop','roll_down','comp_lock','pinned_line','held_augments','held_augments_complete','item_bench','item_inventory_complete','remaining_effects','remaining_effects_complete')
+    names=('board','bench','inventory_complete','team_slot_budget','gold','hp','level','xp','streak','lobby','slot_count','shop','roll_down','comp_lock','pinned_line','held_augments','held_augments_complete','item_bench','item_inventory_complete','remaining_effects','remaining_effects_complete')
     state={'game_id':snapshot.game_id,'round_id':snapshot.round_id,'fields':{name:_encode(read(snapshot,data,name) if data is not None else snapshot.field(name)) for name in names}}
     from .lobby import lobby_certificate_qualified
     certificate=snapshot.fields.get('lobby_complete')
@@ -205,9 +208,15 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
     bench=read(snapshot,data,'bench')
     if effects.item_state is None and board.bench!=bench:
         board=Board(board.units,bench,board.trait_counts)
-    prepared=RolloutBoard(board,data,guide)
-    initial=strength(board,int(read(snapshot,data,'level')),data)
-    confidence=min(prepared.confidence,estimate_strength(board,int(read(snapshot,data,'level')),data).confidence)
+    from .capacity_fields import evidence_from_snapshot
+    from .capacity import CapacityModel
+    from .planning import owned_board
+    CapacityModel(data).check(owned_board(snapshot,data),read(snapshot,data,'level'),
+        evidence_from_snapshot(snapshot,data),check_observed=True)
+    capacity=evidence_from_snapshot(snapshot,data,item_bench=effects.item_bench_state)
+    prepared=RolloutBoard(board,data,guide,level=int(read(snapshot,data,'level')),capacity=capacity)
+    initial=strength(board,int(read(snapshot,data,'level')),data,capacity=capacity)
+    confidence=min(prepared.confidence,estimate_strength(board,int(read(snapshot,data,'level')),data,capacity=capacity).confidence)
     for name in ('terminal_gold_weight','terminal_hp_weight','fight_scale','survivor_scale_by_stage'):
         if data.tunables[name].source in ('default','carried'):
             confidence=min(confidence,float(tunable(data,'confidence_medium_min')))
@@ -239,7 +248,8 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
     if max(possible_slots)>max_slots:
         raise DataError('Modified champion slots exceed the static maximum')
     from .bench import roll_sale_indices
-    sale_units=tuple(board.bench[i] for i in roll_sale_indices(board,data,target=comp_id,backup=backup_id))
+    sale_indices=roll_sale_indices(board,data,target=comp_id,backup=backup_id)
+    sale_units=tuple(board.bench[i] for i in sale_indices)
     sale_copies=np.array([sum(3**(u.stars-1) for u in sale_units if canonical_id(u.unit_id,data)==id) for id in prepared.ids])
     deadline=main_roll_down(guide,data)
     goal_indices=np.array([prepared.index[id] for id in goals],dtype=int)
@@ -258,6 +268,10 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
     current_shop=read(snapshot,data,'shop') if not required(snapshot,data,('shop',)) else None
     curve={r:growth_curve_lookup(r,data) for r in rounds}
     offsets={id:by_id[id].power-curve[snapshot.round_id] if id in by_id else 0.0 for id in ids}
+    from .growth import par_unit_count
+    par_counts={round_id:par_unit_count(round_id,data) for round_id in rounds}
+    count_offsets={id:by_id[id].expected_unit_count-par_counts[snapshot.round_id]
+        if id in by_id and by_id[id].expected_unit_count is not None else 0.0 for id in ids}
     results=[]
     lines=tuple(lines)
     if not lines:
@@ -271,6 +285,8 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
     streak=np.full(runs,int(read(snapshot,data,'streak')),dtype=int)
     level,xp=normalize_xp(level,xp,data)
     copies=np.broadcast_to(prepared.initial,(runs,len(prepared.ids))).copy()
+    equipment_retained=np.ones((runs,len(prepared.equipment_groups)),dtype=bool)
+    equipment_sales=np.array([index-len(board.units) in sale_indices for index,_ in prepared.equipment_groups],dtype=bool)
     power=np.full(runs,initial)
     hit=lambda: (copies[:,goal_indices]>=goal_values).all(axis=1) if len(goal_indices) else np.ones(runs,dtype=bool)
     free_rolls=np.full(runs,effects.free_rolls,dtype=int)
@@ -289,6 +305,7 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
         selling=alive&~bench_sold&has_floor
         gold+=selling*sale_gold
         copies-=selling[:,None]*sale_copies
+        equipment_retained&=~(selling[:,None]&equipment_sales)
         bench_sold|=selling
         target=np.repeat([current_level_target(line,round_id,data,int(level.reshape(len(lines),count)[i].min())) for i,line in enumerate(lines)],count)
         cost=float(rules['xp_buy_cost']); amount=float(rules['xp_buy_amount'])
@@ -321,7 +338,7 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
                 wanted=np.full(runs,prepared.target[index],dtype=bool)
                 if stabilizing.any():
                     proposal=copies.copy(); proposal[:,index]+=1
-                    wanted=np.where(stabilizing,(prepared.power(proposal,level)>prepared.power(copies,level))&prepared.supported[index],wanted)
+                    wanted=np.where(stabilizing,(prepared.power(proposal,level,equipment_retained=equipment_retained,round_id=round_id)>prepared.power(copies,level,equipment_retained=equipment_retained,round_id=round_id))&prepared.supported[index],wanted)
                 interest=static(data,'interest')
                 reserve=np.minimum(gold,float(interest['cap'])/float(interest['gold_per_interest'])*float(interest['gold_per_tick']))
                 minimum=0 if key_mask[index] else np.where(has_floor,floor,reserve)
@@ -357,7 +374,7 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
                 wanted=prepared.target[picked]
                 if stabilizing[rows].any():
                     proposal=copies[rows].copy(); proposal[np.arange(len(rows)),picked]+=1
-                    improvement=(prepared.power(proposal,level[rows])>prepared.power(copies[rows],level[rows]))&prepared.supported[picked]
+                    improvement=(prepared.power(proposal,level[rows],equipment_retained=equipment_retained[rows],round_id=round_id)>prepared.power(copies[rows],level[rows],equipment_retained=equipment_retained[rows],round_id=round_id))&prepared.supported[picked]
                     wanted=np.where(stabilizing[rows],improvement,wanted)
                 need=stabilizing[rows]|(copies[rows,picked]<desired[picked])
                 interest=static(data,'interest')
@@ -369,7 +386,7 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
             natural[:]=False
             refresh+=1
         forced=bool(deadline and round_index(round_id,data)>=round_index(deadline,data))
-        power=prepared.power(copies,level,forced=forced)
+        power=prepared.power(copies,level,forced=forced,equipment_retained=equipment_retained,round_id=round_id)
         other_powers=[curve[round_id]+offsets[id] for id in ids]
         kind=static(data,'round_types').get(round_id)
         if kind is None:
@@ -387,7 +404,8 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
             survivor_scale=keyed(tunable(data,'survivor_scale_by_stage'),stage)
             if survivor_scale is None:
                 raise DataError(f'Missing survivor scale: {stage}')
-            survivors=standard_level(round_id,data)*_np_sigmoid(float(survivor_scale)*(opponent-fight_power))
+            physical_counts=np.asarray([max(0,min(28,par_counts[round_id]+count_offsets[id])) for id in ids])[selected]
+            survivors=physical_counts*_np_sigmoid(float(survivor_scale)*(opponent-fight_power))
             damage=static(data,'player_damage')
             lost=float(keyed(damage['stage_base'],stage))+float(damage['per_survivor'])*survivors
             hp=np.maximum(0,hp-loss*lost)
@@ -418,7 +436,7 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
         xp+=alive*(float(rules['passive_xp'])+effects.xp_per_round+float(reward.get('xp',0)))
         level,xp=normalize_xp(level,xp,data)
         # Passive XP can raise the terminal unit cap after the current fight.
-        terminal_power=prepared.power(copies,level,forced=forced)
+        terminal_power=prepared.power(copies,level,forced=forced,equipment_retained=equipment_retained,round_id=round_id)
         terminal=_terminal(terminal_power,hp,other_powers,health,stage,data)
         # Held gold approximates future buying capacity beyond this bounded horizon.
         # This explicit family-1 coefficient remains default/carried until fitted.

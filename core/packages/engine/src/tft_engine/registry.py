@@ -34,7 +34,7 @@ def default_hooks():
     ownership=('board','bench','inventory_complete')
     items=ownership+('item_bench','item_inventory_complete')
     choices=items+('gold','hp','level','xp','streak','lobby','lobby_complete')
-    stochastic=('slot_count','shop','roll_down','held_augments','held_augments_complete','augment_tier','remaining_effects','remaining_effects_complete','comp_lock','pinned_line','include_unguided')
+    stochastic=('team_slot_budget','slot_count','shop','roll_down','held_augments','held_augments_complete','augment_tier','remaining_effects','remaining_effects_complete','comp_lock','pinned_line','include_unguided')
     return (DomainHook('shop',ownership+('shop','gold','level'),advice=shop_advice,activation_field='shop',dependency_fields=choices+stochastic),
         DomainHook('item',items,fit=item_fit,advice=item_advice,fit_required_fields=items,activation_field='item_bench',advice_phases=('planning','roll_down','augment'),dependency_fields=choices+stochastic+('item_offers','item_offers_complete','choice_kind')),
         DomainHook('wisp',choices+('wisp','wisp_complete','slot_count','wisp_purchases_this_round','wisp_purchase_count_complete'),fit=wisp_fit,advice=wisp_advice,activation_field='wisp',dependency_fields=stochastic),
