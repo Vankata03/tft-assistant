@@ -1,5 +1,6 @@
 """Analytic champion shop calls consistent with the Line's gold boundary."""
 from .planning import read
+from .capacity_fields import evidence_from_snapshot
 from collections.abc import Mapping
 from .models import Advice, ScoredOption, Board, _encode
 from .planning import required, owned_board
@@ -20,13 +21,14 @@ def advice(context):
     floor=selected.projections[0].planned_gold
     if floor is None:
         return ()
+    capacity=evidence_from_snapshot(snapshot,data)
     board=owned_board(snapshot,data); copies=owned_copies(board,data)
     target=key_goals(data.guides[plan.target],data)
     alternatives=plan.candidates if plan.status=='open' else (plan.backup,)
     other={pool:goal for id in alternatives if id in data.guides for pool,goal in key_goals(data.guides[id],data).items()}
     gold=float(read(snapshot,data,'gold')); allowance=max(0,gold-floor)
     rolling=bool(plan.line and snapshot.round_id in plan.line.rolls)
-    current=strength(context.recommended_board,int(read(snapshot,data,'level')),data)
+    current=strength(context.recommended_board,int(read(snapshot,data,'level')),data,capacity=capacity)
     options=[]; buys=[]
     for index,row in enumerate(read(snapshot,data,'shop')):
         if not isinstance(row,Mapping):
@@ -37,8 +39,8 @@ def advice(context):
         pool=canonical_id(id,data); count=copies.get(pool,0)
         cost=float(row.get('cost',data.entities[id].cost)); slot=row.get('slot',index)
         preview=add_copy(board,id,data)
-        strongest=strongest_owned_board(preview,int(read(snapshot,data,'level')),data,target=plan.target,round_id=snapshot.round_id)
-        gain=strength(strongest,int(read(snapshot,data,'level')),data)-current
+        strongest=strongest_owned_board(preview,int(read(snapshot,data,'level')),data,target=plan.target,round_id=snapshot.round_id,capacity=capacity)
+        gain=strength(strongest,int(read(snapshot,data,'level')),data,capacity=capacity)-current
         reason='target_key' if pool in target and count<target[pool] else 'backup_key' if pool in other and count<other[pool] else 'pair' if count%3 in (1,2) and count<9 else 'power' if gain>=stage_tunable(data,'board_power_buy_min',snapshot.round_id) else None
         budget=max(0,gold-plan.line.rolls[snapshot.round_id]) if rolling else allowance
         allowed=bool(reason and cost<=gold and (reason=='target_key' and not rolling or cost<=budget))
@@ -54,7 +56,7 @@ def advice(context):
         if allowed:
             buys.append({'slot':slot,'unit_id':id,'cost':cost,'reason':reason,**({'overflow_sells':overflow,'overflow_gold':overflow_gold} if overflow else {})})
             gold+=overflow_gold-cost; allowance=max(0,allowance+overflow_gold-cost); board=after; copies=owned_copies(board,data)
-            current=strength(strongest,int(read(snapshot,data,'level')),data)
+            current=strength(strongest,int(read(snapshot,data,'level')),data,capacity=capacity)
     items=[]
     if options:
         items.append(Advice('shop','Buy highlighted units' if buys else 'Hold shop','act_this_phase' if buys else 'information',float(tunable(data,'confidence_medium_min')),'analytic_shop',

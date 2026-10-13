@@ -205,6 +205,7 @@ def patch_files(path):
         "econ_augments": {},
         "augment_pools": {"silver": [], "gold": [], "prismatic": []},
         "threat_keywords": {},
+        "team_capacity": {"levels": {str(level): level for level in range(1,11)}, "trait_bonuses": [], "held_augment_slots": {}, "inventory_item_slots": {}, "transition_policy": {"deploy":"reserve_before","swap":"remove_then_reserve","bench":"validate_after"}},
         "bench_size": 9,
         "item_recipes": {},
         "trait_rules": {},
@@ -245,7 +246,7 @@ def patch_files(path):
         tomli_w.dumps({"patch": "test.1", "fields": tunables})
     )
     (path / "entities.json").write_text(
-        '{"entities":[{"id":"fixture-unit","kind":"unit","name":"Fixture unit","cost":2,"traits":[],"text":"Reaches the backline","icon":"https://example.invalid/icon.png","values":{}}]}'
+        '{"entities":[{"id":"fixture-unit","kind":"unit","name":"Fixture unit","cost":2,"traits":[],"text":"Reaches the backline","icon":"https://example.invalid/icon.png","values":{"team_slot_cost":{"value":1,"source":"default"}}}]}'
     )
     return path
 
@@ -521,7 +522,7 @@ def test_tactics_checked_rows_expose_rates_and_map_trait_tier_to_breakpoint(tmp_
                         "kind": "unit",
                         "name": "Fixture unit",
                         "cost": 2,
-                        "values": {},
+                        "values": {"team_slot_cost": {"value": 1, "source": "default"}},
                     },
                     {
                         "id": "DA_18_Spellweaver",
@@ -797,6 +798,19 @@ def test_new_set_cli_archives_overrides_and_drops_set_specific_margin(tmp_path):
     owner = tmp_path / "overrides.toml"
     original = '[entities.fixture-unit]\nname="Owner fixture"\n'
     owner.write_text(original)
+    overlay=fresh/'capacity.json'
+    overlay.write_text(json.dumps({'schema_version':1,'patch':'test.2','set_number':19,
+        'entities':{'fixture-unit':{'values':{'team_slot_cost':{'value':1,'source':'owner',
+            'citation':'Declared synthetic ordinary-unit rule; not patch evidence'}}}}}))
+    uncertified=['new-set','test.2','--from-patch','test.1','--data-dir',str(tmp_path),
+        '--static-file',str(fresh/'static.toml'),'--tunables-file',str(fresh/'tunables.toml'),
+        '--cdragon-file',str(fresh/'cdragon.json'),'--live-at','2026-10-10T10:00:00+03:00',
+        '--overrides',str(owner)]
+    assert main(uncertified)==2
+    assert owner.read_text()==original
+    assert not (tmp_path/'overrides-set18.toml').exists()
+    assert not (tmp_path/'test.2').exists()
+    assert not (tmp_path/'patches.toml').exists()
     assert (
         main(
             [
@@ -816,6 +830,7 @@ def test_new_set_cli_archives_overrides_and_drops_set_specific_margin(tmp_path):
                 "2026-10-10T10:00:00+03:00",
                 "--overrides",
                 str(owner),
+                "--entity-overlay-file",str(overlay),
             ]
         )
         == 0
@@ -1134,3 +1149,16 @@ def test_supported_conditional_and_sale_effects_publish_as_immutable_patch_data(
     assert result.snapshot.value('wisps')['fixture']['effect_kind']==effect['effect_kind']
     with pytest.raises(TypeError):
         result.snapshot.value('wisps')['fixture']['values']['invented']=0
+
+
+def test_refresh_refuses_uncertified_team_slot_cost_and_keeps_previous_snapshot(tmp_path):
+    import json
+    path=patch_files(tmp_path/'capacity-patch')
+    store=DataStore(tmp_path/'capacity-store')
+    first=store.refresh(path,now=NOW)
+    payload=json.loads((path/'entities.json').read_text())
+    payload['entities'][0]['values'].pop('team_slot_cost')
+    (path/'entities.json').write_text(json.dumps(payload))
+    failed=store.refresh(path,now=NOW)
+    assert failed.snapshot.snapshot_id==first.snapshot.snapshot_id
+    assert any('team slot cost unavailable' in text for text in failed.warnings)

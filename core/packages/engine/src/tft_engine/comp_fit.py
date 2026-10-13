@@ -5,7 +5,7 @@ from math import exp
 from tft_data.models import DataError, freeze
 from .models import Board, Unit
 from .power import strength, placement, static, tunable, keyed, win_probability, surviving_units
-from .growth import growth_curve_lookup, standard_level
+from .growth import growth_curve_lookup, standard_level, par_unit_count
 from .shop_math import hit_probability, key_goals, owned_copies
 from .lines import guide_line, current_level_target
 from .opponents import round_index
@@ -27,7 +27,7 @@ class CompFit:
 def damage_divisor(round_id,data):
     stage=int(round_id.split('-')[0])
     damage=static(data,'player_damage')
-    value=float(keyed(damage['stage_base'],stage))+float(damage['per_survivor'])*standard_level(round_id,data)
+    value=float(keyed(damage['stage_base'],stage))+float(damage['per_survivor'])*par_unit_count(round_id,data)
     if value<=0:
         raise DataError('Nonpositive stage damage for placement')
     return value
@@ -36,16 +36,19 @@ def damage_divisor(round_id,data):
 def rounds_left_to_live(snapshot,data,opponents=()):
     from .planning import read
     board=read(snapshot,data,'board'); level=int(read(snapshot,data,'level'))
-    own=strength(board,level,data)
+    from .capacity_fields import evidence_from_snapshot
+    own=strength(board,level,data,capacity=evidence_from_snapshot(snapshot,data))
     stage=int(snapshot.round_id.split('-')[0])
     from .lobby import alive_lobby
     roster=alive_lobby(snapshot,data)
-    by_id={opponent.opponent_id:opponent.power for opponent in opponents}
-    powers=[by_id[id] if id in by_id else growth_curve_lookup(snapshot.round_id,data) for id in roster]
+    by_id={opponent.opponent_id:opponent for opponent in opponents}
+    par_count=par_unit_count(snapshot.round_id,data)
+    powers=[(by_id[id].power,by_id[id].expected_unit_count if by_id[id].expected_unit_count is not None else par_count)
+        if id in by_id else (growth_curve_lookup(snapshot.round_id,data),par_count) for id in roster]
     loss=0.0
-    for power in powers:
+    for power,physical_count in powers:
         damage=static(data,'player_damage')
-        survivors=surviving_units(max(0,power-own),stage,standard_level(snapshot.round_id,data),data)
+        survivors=surviving_units(max(0,power-own),stage,physical_count,data)
         loss+=(1-win_probability(own,power,stage,data))*(float(keyed(damage['stage_base'],stage))+float(damage['per_survivor'])*survivors)
     loss/=len(powers)
     return float(read(snapshot,data,'hp'))/loss if loss>0 else float('inf')
@@ -100,9 +103,36 @@ def screen_comp(snapshot,data,guide,context,domain_terms,*,opponents=(),rounds_l
     by_id={o.opponent_id:o.power for o in opponents}
     opposing=tuple(by_id[id] if id in by_id else growth_curve_lookup(snapshot.round_id,data) for id in hp_map)
     from .shop_math import canonical_id
-    ideal=Board(tuple(Unit(id,3 if goals.get(canonical_id(id,data),0)>=9 else 2 if canonical_id(id,data) in goals else 1) for id in guide.units[:int(read(snapshot,data,'level'))]))
-    ideal_power=strength(ideal,int(read(snapshot,data,'level')),data)
-    missing_power=strength(read(snapshot,data,'board'),int(read(snapshot,data,'level')),data)
+    from .transition import strongest_owned_board
+    from .capacity_fields import evidence_from_snapshot
+    capacity=evidence_from_snapshot(snapshot,data)
+    observed=context.recommended_board
+    equipment={}
+    from .capacity import CapacityModel
+    model=CapacityModel(data)
+    holders=observed.units+observed.bench if model.items or model.traits else ()
+    for unit in holders:
+        if unit.items:
+            pool=canonical_id(unit.unit_id,data)
+            equipment[pool]=equipment.get(pool,())+unit.items
+    proposed=[]
+    for id in guide.units:
+        pool=canonical_id(id,data)
+        items=equipment.pop(pool,())
+        if items:
+            from .capacity import integral
+            limit=static(data,'rules_flags').get('item_slots_max')
+            if limit is None:
+                raise DataError('Ideal comp equipment merge/overflow rule unavailable')
+            integral(limit,'equipment slots',1)
+            if len(items)>limit:
+                raise DataError('Ideal comp equipment merge/overflow rule unavailable')
+        proposed.append(Unit(id,3 if goals.get(pool,0)>=9 else 2 if pool in goals else 1,items))
+    proposed.extend(Unit(next(unit.unit_id for unit in observed.units+observed.bench if canonical_id(unit.unit_id,data)==pool),items=items) for pool,items in equipment.items())
+    ideal_owned=Board((),tuple(proposed))
+    ideal=strongest_owned_board(ideal_owned,int(read(snapshot,data,'level')),data,target=guide.id,round_id=snapshot.round_id,capacity=capacity)
+    ideal_power=strength(ideal,int(read(snapshot,data,'level')),data,capacity=capacity)
+    missing_power=strength(read(snapshot,data,'board'),int(read(snapshot,data,'level')),data,capacity=capacity)
     divisor=damage_divisor(snapshot.round_id,data)
     ideal_placement=placement(ideal_power,opposing,hp,health,divisor,data)
     miss_placement=placement(missing_power,opposing,hp,health,divisor,data)

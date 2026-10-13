@@ -40,3 +40,6 @@ Ticket 40's final bounded Mac15,10/M3 Max smoke exceeds 100 ms: 36 concrete Line
 ### 2026-10-10 — codex (qualification split)
 
 Ticket 38's software tests exercise pinned CPU inference, all nine bench slots, tall-healthbar retention and reviewed offset calibration, tracking disagreements, crop labeling, game-group holdout, class regression rejection and export parity. No full owner-labeled dataset, measured Maokai foot offset, Windows recognition accuracy or live latency result is available. Those conditions remain here; the parent task remains unfinished.
+
+
+Ticket 54 retains an active-form producer condition: own variable base identities require a resolved typed active form for rollout valuation. Capture currently preserves its base classifier identity and separate positive traits/origin observations. It does not fabricate a chosen form. Reconcile that producer contract against pinned form metadata before declaring full production/gameplay coverage. Remote slot-budget observations are also not produced; modifier-aware opponent inference returns an explicit qualified par fallback when such evidence is unavailable.

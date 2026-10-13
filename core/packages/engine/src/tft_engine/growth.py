@@ -38,7 +38,9 @@ def expected_unit_power(unit_id, round_id, data):
     return total, confidence, tuple(warnings)
 
 
-def average_unit_power(level, round_id, data):
+def average_unit_power(level, round_id, data, *, count_only=False):
+    from .capacity import CapacityModel
+    capacity=CapacityModel(data)
     odds = keyed(static(data,'shop_odds'),level)
     if odds is None or len(odds) != 5 or any(p < 0 for p in odds) or abs(sum(odds)-1) > 1e-9:
         raise DataError(f'Invalid or missing shop odds for level {level}')
@@ -49,9 +51,21 @@ def average_unit_power(level, round_id, data):
         roster = [e for e in data.entities.values() if e.kind == 'unit' and e.cost == cost]
         if not roster:
             raise DataError(f'No roster for shop cost {cost}')
-        weighted = [(unit_play_rate(e.id,data),expected_unit_power(e.id,round_id,data)[0]) for e in roster]
+        weighted=[]
+        for entity in roster:
+            cost=capacity.cost(entity.id)
+            if cost<=0:
+                raise DataError('Zero-slot units require a sourced par frequency model')
+            weighted.append((unit_play_rate(entity.id,data),(1 if count_only else expected_unit_power(entity.id,round_id,data)[0])/cost))
         total += chance * sum(rate * power for rate,power in weighted) / sum(rate for rate,_ in weighted)
     return total
+
+
+def par_unit_count(round_id,data):
+    """Physical-unit approximation from the sourced base budget and slot mix."""
+    from .capacity import CapacityModel
+    level=standard_level(round_id,data)
+    return min(28,CapacityModel(data).base(level)*average_unit_power(level,round_id,data,count_only=True))
 
 
 def growth_curve_lookup(round_id, data, *, curve=None):
@@ -61,7 +75,10 @@ def growth_curve_lookup(round_id, data, *, curve=None):
         return float(curve[round_id])
     level = standard_level(round_id,data)
     stage = int(round_id.split('-')[0])
-    return level * average_unit_power(level,round_id,data) * float(tunable(data,'unit_weight')) + stage_items(stage,data) * float(tunable(data,'item_weight'))
+    from .capacity import CapacityModel
+    # Par has no captured item/augment/trait activation. It values the explicit
+    # level budget in slot-average units, without inventing those modifiers.
+    return CapacityModel(data).base(level) * average_unit_power(level,round_id,data) * float(tunable(data,'unit_weight')) + stage_items(stage,data) * float(tunable(data,'item_weight'))
 
 
 def growth_curve(data, *, observations=()):

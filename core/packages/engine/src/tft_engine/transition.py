@@ -4,6 +4,7 @@ from .power import strength, tunable, static, estimate_strength, stage_tunable
 from .lines import guide_line
 from .opponents import round_index
 from .shop_math import canonical_id
+from dataclasses import replace
 
 
 def main_roll_down(guide,data):
@@ -11,8 +12,12 @@ def main_roll_down(guide,data):
     return min(rolls,key=lambda r:round_index(r,data)) if rolls else None
 
 
-def strongest_owned_board(board,level,data,*,target=None,round_id=None):
+def strongest_owned_board(board,level,data,*,target=None,round_id=None,capacity=None,generic_item_power=None):
+    from .capacity import CapacityModel
+    model=CapacityModel(data)
+    model.check(board,level,capacity)
     units=board.units+board.bench
+    costs=[model.cost(u.unit_id) for u in units]
     guide=data.guides.get(target) if target else None
     deadline=main_roll_down(guide,data) if guide else None
     forced=bool(deadline and round_id and round_index(round_id,data)>=round_index(deadline,data))
@@ -26,25 +31,40 @@ def strongest_owned_board(board,level,data,*,target=None,round_id=None):
             return 0
         return sum(float(weights['carry'] if canonical_id(units[i].unit_id,data) in carry_pools else weights['key'] if canonical_id(units[i].unit_id,data) in key_pools else weights['other']) for i in indices if canonical_id(units[i].unit_id,data) in target_pools)
     def candidate(indices):
-        selected=tuple(units[i] for i in sorted(indices))
+        selected=tuple(units[i] if i<len(board.units) else replace(units[i],position=None) for i in sorted(indices))
         counts=board.trait_counts if selected==board.units else None
-        return Board(selected,tuple(units[i] for i in range(len(units)) if i not in indices),counts)
+        return Board(selected,tuple(replace(units[i],position=None) if i<len(board.units) else units[i] for i in range(len(units)) if i not in indices),counts)
     def score(indices):
-        return strength(candidate(indices),level,data)
+        value=estimate_strength(candidate(indices),level,data,capacity=capacity)
+        return value.power if generic_item_power is None else value.unit_term+value.trait_term+generic_item_power
+    def can_add(indices,new):
+        before=model.state(candidate(indices),level,capacity)
+        after=model.state(candidate(indices+[new]),level,capacity)
+        return len(indices)<28 and before.occupied_slots<=before.maximum_slots and before.occupied_slots+costs[new]<=before.maximum_slots and after.occupied_slots<=after.maximum_slots
+    def fill(indices):
+        indices=list(indices)
+        while True:
+            possibilities=[i for i in available if i not in indices and can_add(indices,i)]
+            if not possibilities:
+                return indices
+            evaluated=[(score(indices+[i]),progress(indices+[i]),i) for i in possibilities]
+            maximum=max(v[0] for v in evaluated)
+            eligible=[v for v in evaluated if v[0]>=maximum-tolerance]
+            chosen=max(eligible,key=lambda v:(v[1],v[0],-v[2]))
+            indices.append(chosen[2])
     selected=[]
     available=list(range(len(units)))
     if forced:
         # Comp membership outranks power only after the explicit Guide deadline.
         required=[i for i in available if canonical_id(units[i].unit_id,data) in target_pools]
-        required.sort(key=lambda i:(-progress([i]),-score([i]),i))
-        selected=required[:level]
-    while len(selected)<min(level,len(units)):
-        possibilities=[i for i in available if i not in selected]
-        evaluated=[(score(selected+[i]),progress(selected+[i]),i) for i in possibilities]
-        maximum=max(v[0] for v in evaluated)
-        eligible=[v for v in evaluated if v[0]>=maximum-tolerance]
-        chosen=max(eligible,key=lambda v:(v[1],v[0],-v[2]))
-        selected.append(chosen[2])
+        required.sort(key=lambda i:(-progress([i]),-score([i]) if can_add([],i) else float('inf'),i))
+        for i in required:
+            if can_add(selected,i):
+                selected.append(i)
+    selected=fill(selected)
+    current_indices=list(range(len(board.units)))
+    if (not forced or progress(current_indices)>=progress(selected)) and score(current_indices)>score(selected)+tolerance:
+        selected=current_indices
     # Strict progress-or-power improvement keeps the search finite and deterministic.
     seen={tuple(sorted(selected))}
     best_power=score(selected)
@@ -57,7 +77,10 @@ def strongest_owned_board(board,level,data,*,target=None,round_id=None):
             for new in available:
                 if new in selected:
                     continue
-                proposal=[i for i in selected if i!=old]+[new]
+                remaining=[i for i in selected if i!=old]
+                if not can_add(remaining,new):
+                    continue
+                proposal=fill(remaining+[new])
                 key=tuple(sorted(proposal))
                 if key in seen:
                     continue
@@ -74,16 +97,21 @@ def strongest_owned_board(board,level,data,*,target=None,round_id=None):
 
 def transition_advice(snapshot,recommended,plan,data):
     from .planning import read
+    from .capacity import CapacityModel
+    from .capacity_fields import evidence_from_snapshot
+    evidence=evidence_from_snapshot(snapshot,data)
     current=read(snapshot,data,'board')
     old=list(current.units); new=list(recommended.units)
     for unit in tuple(old):
         if unit in new:
             old.remove(unit); new.remove(unit)
-    value=estimate_strength(recommended,int(read(snapshot,data,'level')),data)
+    value=estimate_strength(recommended,int(read(snapshot,data,'level')),data,capacity=evidence)
     validity={'round':snapshot.round_id,'board':current.to_dict()}
     advice=[]
     if old or new:
-        advice.append(Advice('transition','Swap owned units','act_this_phase',value.confidence,'strongest_owned_board',{'power':value.power},('board','bench','round'),decision_id=f'{snapshot.snapshot_id}:transition',option_id='transition',payload={'swap_out':[u.unit_id for u in old],'swap_in':[u.unit_id for u in new],'board':recommended.to_dict()},validity_state=validity))
+        current=Board(current.units,tuple(read(snapshot,data,'bench')),current.trait_counts)
+        steps=CapacityModel(data).transition(current,recommended,int(read(snapshot,data,'level')),evidence)
+        advice.append(Advice('transition','Swap owned units','act_this_phase',value.confidence,'strongest_owned_board',{'power':value.power},('board','bench','round'),decision_id=f'{snapshot.snapshot_id}:transition',option_id='transition',payload={'swap_out':[u.unit_id for u in old],'swap_in':[u.unit_id for u in new],'board':recommended.to_dict(),'steps':steps},validity_state=validity))
     from .bench import bench_priority, roll_sale_indices
     priorities=bench_priority(recommended,data,target=plan.target,backup=plan.backup,recommended=recommended)
     capacity=int(static(data,'bench_size'))

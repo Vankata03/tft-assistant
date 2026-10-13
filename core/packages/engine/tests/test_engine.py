@@ -21,9 +21,9 @@ def tagged(value):
 
 def data(**changes):
     values = dict(snapshot_id='fixture', patch='test', set_number=18,
-        static={k: tagged(v) for k,v in {'lobby_top4_rate':0.5, 'shop_odds':{'3':[1,0,0,0,0]}, 'level_calendar':{'2-1':3,'3-1':4}, 'stage_items':{'2':{'finished':1,'component':0,'high_cost_finished':0},'3':{'finished':2,'component':0,'high_cost_finished':0}}}.items()},
+        static={k: tagged(v) for k,v in {'team_capacity':{'levels':{str(l):l for l in range(1,11)},'trait_bonuses':(),'held_augment_slots':{},'inventory_item_slots':{},'transition_policy':{'deploy':'reserve_before','swap':'remove_then_reserve','bench':'validate_after'}},'lobby_top4_rate':0.5, 'shop_odds':{'3':[1,0,0,0,0]}, 'level_calendar':{'2-1':3,'3-1':4}, 'stage_items':{'2':{'finished':1,'component':0,'high_cost_finished':0},'3':{'finished':2,'component':0,'high_cost_finished':0}}}.items()},
         tunables={k:tagged(v) for k,v in {'unit_weight':1,'trait_weight':1,'item_weight':1,'unit_prior_strength':100,'cost_star_baseline':{'1':{'1':1,'2':2,'3':3},'3':{'1':3,'2':4,'3':5}},'item_values':{'finished':1,'component':0.35,'high_cost_bonus':0.25},'confidence_medium_min':0.5,'confidence_high_min':0.8,'fight_scale':1,'win_scale_by_stage':{},'survivor_scale_by_stage':{'2':1},'terminal_hp_weight':1,'classifier_weights':{'carry':3,'key':2,'other':1,'bench':0.5},'classifier_threshold':0.5,'opponent_star_mix':{'2-1':{'1':[1,0,0],'3':[1,0,0]},'3-1':{'1':[0,1,0],'3':[0,1,0]}},'emblem_slack_max':2,'emblem_count_prior':{'0':1,'1':0.1,'2':0.01},'size_level_prior':{'3':{'1':0.01,'2':1,'3':0.1},'4':{'1':0.01,'2':1,'3':0.1,'4':0.01}},'sighting_persistence_weight':2,'sighting_full_weight_rounds':2,'sighting_half_life_rounds':1}.items()},
-        entities={'a': Entity('a','unit','A',1,('fire',),values={'top4_rate_1':tagged(0.8),'sample_count_1':tagged(100),'play_rate':tagged(0.75)}), 'b':Entity('b','unit','B',1,('fire',),values={'play_rate':tagged(0.25)}), 'c':Entity('c','unit','C',3,('water',)), 'fire':Entity('fire','trait','Fire',values={'breakpoints':tagged([2]),'top4_rate_2':tagged(0.8)}), 'water':Entity('water','trait','Water',values={'breakpoints':tagged([2])}), 'sword':Entity('sword','item','Sword',values={'component':tagged(True)}), 'blade':Entity('blade','item','Blade',values={'component':tagged(False)})},
+        entities={'a': Entity('a','unit','A',1,('fire',),values={'team_slot_cost':tagged(1),'top4_rate_1':tagged(0.8),'sample_count_1':tagged(100),'play_rate':tagged(0.75)}), 'b':Entity('b','unit','B',1,('fire',),values={'team_slot_cost':tagged(1),'play_rate':tagged(0.25)}), 'c':Entity('c','unit','C',3,('water',),values={'team_slot_cost':tagged(1)}), 'fire':Entity('fire','trait','Fire',values={'breakpoints':tagged([2]),'top4_rate_2':tagged(0.8)}), 'water':Entity('water','trait','Water',values={'breakpoints':tagged([2])}), 'sword':Entity('sword','item','Sword',values={'component':tagged(True)}), 'blade':Entity('blade','item','Blade',values={'component':tagged(False)})},
         guides={'comp':Guide('comp','A',('a','c'),carry_ids=('a',))})
     values.update(changes)
     return DataSnapshot(**values)
@@ -70,7 +70,7 @@ def test_hidden_rows_are_exactly_counted_and_must_stay_inactive():
     from dataclasses import replace
     from tft_engine import infer_opponent, TraitSighting
     snapshot = data()
-    snapshot = replace(snapshot, entities=dict(snapshot.entities) | {'c':Entity('c','unit','C',3,('water',),values={'play_rate':tagged(0.5)})})
+    snapshot = replace(snapshot, entities=dict(snapshot.entities) | {'c':Entity('c','unit','C',3,('water',),values={'team_slot_cost':tagged(1),'play_rate':tagged(0.5)})})
     snapshot = with_tunables(snapshot,emblem_slack_max=0)
     inferred = infer_opponent(TraitSighting('enemy','2-1',3,{'fire':1},1),snapshot)
     assert dict(inferred.probabilities) == pytest.approx({'a':0.75,'b':0.25,'c':1})
@@ -88,7 +88,7 @@ def test_emblem_slack_explains_counts_without_inventing_units():
 def test_set_specific_trait_grants_and_evolutions_reproduce_sightings():
     from tft_engine import infer_opponent, TraitSighting
     from dataclasses import replace
-    units = {'lux':Entity('lux','unit','Lux',3,('avatar',),values={'play_rate':tagged(1)}), 'dragon':Entity('dragon','unit','Dragon',3,('rift',),values={'play_rate':tagged(1)}), 'khazix':Entity('khazix','unit','Kha',3,('hunter',),values={'play_rate':tagged(1)})}
+    units = {'lux':Entity('lux','unit','Lux',3,('avatar',),values={'team_slot_cost':tagged(1),'play_rate':tagged(1)}), 'dragon':Entity('dragon','unit','Dragon',3,('rift',),values={'team_slot_cost':tagged(1),'play_rate':tagged(1)}), 'khazix':Entity('khazix','unit','Kha',3,('hunter',),values={'team_slot_cost':tagged(1),'play_rate':tagged(1)})}
     traits = {t:Entity(t,'trait',t,values={'breakpoints':tagged([2])}) for t in ('avatar','fire','water','rift','hunter','evolved')}
     snapshot = with_tunables(data(),emblem_slack_max=0,size_level_prior={'3':{'3':1}})
     snapshot = replace(snapshot,entities=units | traits, static=dict(snapshot.static) | {'trait_rules':tagged({'lux':{'choose_one':[{'fire':2},{'water':2}]},'dragon':{'counts':{'rift':2}},'khazix':{'optional_traits':['evolved']}})})
@@ -159,7 +159,7 @@ from test_engine import data, tagged, with_tunables
 from tft_data.models import Entity
 from tft_engine import infer_opponent, TraitSighting
 snapshot=data()
-units={str(i):Entity(str(i),'unit',str(i),1,('fire',),values={'play_rate':tagged(0.5)}) for i in range(45)}
+units={str(i):Entity(str(i),'unit',str(i),1,('fire',),values={'team_slot_cost':tagged(1),'play_rate':tagged(0.5)}) for i in range(45)}
 snapshot=replace(snapshot,entities=units | {'fire':snapshot.entities['fire']})
 snapshot=with_tunables(snapshot,emblem_slack_max=0,size_level_prior={'8':{'8':1}})
 result=infer_opponent(TraitSighting('enemy','2-1',8,{'fire':8}),snapshot)
@@ -256,7 +256,7 @@ def test_form_power_prefers_its_sampled_star_statistics_while_pool_identity_stay
     from tft_data.models import Entity, Statistic
     from tft_engine import estimate_strength
     snapshot=data()
-    form=Entity('a_form','unit_form','A form',1,('fire',),values={'pool_id':tagged('a'),'canonical_id':tagged('a')})
+    form=Entity('a_form','unit_form','A form',1,('fire',),values={'team_slot_cost':tagged(1),'pool_id':tagged('a'),'canonical_id':tagged('a')})
     stats=(Statistic('a','unit',4.5,100,'test','tactics.tools',unit_star=3,top4_rate=0),
            Statistic('a_form','unit',1,24,'test','tactics.tools',unit_star=3,top4_rate=1))
     snapshot=replace(snapshot,entities=dict(snapshot.entities)|{'a_form':form},statistics=stats)

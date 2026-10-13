@@ -64,6 +64,7 @@ def main(argv=None, *, riot_client=None):
         bootstrap.add_argument("--cdragon-file")
         bootstrap.add_argument("--ddragon-file")
         bootstrap.add_argument("--dragon-version")
+        bootstrap.add_argument("--entity-overlay-file")
         if command == "new-set":
             bootstrap.add_argument("--from-patch", required=True)
             bootstrap.add_argument("--live-at", required=True)
@@ -82,6 +83,7 @@ def main(argv=None, *, riot_client=None):
                 if args.ddragon_file
                 else None,
                 "dragon_version": args.dragon_version,
+                "entity_overlay_file": args.entity_overlay_file,
             }
             if args.command == "new-set":
                 target = prepare_new_set(

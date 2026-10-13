@@ -158,6 +158,10 @@ def pivot_margin(snapshot,data,guide):
 
 def _commit_trigger(snapshot,data,ordered,fits):
     board=owned_board(snapshot,data)
+    from .capacity import CapacityModel
+    from .capacity_fields import evidence_from_snapshot
+    capacity=evidence_from_snapshot(snapshot,data)
+    CapacityModel(data).check(board,read(snapshot,data,'level'),capacity,check_observed=True)
     for id in ordered:
         guide=data.guides[id]
         keys={canonical_id(id,data) for id in set(guide.carry_ids)|set(getattr(guide,'key_ids',()))}
@@ -251,7 +255,7 @@ def _simulation_reuse():
     from .effects import captured, combine
     memo={}; models={}
     stats={'simulation_requests':0,'simulation_cache_hits':0,'executed_simulation_calls':0,'executed_concrete_lines':0,'executed_rollouts':0}
-    names=('board','bench','gold','hp','level','xp','streak','lobby','lobby_complete','slot_count','shop')
+    names=('board','bench','gold','hp','level','xp','streak','lobby','lobby_complete','team_slot_budget','held_augments','held_augments_complete','item_bench','item_inventory_complete','slot_count','shop')
     def simulate(snapshot,history,data,comp_id,lines,**options):
         from .lobby import alive_lobby
         alive_lobby(snapshot,data) # Coverage must qualify before any cache lookup.
@@ -279,6 +283,10 @@ def _step(snapshot,history,data,previous,hooks,*,seed=None,effects=None,rollouts
     explicit_effects=effects
     captured(snapshot,data) # Validate dependent counters before planning; simulation resolves them once.
     board=owned_board(snapshot,data)
+    from .capacity import CapacityModel
+    from .capacity_fields import evidence_from_snapshot
+    capacity=evidence_from_snapshot(snapshot,data)
+    CapacityModel(data).check(board,read(snapshot,data,'level'),capacity,check_observed=True)
     from .lobby import alive_lobby
     ids=tuple(alive_lobby(snapshot,data))
     opponents=tuple(opponent for opponent in opponents_from_history(history,snapshot.round_id,data,opponent_ids=ids) if opponent.opponent_id in ids)
@@ -337,7 +345,7 @@ def _step(snapshot,history,data,previous,hooks,*,seed=None,effects=None,rollouts
         score(plan.target,plan.backup)
         plan=_choose_plan(snapshot,data,previous,fits)
     plan=_line_choice(snapshot,data,previous,plan,results.get(plan.target,()))
-    recommended=strongest_owned_board(board,int(read(snapshot,data,'level')),data,target=plan.target if plan.status=='committed' else None,round_id=snapshot.round_id)
+    recommended=strongest_owned_board(board,int(read(snapshot,data,'level')),data,target=plan.target if plan.status=='committed' else None,round_id=snapshot.round_id,capacity=capacity)
     context=EngineContext(snapshot,history,data,plan,fits,results,recommended,context.seed,opponents,workload,explicit_effects,_simulation)
     return context
 
@@ -427,7 +435,7 @@ def decision_evidence(advice,context,names):
 
 
 def core_evidence(items,context):
-    names=('board','bench','inventory_complete','gold','hp','level','xp','streak','lobby','lobby_complete','slot_count','shop','phase','planning_phase','roll_down','comp_lock','pinned_line','include_unguided','held_augments','held_augments_complete','item_bench','item_inventory_complete','remaining_effects','remaining_effects_complete')
+    names=('board','bench','inventory_complete','gold','hp','level','xp','streak','lobby','lobby_complete','team_slot_budget','slot_count','shop','phase','planning_phase','roll_down','comp_lock','pinned_line','include_unguided','held_augments','held_augments_complete','item_bench','item_inventory_complete','remaining_effects','remaining_effects_complete')
     return tuple(decision_evidence(a,context,names) if a.decision in ('econ','pivot','plan','transition') else a for a in items)
 
 
@@ -514,6 +522,11 @@ def best_choice_fit(context,changes,*,hooks=None,effects=None,rollouts=None):
         fields.update({name:FieldValue(value,context.snapshot.captured_at,'choice',1)
             for name,value in (('phase','planning'),('planning_phase',True))})
     changed=replace(context.snapshot,fields=fields)
+    if set(changes)&{'board','bench','held_augments','item_bench'} or (effects is not None and (effects.item_state is not None or effects.item_bench_state is not None)):
+        # The captured budget certifies the observed board, not a changed option.
+        # Its hypothetical budget comes only from the same sourced model.
+        fields.pop('team_slot_budget',None)
+        changed=replace(changed,fields=fields)
     if hooks is None:
         from .registry import default_hooks
         hooks=default_hooks()

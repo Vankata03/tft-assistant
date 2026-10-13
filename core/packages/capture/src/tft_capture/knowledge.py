@@ -3,7 +3,6 @@
 This projection uses source trait rules and refund tables. It supplies no patch
 fallbacks or recognition guesses; missing tables leave their validations closed.
 """
-from itertools import combinations
 from collections.abc import Mapping
 
 from tft_capture.ocr import NameCatalog
@@ -11,8 +10,18 @@ from tft_data.models import TaggedValue
 
 
 def project_data(data):
+    from tft_data.capacity import unit_slot_cost
+    from tft_data.models import DataError
+    costs={}
+    for id,entity in data.entities.items():
+        if entity.kind in ('unit','unit_form'):
+            try:
+                unit_slot_cost(data.entities,id)
+                costs[id]=entity.values['team_slot_cost']
+            except DataError:
+                pass # Missing certificates leave slot validation closed.
     names = {kind: {} for kind in ('units', 'traits', 'augments', 'items', 'wisps', 'effects')}
-    kinds = {'unit': 'units', 'trait': 'traits', 'augment': 'augments', 'item': 'items', 'wisp': 'wisps'}
+    kinds = {'unit': 'units', 'unit_form':'units', 'trait': 'traits', 'augment': 'augments', 'item': 'items', 'wisp': 'wisps'}
     rules = data.static.get('trait_rules')
     refunds = data.static.get('sell_values')
     known_items = {identity for identity, entity in data.entities.items()
@@ -36,29 +45,14 @@ def project_data(data):
                 item_trait_sources[entity.id] = {'value': dict(grants.value), 'source': grants.source,
                     'citation': grants.citation, 'family': grants.family,
                     'data_snapshot_id': data.snapshot_id}
-        if entity.kind != 'unit':
+        if entity.kind not in ('unit','unit_form'):
             continue
         if refunds and str(entity.cost) in refunds.value:
             sale_values[entity.id] = dict(refunds.value[str(entity.cost)])
         if rules is None:
             continue
-        rule = rules.value.get(entity.id, {})
-        if 'replace' in rule:
-            unit_variants[entity.id] = [dict(choice) for choice in rule['replace']]
-            continue
-        counts = {trait: 1 for trait in entity.traits}
-        counts.update(rule.get('counts', {}))
-        variants = []
-        optional = tuple(rule.get('optional_traits', ()))
-        for choice in rule.get('choose_one', ({},)):
-            for size in range(len(optional)+1):
-                for subset in combinations(optional, size):
-                    variant = dict(counts)
-                    for trait, count in choice.items():
-                        variant[trait] = variant.get(trait, 0) + count
-                    for trait in subset:
-                        variant[trait] = variant.get(trait, 0) + 1
-                    variants.append(variant)
-        unit_variants[entity.id] = variants
+        from tft_data.traits import unit_trait_variants
+        unit_variants[entity.id]=list(unit_trait_variants(entity.id,data))
     return {'catalog': NameCatalog(names), 'unit_variants': unit_variants, 'sale_values': sale_values,
-        'effect_sources': effect_sources, 'item_traits': item_traits, 'item_trait_sources': item_trait_sources}
+        'effect_sources': effect_sources, 'item_traits': item_traits, 'item_trait_sources': item_trait_sources,
+        'unit_counter':data.static.get('capture_unit_counter'),'unit_slot_costs':costs}

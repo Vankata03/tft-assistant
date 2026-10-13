@@ -2,38 +2,7 @@
 from itertools import combinations
 from .power import static
 
-def unit_trait_variants(unit_id, data):
-    entity = data.entities[unit_id]
-    counts = {t: 1 for t in entity.traits}
-    rules = data.static.get('trait_rules')
-    pool = entity.values.get('pool_id') or entity.values.get('canonical_id')
-    rule = rules.value.get(unit_id, rules.value.get(pool.value, {}) if pool else {}) if rules else {}
-    if 'replace' in rule:
-        result=tuple(dict(v) for v in rule['replace'])
-        if entity.kind=='unit_form':
-            result=tuple(v for v in result if set(v)==set(entity.traits))
-            if not result:
-                raise DataError(f'No trait rule matches active form: {unit_id}')
-        return result
-    counts.update(rule.get('counts', {}))
-    choices = rule.get('choose_one', ({},))
-    optional = tuple(rule.get('optional_traits', ()))
-    result = []
-    for choice in choices:
-        for size in range(len(optional) + 1):
-            for subset in combinations(optional, size):
-                value = dict(counts)
-                for trait, count in choice.items():
-                    value[trait] = value.get(trait, 0) + int(count)
-                for trait in subset:
-                    value[trait] = value.get(trait, 0) + 1
-                if value not in result:
-                    result.append(value)
-    if entity.kind=='unit_form' and pool and rule:
-        result=[v for v in result if set(v)==set(entity.traits)]
-        if not result:
-            raise DataError(f'No trait rule matches active form: {unit_id}')
-    return tuple(result)
+from .trait_forms import unit_trait_variants
 
 from dataclasses import dataclass
 from math import exp, log
@@ -92,6 +61,16 @@ def unit_play_rate(unit_id, data):
 
 def infer_opponent(sighting: TraitSighting, data, *, previous: InferredBoard | None = None) -> InferredBoard:
     visible = sighting.traits
+    from .capacity import CapacityModel
+    capacity=CapacityModel(data)
+    known_budget=capacity.base(sighting.level)+capacity.trait_bonus(visible)
+    budget=sighting.team_slot_budget
+    if budget is None:
+        if capacity.augments or capacity.items:
+            return InferredBoard(sighting.opponent_id,sighting.round_id,sighting.level,{},0.0,0,'Opponent capacity modifiers require positively observed team slot budget; no posterior retained')
+        budget=known_budget
+    elif budget<known_budget or (not capacity.augments and not capacity.items and budget!=known_budget):
+        raise DataError('Observed opponent team slot budget conflicts with sourced capacity')
     hidden = sighting.hidden_traits
     slack = int(tunable(data, 'emblem_slack_max'))
     first_breakpoint = {}
@@ -140,7 +119,7 @@ def infer_opponent(sighting: TraitSighting, data, *, previous: InferredBoard | N
     traits=tuple(sorted(first_breakpoint))
     trait_index={t:i for i,t in enumerate(traits)}
     empty=(0,)*len(traits)
-    states={((empty,),0):(1.0,1,1.0,{})}
+    states={((empty,),0,0):(1.0,1,1.0,{})}
     tagged_cap=data.tunables.get('opponent_inference_state_cap')
     cap=int(tagged_cap.value) if tagged_cap else None
     if cap is not None and cap<1:
@@ -151,16 +130,17 @@ def infer_opponent(sighting: TraitSighting, data, *, previous: InferredBoard | N
         outside=[(t,counts[i]) for i,t in enumerate(traits) if t not in visible and counts[i]]
         return len(outside)<=hidden and all(n<first_breakpoint[t] for t,n in outside)
     for unit_id,variants,log_prior in roster:
+        slot_cost=capacity.cost(unit_id)
         rate=exp(log_prior)
         vectors=tuple(set(tuple(v.get(t,0) for t in traits) for v in variants))
         next_states=dict(states)
-        for (family,size),(weight,number,maximum,moments) in states.items():
-            if size>=sighting.level:
+        for (family,size,occupied),(weight,number,maximum,moments) in states.items():
+            if size>=28 or occupied+slot_cost>budget:
                 continue
             merged=tuple(sorted({tuple(a+b for a,b in zip(counts,vector)) for counts in family for vector in vectors if feasible(tuple(a+b for a,b in zip(counts,vector)))}))
             if not merged:
                 continue
-            key=(merged,size+1)
+            key=(merged,size+1,occupied+slot_cost)
             old_weight,old_number,old_maximum,old_moments=next_states.get(key,(0.0,0,0.0,{}))
             updated=dict(old_moments)
             for id,moment in moments.items():
@@ -173,7 +153,7 @@ def infer_opponent(sighting: TraitSighting, data, *, previous: InferredBoard | N
     total=maximum=0.0
     candidate_count=0
     moments={}
-    for (family,size),(weight,number,top,first_moments) in states.items():
+    for (family,size,occupied),(weight,number,top,first_moments) in states.items():
         best_prior=0.0
         for counts in family:
             outside={t:counts[i] for i,t in enumerate(traits) if t not in visible and counts[i]}
@@ -209,17 +189,18 @@ class OpponentEstimate:
     labels: tuple
     warnings: tuple[str, ...] = ()
     data_confidence: float = 1.0
+    expected_unit_count: float | None = None
     def __post_init__(self):
         object.__setattr__(self,'probabilities',freeze(self.probabilities))
         object.__setattr__(self,'expected_copies',freeze(self.expected_copies))
 
 
 def estimate_opponent(sighting: TraitSighting | None, inferred: InferredBoard | None, round_id, data, *, opponent_id='', curve=None):
-    from .growth import standard_level, growth_curve_lookup, expected_unit_power, average_unit_power, star_mix
+    from .growth import standard_level, growth_curve_lookup, expected_unit_power, average_unit_power, star_mix, par_unit_count
     from .power import trait_term, stage_items
     from .classifier import classify
     if sighting is None or inferred is None or not inferred.candidate_count:
-        return OpponentEstimate(sighting.opponent_id if sighting else opponent_id,growth_curve_lookup(round_id,data,curve=curve),standard_level(round_id,data),0.0,age_weight(max(0,round_index(round_id,data)-round_index(sighting.round_id,data)),data) if sighting else 0.0,0.0,{}, {},(),((inferred.fallback_reason if inferred and inferred.fallback_reason else 'No supported inference; par growth used'),))
+        return OpponentEstimate(sighting.opponent_id if sighting else opponent_id,growth_curve_lookup(round_id,data,curve=curve),standard_level(round_id,data),0.0,age_weight(max(0,round_index(round_id,data)-round_index(sighting.round_id,data)),data) if sighting else 0.0,0.0,{}, {},(),((inferred.fallback_reason if inferred and inferred.fallback_reason else 'No supported inference; par growth used'),),expected_unit_count=par_unit_count(round_id,data))
     if inferred.opponent_id != sighting.opponent_id or inferred.round_id != sighting.round_id:
         raise ValueError('Inference does not match its sighting')
     rounds_old = max(0,round_index(round_id,data)-round_index(sighting.round_id,data))
@@ -232,7 +213,10 @@ def estimate_opponent(sighting: TraitSighting | None, inferred: InferredBoard | 
         units += probability * power
         data_confidence = min(data_confidence, certainty)
         warnings.extend(flags)
-    filler = max(0.0,sighting.level-sum(inferred.probabilities.values()))
+    from .capacity import CapacityModel
+    capacity=CapacityModel(data)
+    budget=sighting.team_slot_budget if sighting.team_slot_budget is not None else capacity.base(sighting.level)+capacity.trait_bonus(sighting.traits)
+    filler = max(0.0,budget-sum(probability*capacity.cost(id) for id,probability in inferred.probabilities.items()))
     units += filler * average_unit_power(sighting.level,sighting.round_id,data)
     traits, trait_confidence, flags = trait_term(sighting.traits,data)
     data_confidence = min(data_confidence, trait_confidence)
@@ -240,6 +224,11 @@ def estimate_opponent(sighting: TraitSighting | None, inferred: InferredBoard | 
         if data.tunables[name].source in ('default','carried'):
             data_confidence = min(data_confidence,float(tunable(data,'confidence_medium_min')))
             warnings.append(f'{name}: {data.tunables[name].source}')
+    certificates=[('team_capacity',data.static['team_capacity'])]+[(f'{id}.team_slot_cost',data.entities[id].values['team_slot_cost']) for id in inferred.probabilities]
+    for name,value in certificates:
+        if value.source in ('default','carried'):
+            data_confidence=min(data_confidence,float(tunable(data,'confidence_medium_min')))
+            warnings.append(f'{name}: {value.source}; capacity rule requires qualification')
     warnings.extend(flags)
     stage = int(sighting.round_id.split('-')[0])
     power = units * float(tunable(data,'unit_weight')) + traits * float(tunable(data,'trait_weight')) + stage_items(stage,data) * float(tunable(data,'item_weight'))
@@ -249,7 +238,9 @@ def estimate_opponent(sighting: TraitSighting | None, inferred: InferredBoard | 
     for unit_id,probability in inferred.probabilities.items():
         shares = star_mix(round_id,data.entities[unit_id].cost,data)
         copies[unit_id] = probability * sum(p*n for p,n in zip(shares,(1,3,9))) * freshness
-    return OpponentEstimate(sighting.opponent_id,power,level,freshness*inferred.certainty*data_confidence,freshness,inferred.certainty,inferred.probabilities,copies,classify(inferred.probabilities,data),tuple(warnings),data_confidence)
+    physical=sum(inferred.probabilities.values())+filler*average_unit_power(sighting.level,sighting.round_id,data,count_only=True)
+    physical+=par_unit_count(round_id,data)-par_unit_count(sighting.round_id,data)
+    return OpponentEstimate(sighting.opponent_id,power,level,freshness*inferred.certainty*data_confidence,freshness,inferred.certainty,inferred.probabilities,copies,classify(inferred.probabilities,data),tuple(warnings),data_confidence,max(0,min(28,physical)))
 
 
 def opponents_from_history(history, round_id, data, *, opponent_ids=(), curve=None):

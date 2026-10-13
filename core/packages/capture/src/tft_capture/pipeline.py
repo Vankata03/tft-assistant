@@ -33,13 +33,22 @@ class EventSink(Protocol):
 
 class CapturePipeline:
     def __init__(self, game_id: str, *, ocr: OCR, sink: EventSink, regions: dict[str, tuple] | None = None,
-                 catalog: NameCatalog | None = None, layout: HudLayout | None = None, visual_reader: VisualReader | None = None, own_player_name: str | None = None, tracking_events=(), unit_traits=None, item_traits=None, sale_values=None, video=None, unit_variants=None, data_snapshot_id=None, effect_sources=None, item_trait_sources=None, snapshot_projector=None):
+                 catalog: NameCatalog | None = None, layout: HudLayout | None = None, visual_reader: VisualReader | None = None, own_player_name: str | None = None, tracking_events=(), unit_traits=None, item_traits=None, sale_values=None, video=None, unit_variants=None, data_snapshot_id=None, effect_sources=None, item_trait_sources=None, snapshot_projector=None, unit_counter=None, unit_slot_costs=None):
         self.game_id, self.ocr, self.sink = str(game_id), ocr, sink
         self.video = video
         self.snapshot_projector = snapshot_projector
         self._closed = False
         self._media_status = None
         self.regions = regions
+        from tft_data.models import TaggedValue
+        from collections.abc import Mapping
+        if unit_counter is not None and (not isinstance(unit_counter,TaggedValue) or not isinstance(unit_counter.value,Mapping)
+            or set(unit_counter.value)!={'region','semantic'} or not isinstance(unit_counter.value['region'],str)
+            or not unit_counter.value['region'] or unit_counter.value['semantic'] not in ('physical_units','occupied_team_slots')
+            or not isinstance(unit_counter.citation,str) or not unit_counter.citation.strip()):
+            raise ValueError('Unsupported reviewed unit counter semantics')
+        self.unit_counter=unit_counter
+        self.unit_slot_costs=unit_slot_costs or {}
         self.layout = layout or HudLayout()
         self._frame_size = None
         self.visual_reader, self.own_player_name = visual_reader, own_player_name
@@ -470,6 +479,12 @@ class CapturePipeline:
                     self._last_ownership = payload
                     output_fields["owned_copies"] = dict(copies)
                 output_fields["inventory_complete"] = complete
+                output_fields['ownership_capacity_status']=self._ownership_capacity_status
+                if complete:
+                    output_fields['physical_unit_count']=sum(row.get('zone')=='board' for row in observations)
+                    if self.unit_counter.value['semantic']=='occupied_team_slots':
+                        sources=sorted({self.unit_slot_costs[row['unit_id']].source for row in observations if row.get('zone')=='board'})
+                        field_sources['inventory_complete']=result.source+'+pinned-slot-costs:'+','.join(sources)
                 item_provenance = {item: deepcopy(self.item_trait_sources[item]) for row in observations
                     for item in row.get("items") or () if item in self.item_trait_sources}
                 if complete and item_provenance:
@@ -513,8 +528,12 @@ class CapturePipeline:
             self._vision_digest = None
 
     def _complete_ownership(self, result, observations, now):
+        self._ownership_capacity_status='reviewed_counter_unavailable' if self.unit_counter is None else 'counter_geometry_unconfirmed'
+        if self.unit_counter is None:
+            return False
+        count_name='unit_count' if self.unit_counter.value['semantic']=='physical_units' else 'occupied_team_slots'
         if not result.inventory_complete or any(self.fields.get(name, {}).get("read_at") != now.isoformat()
-            for name in ("unit_count", "own_trait_counts")):
+            for name in (count_name, "own_trait_counts")):
             return False
         slots = result.fields.get("slot_inventory", {})
         for zone, total in (("board", 28), ("bench", 9)):
@@ -524,8 +543,22 @@ class CapturePipeline:
             actual = [row.get("position") for row in observations if row.get("zone") == zone]
             if sorted(actual, key=str) != sorted(occupied, key=str):
                 return False
-        if len(slots["board_occupied"]) != self.fields["unit_count"]["value"]:
+        deployed=[row for row in observations if row.get('zone')=='board']
+        if count_name=='occupied_team_slots':
+            from tft_data.models import TaggedValue
+            if any(not isinstance(self.unit_slot_costs.get(row.get('unit_id')),TaggedValue)
+                or isinstance(self.unit_slot_costs[row['unit_id']].value,bool)
+                or not isinstance(self.unit_slot_costs[row['unit_id']].value,int)
+                or self.unit_slot_costs[row['unit_id']].value<0 for row in deployed):
+                self._ownership_capacity_status='slot_cost_certificate_unavailable'
+                return False
+            expected=sum(self.unit_slot_costs[row['unit_id']].value for row in deployed)
+        else:
+            expected=len(slots['board_occupied'])
+        if expected != self.fields[count_name]['value']:
+            self._ownership_capacity_status='counter_projection_conflict'
             return False
+        self._ownership_capacity_status='counter_projection_validated'
         possibilities = [Counter()]
         target = self.fields["own_trait_counts"]["value"]
         seen = set()
@@ -552,7 +585,8 @@ class CapturePipeline:
         return any(dict(counts) == target for counts in possibilities)
 
     def _read_region(self, name, crop, frame, now):
-        if name in {"origin", "unit_count"} and not (self.own_player_name and self.fields.get("scouted_player", {}).get("value") == self.own_player_name
+        own_regions={"origin","unit_count"}|({self.unit_counter.value['region']} if self.unit_counter else set())
+        if name in own_regions and not (self.own_player_name and self.fields.get("scouted_player", {}).get("value") == self.own_player_name
             and self.fields["scouted_player"]["read_at"] == now.isoformat()):
             return
         digest = hashlib.blake2b(crop.tobytes(), digest_size=16).digest()
@@ -588,6 +622,8 @@ class CapturePipeline:
             self.sink.append_event("augment_offer", {"augments": values["augments"], "tier": values["augment_tier"]}, timestamp=now.isoformat())
             self.sink.write_keyframe(full_image(frame), reason="augment_offer", timestamp=now.isoformat())
         source = self.ocr.source_for(name) if hasattr(self.ocr, "source_for") else self.ocr.source
+        if self.unit_counter and name==self.unit_counter.value['region']:
+            source+=f'+reviewed-counter:{self.unit_counter.source}'
         confidences = [line.confidence for line in lines]
         if name == "shop" and self._vision_fields.get("shop_empty_slots"):
             confidences.append(self._vision_result.confidence)
@@ -631,9 +667,12 @@ class CapturePipeline:
             value = int(lines[0].text.strip())
             return {"gold": value} if 0 <= value <= 999 else {}
         text = " ".join(line.text for line in lines)
-        if region == "unit_count":
-            match = re.fullmatch(r"(\d{1,2})\s*/\s*(\d{1,2})", text.strip())
-            if match and 0 <= int(match[1]) <= int(match[2]) <= 28:
+        if region == "unit_count" or (self.unit_counter and region==self.unit_counter.value['region']):
+            match = re.fullmatch(r"(\d+)\s*/\s*(\d+)", text.strip())
+            slot_semantics=bool(self.unit_counter and region==self.unit_counter.value['region'] and self.unit_counter.value['semantic']=='occupied_team_slots')
+            if match and 0 <= int(match[1]) <= int(match[2]) and int(match[2])>0 and (slot_semantics or int(match[2])<=28):
+                if slot_semantics:
+                    return {'occupied_team_slots':int(match[1]),'team_slot_budget':int(match[2])}
                 return {"unit_count": int(match[1]), "unit_capacity": int(match[2])}
         if region == "cards":
             offers = []

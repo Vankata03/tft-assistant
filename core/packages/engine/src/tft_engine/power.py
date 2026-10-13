@@ -90,6 +90,7 @@ def unit_power(unit_id, stars, data):
         raise DataError('Sample counts and prior strength must be nonnegative')
     confidence = samples / (samples + prior) if samples + prior else 0.0
     warnings = []
+
     if statistic and (statistic.stale or statistic.changed):
         confidence *= float(tunable(data, 'confidence_medium_min'))
         warnings.append(f'{unit_id}/{stars}: stale or changed statistics')
@@ -181,12 +182,17 @@ def item_category(item_id, data):
     raise DataError(f'Item category unavailable: {item_id}')
 
 
-def estimate_strength(board: Board, level: int, data: DataSnapshot) -> PowerEstimate:
-    if len(board.units) > level:
-        raise ValueError('Board exceeds its unit cap')
+def estimate_strength(board: Board, level: int, data: DataSnapshot, *, capacity=None) -> PowerEstimate:
+    from .capacity import CapacityModel
+    CapacityModel(data).check(board,level,capacity)
     unit_total = 0.0
     confidence = 1.0
     warnings = []
+    certificates=[('team_capacity',data.static['team_capacity'])]+[(f'{u.unit_id}.team_slot_cost',data.entities[u.unit_id].values['team_slot_cost']) for u in board.units]
+    for label,certificate in certificates:
+        if certificate.source in ('default','carried'):
+            confidence=min(confidence,float(tunable(data,'confidence_medium_min')))
+            warnings.append(f'{label}: {certificate.source}; capacity rule requires qualification')
     counts = {}
     finished = components = bonus = 0
     for unit in board.units:
@@ -205,7 +211,7 @@ def estimate_strength(board: Board, level: int, data: DataSnapshot) -> PowerEsti
             else:
                 raise DataError(f'Tool cannot be equipped for board power: {item_id}')
     # Duplicate units contribute power separately but their traits only once.
-    from .opponents import unit_trait_variants
+    from .trait_forms import unit_trait_variants
     for unit_id in sorted({u.unit_id for u in board.units}):
         variants = unit_trait_variants(unit_id, data)
         if len(variants) != 1 and board.trait_counts is None:
@@ -225,8 +231,8 @@ def estimate_strength(board: Board, level: int, data: DataSnapshot) -> PowerEsti
     return PowerEstimate(units + traits + items, confidence, units, traits, items, tuple(warnings))
 
 
-def strength(board: Board, level: int, data: DataSnapshot) -> float:
-    return estimate_strength(board, level, data).power
+def strength(board: Board, level: int, data: DataSnapshot, *, capacity=None) -> float:
+    return estimate_strength(board, level, data,capacity=capacity).power
 
 
 def win_probability(own: float, opponent: float, stage: int, data: DataSnapshot) -> float:

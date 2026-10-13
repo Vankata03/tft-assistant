@@ -30,6 +30,7 @@ def test_live_pauses_explicitly_when_required_fields_are_unavailable():
 def patch():
     rounds=tuple(f'{s}-{r}' for s in range(1,7) for r in range(1,8))
     static={
+        'team_capacity':{'levels':{str(level):level for level in range(1,11)},'trait_bonuses':(), 'held_augment_slots':{},'inventory_item_slots':{},'transition_policy':{'deploy':'reserve_before','swap':'remove_then_reserve','bench':'validate_after'}},
         'round_order':rounds,'round_types':{r:'pve' for r in rounds},
         'xp_table':{'1':2,'2':2,'3':6,'4':10,'5':20,'6':36,'7':56,'8':68,'9':68},
         'gold_by_round':{'default':5},'streak_gold':{'2':1,'5':2,'6':3},
@@ -54,11 +55,11 @@ def patch():
         'confidence_medium_min':0.5,'confidence_high_min':0.8,'confidence_show_min':0.2,
         'field_max_age_seconds':{'default':2,'shop_roll_down':0.5},'open_candidate_count':3,'commit_latest_round':'3-2',
         'pivot_margin_by_stage':{'default':0.5,'post_roll_down':0.8},'pivot_reraise_extra':0.2,'transition_tolerance':0.02,
-        'rollouts_full':16,'rollouts_reroll':8,'line_candidate_cap':7,'gold_floors':[50,30,10,0],
+        'capacity_transition_state_cap':10000,'rollouts_full':16,'rollouts_reroll':8,'line_candidate_cap':7,'gold_floors':[50,30,10,0],
         'stabilize_rounds_left':3,'all_in_rounds_left':2,'line_margin':0.1,'challengers_simulated':2,
         'default_lines_by_carry_cost':{'1':[{'round':'3-1','level':5,'roll_floor':10}]},'opponent_growth_curve':{},'comp_defining_margin':0.3,
     }
-    units={id:Entity(id,'unit',id,cost,('fire',),values={'play_rate':tag(0.5)}) for id,cost in [('a',1),('b',1),('c',3),('d',3)]}
+    units={id:Entity(id,'unit',id,cost,('fire',),values={'play_rate':tag(0.5),'team_slot_cost':tag(1)}) for id,cost in [('a',1),('b',1),('c',3),('d',3)]}
     units['fire']=Entity('fire','trait','Fire',values={'breakpoints':tag([2]),'top4_rate_2':tag(0.5)})
     return DataSnapshot('synthetic','test',18,{k:tag(v) for k,v in static.items()},{k:tag(v) for k,v in tunables.items()},units,
         (Statistic('A','comp',3.9,1000,'test','metatft'),Statistic('B','comp',4.2,1000,'test','metatft')),
@@ -618,7 +619,7 @@ def test_stabilize_keeps_rolling_for_board_power_after_the_target_carry_is_hit()
     from tft_engine import simulate_lines, Line
     # B is a strong one-star interim, and the already-hit A carry must not stop stabilization.
     data=patch()
-    entities=dict(data.entities); entities['b']=replace(entities['b'],values={'play_rate':tag(.5),'top4_rate_1':tag(.99),'sample_count_1':tag(1000)})
+    entities=dict(data.entities); entities['b']=replace(entities['b'],values={'team_slot_cost':tag(1),'play_rate':tag(.5),'top4_rate_1':tag(.99),'sample_count_1':tag(1000)})
     data=replace(data,entities=entities)
     state=snapshot('3-2',board=Board((Unit('a',2),)),bench=(),gold=30,level=2)
     results=simulate_lines(state,GameHistory(),data,'A',(Line('target',rolls={'3-2':10}),Line('stabilize',rolls={'3-2':10},stabilize=True)),rollouts=128)
@@ -705,9 +706,9 @@ def test_new_backup_priority_matches_the_line_roll_gold_and_sale_advice():
 def test_active_forms_preserve_double_trait_grants_and_share_one_shop_pool():
     from tft_engine import evaluate, strength
     data=patch()
-    extra={'lux':Entity('lux','unit','Lux',1,('avatar',),values={'play_rate':tag(.5)}),
-        'lux_fire':Entity('lux_fire','unit_form','Lux fire',1,('avatar','fire'),values={'pool_id':tag('lux'),'canonical_id':tag('lux')}),
-        'lux_ice':Entity('lux_ice','unit_form','Lux ice',1,('avatar','ice'),values={'pool_id':tag('lux'),'canonical_id':tag('lux')}),
+    extra={'lux':Entity('lux','unit','Lux',1,('avatar',),values={'team_slot_cost':tag(1),'play_rate':tag(.5)}),
+        'lux_fire':Entity('lux_fire','unit_form','Lux fire',1,('avatar','fire'),values={'team_slot_cost':tag(1),'pool_id':tag('lux'),'canonical_id':tag('lux')}),
+        'lux_ice':Entity('lux_ice','unit_form','Lux ice',1,('avatar','ice'),values={'team_slot_cost':tag(1),'pool_id':tag('lux'),'canonical_id':tag('lux')}),
         'avatar':Entity('avatar','trait','Avatar',values={'breakpoints':tag([1]),'top4_rate_1':tag(.5)}),
         'ice':Entity('ice','trait','Ice',values={'breakpoints':tag([2]),'top4_rate_2':tag(.5)})}
     rules={'lux':{'replace':[{'avatar':1,'fire':2},{'avatar':1,'ice':2}]}}

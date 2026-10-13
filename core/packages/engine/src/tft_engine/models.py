@@ -107,9 +107,12 @@ class TraitSighting:
     traits: Mapping[str, int]
     hidden_traits: int = 0
     read_at: datetime | None = None
+    team_slot_budget: int | None = None
     def __post_init__(self):
         if self.level < 1 or self.hidden_traits < 0 or any(v < 1 for v in self.traits.values()):
             raise ValueError('Invalid trait sighting')
+        if self.team_slot_budget is not None and (isinstance(self.team_slot_budget,bool) or not isinstance(self.team_slot_budget,int) or self.team_slot_budget<1):
+            raise ValueError('Invalid observed opponent team slot budget')
         object.__setattr__(self, 'traits', freeze(self.traits))
     def to_dict(self):
         return _encode(self)
