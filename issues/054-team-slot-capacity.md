@@ -2,7 +2,7 @@
 id: 54
 title: Model sourced unit slot costs and team capacity
 labels: [implementation:task, bug:engine]
-status: open
+status: closed
 assignee: codex-capacity-engine
 parent: 34
 blocked_by: [36, 39, 40, 41]
@@ -61,3 +61,9 @@ From `core/`, run `uv run --group train python packages/engine/tests/benchmark_e
 - Baseline now preserves each supplied deployed position and bench inventory position through its own protocol. The capacity boundary validates deployed hexes; a bench slot numbered zero does not become a duplicate deployed hex zero. The three public examples now pass, including positively complete equipped-anywhere capacity inventory.
 - Corrected focused Baseline/capacity slice: **54 passed, exit 0**. Corrected full train with the same model-path command above: **464 passed, no skips, 33.74 seconds, exit 0**, with the same two ONNX deprecation warnings. Import contracts (two kept), schemas, lock, scoped F821 and diff checks all exited 0. No UI/schema contract changed; the recorded 35 UI tests and type/build gates remain applicable. Engine benchmark code and outcomes did not change.
 - Integration `1926089` remains an ancestor. Candidate 9749a00 and its initial failure evidence remain in history; this follow-up requests a new exact different-merger acceptance. Ticket 48 remains paused and its edits are preserved.
+
+## Resolution — 2026-10-13
+
+Corrected exact candidate `8ed6c80c98eaae0a9227caf1f3e8bf573b6c745d` was independently accepted and integrated as `f9e306fdb07bd292c6db60fb998dffebfe7bf2b0`. The independent public branch slice passed 118 tests in 3.83 seconds. Merged-root verification passed 464 Python tests without skips in 34.44 seconds, process exit 0, with two existing Torch ONNX-export warnings; UI passed 35 tests plus typecheck, generated-type parity and build. Both import contracts, schemas, frozen lock, scoped F821 and diff checks passed. With Live physically absent, 145 public capacity/lobby/Baseline/capture/replay cases passed in 8.37 seconds; default Live and train were restored, and the root was clean. An initial selector named nonexistent test files and exited 4 without running tests; the corrected discovery and passing runs are distinct from that attempt.
+
+The sourced capacity software acceptance is fulfilled, including the independently reproduced Baseline projection correction. Ticket 48 resumes preparation against the final contracts. Current patch values, HUD semantics, unresolved active-form/remote-budget producers, Windows/game-running performance and historical native causality remain separate qualification conditions. Mac workloads remain above 100 ms; no owner workflow or production candidate was run or installed.
