@@ -37,6 +37,7 @@ class OwnedIO:
         except queue.Full:
             self.jobs.pop(future,None)
             raise ValueError('Core I/O queue is busy; retry this bounded request') from None
+        if self.closed.is_set():future.cancel()  # Admitted while closing; workers may already be gone.
         try:return await future
         finally:
             cancelled.set()
@@ -44,10 +45,13 @@ class OwnedIO:
 
     def _run(self):
         while not self.closed.is_set():
-            try:job=self.queue.get(timeout=.05)
-            except queue.Empty:continue
+            job=self.queue.get()
+            if job is None:continue  # Close wakes idle workers without a polling delay.
             future,cancelled,function,args,kwargs,cooperative=job
-            if cancelled.is_set() or self.closed.is_set():continue
+            if cancelled.is_set() or self.closed.is_set():
+                try:self.loop.call_soon_threadsafe(future.cancel)
+                except RuntimeError:pass
+                continue
             try:
                 if cooperative:kwargs=kwargs|{'cancelled':cancelled.is_set}
                 value=function(*args,**kwargs);error=None
@@ -66,8 +70,14 @@ class OwnedIO:
             cancelled.set();future.cancel()
         discarded=0
         while True:
-            try:self.queue.get_nowait();discarded+=1
+            try:job=self.queue.get_nowait()
             except queue.Empty:break
+            if job is not None:job[0].cancel();discarded+=1
+        for _ in self.threads:
+            # A request admitted before close may still fill the queue; any
+            # queued item wakes a worker, which then observes close and exits.
+            try:self.queue.put_nowait(None)
+            except queue.Full:break
         deadline=time.monotonic()+timeout
         for thread in self.threads:thread.join(max(0,deadline-time.monotonic()))
         return {'alive_workers':sum(thread.is_alive() for thread in self.threads),'discarded_requests':discarded}
