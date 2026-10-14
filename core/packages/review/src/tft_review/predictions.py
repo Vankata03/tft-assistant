@@ -1,6 +1,6 @@
 """Shared frozen pre-fight forecasts for review and the evaluation harness."""
 from tft_data.models import DataError
-from tft_engine import GameSnapshot, estimate_strength, surviving_units, win_probability
+from tft_engine import estimate_strength, surviving_units, win_probability
 from tft_engine.effects import captured
 from tft_engine.opponents import opponents_from_history
 from tft_engine.power import keyed
@@ -9,13 +9,10 @@ from tft_engine.capacity_fields import evidence_from_snapshot
 from tft_engine.planning import read, required
 from dataclasses import replace
 
-from .contracts import json_value
-
-
 def fight_forecast(batch, context, data, *, opponent_id, at):
     if 'capture_gap' in context.unavailable:
         raise DataError('capture_gap')
-    snapshot = GameSnapshot.from_dict(json_value(context.snapshot))
+    snapshot = batch.snapshot_for(context)
     if at < snapshot.captured_at:
         raise DataError('prefight_context_from_future')
     checked = replace(snapshot, captured_at=at)
