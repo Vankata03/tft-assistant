@@ -4,6 +4,7 @@ import type {SessionMode} from '../shared/protocol'
 import {describeCore,type ShellState} from '../shared/state'
 import {useLiveShown} from './shown'
 import {SessionModeSelector} from '../renderer/src/ModeSelector'
+import {describeSchedule} from '../renderer/src/lineSchedule'
 
 export interface LiveCockpitProps {
  state:ShellState
@@ -45,6 +46,7 @@ export function LiveCockpit({state,onMode,onPin,onDetail,now:clockOverride}:Live
  return <main className="cockpit live-cockpit">
   <header className="app-header"><h1>TFT Assistant</h1><SessionModeSelector state={state} onChange={onMode}/><span className="connection">{describeCore(state.core)}</span>{content?<span className="patch">{content.round_id} · {content.phase}</span>:null}</header>
   {state.error?<p role="alert" className="status-banner">{state.error}</p>:null}
+  {state.baseline?.mode==='live'&&state.baseline.stale.length?<div className="status-banner paused" role="status">{state.baseline.stale.map(row=><span key={row.field}>Paused · {row.reason}{row.age_seconds===null?'':` · ${Math.round(row.age_seconds)}s`}</span>)}</div>:null}
   {state.baseline?.status&&state.baseline.status!=='Capture OK'?<p className="status-banner">{state.baseline.status}</p>:null}
   {content?.warnings.length?<p className="status-banner">{content.warnings.join(' · ')}</p>:null}
   {state.surfaceGeometry?.geometry?.window_mode==='exclusive_fullscreen'?<p className="status-banner">Exclusive fullscreen · overlay off; use windowed or borderless.</p>:null}
@@ -52,9 +54,9 @@ export function LiveCockpit({state,onMode,onPin,onDetail,now:clockOverride}:Live
    <div className="live-cockpit-grid">
     <section className="panel live-current"><h2>Current advice</h2>{content.advice.map((row,index)=><AdviceCard key={`${row.decision_id}:${row.option_id}:${index}`} row={row} view={view} now={now} invalidated={view.invalidated?.[row.decision_id]} onDetail={onDetail}/>)}</section>
     <div className="live-plan-column">
-     <section className="panel"><h2>Game plan</h2><p className="live-plan-name">{String(content.plan.target??'Open plan')}</p><p className="subtle">{String(content.plan.status??'Unavailable')} · backup {String(content.plan.backup??'unavailable')}</p><p className="subtle">Complete own ownership is required for authoritative projections.</p></section>
+     <section className="panel"><h2>Game plan</h2><p className="live-plan-name">{String(content.plan.target??'Open plan')}</p><p className="subtle">{String(content.plan.status??'Unavailable')} · backup {String(content.plan.backup??'unavailable')}</p><p className="subtle">{Array.isArray(content.plan.candidates)&&content.plan.candidates.length?`Candidates ${content.plan.candidates.map(String).join(', ')}`:'No candidate comps'}</p>{content.plan.pivot_to?<p>Pivot {String(content.plan.pivot_from??'unread')} → {String(content.plan.pivot_to)} at {String(content.plan.pivot_round??'unread')}</p>:null}<p className="subtle">Complete own ownership is required for authoritative projections.</p></section>
      <section className="panel"><h2>Line projection</h2>{content.projection.length?<div className="table-scroll"><table><thead><tr><th>Round</th><th>Level</th><th>Gold</th><th>Hit</th><th>HP</th><th>Placement</th></tr></thead><tbody>{content.projection.map(row=><tr key={row.round_id}><td>{row.round_id}</td><td>{row.level.toFixed(1)}</td><td>{row.gold.toFixed(0)}</td><td>{Math.round(row.hit_probability*100)}%</td><td>{row.hp.toFixed(0)}</td><td>{row.expected_placement.toFixed(2)}</td></tr>)}</tbody></table></div>:<p className="subtle">No current qualified Line projection.</p>}
-      <div className="line-candidates">{content.lines.map(line=><div className={`line-candidate ${view.pin?.line_id===line.line_id?'pinned':''}`} key={`${line.comp_id}:${line.line_id}`}><span>{line.line_id}</span><strong>{line.expected_placement.toFixed(2)}</strong><button disabled={!pinsAllowed} onClick={()=>onPin(view.pin?.line_id===line.line_id?null:line)}>{view.pin?.line_id===line.line_id?'Unpin':'Pin Line'}</button><button onClick={()=>onDetail(line.evidence_path)}>Projection</button></div>)}</div>
+      <div className="line-candidates">{content.lines.map(line=><div className={`line-candidate ${view.pin?.line_id===line.line_id?'pinned':''}`} key={`${line.comp_id}:${line.line_id}`}><span>{line.line_id}<small className="subtle"> · {describeSchedule(line.schedule)} · hit {Math.round(line.hit_probability*100)}% · death {Math.round(line.death_probability*100)}%</small></span><strong>{line.expected_placement.toFixed(2)}</strong><button disabled={!pinsAllowed} onClick={()=>onPin(view.pin?.line_id===line.line_id?null:line)}>{view.pin?.line_id===line.line_id?'Unpin':'Pin Line'}</button><button onClick={()=>onDetail(line.evidence_path)}>Projection</button></div>)}</div>
      </section>
      <section className="panel"><h2>Target layout</h2><div className="live-target-layout" aria-label="Target board hexes">{Array.from({length:28},(_,cell)=><div className="hex-cell" key={cell}>{layout?.filter(row=>row.cell===cell).map((row,index)=><strong key={index}>{names[row.unit_id]??row.unit_id}</strong>)??cell+1}</div>)}</div><p className="subtle">Move arrows require a positively known current hex; tracked units need only their target hex.</p></section>
     </div>
