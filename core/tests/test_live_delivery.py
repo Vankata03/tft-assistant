@@ -439,4 +439,15 @@ with open(sys.argv[1],'a+b') as stream:
                 assert reset['payload']['reason']
                 assert reset['seq']>pin['seq'] and reset['timestamp']>=pin['timestamp']
                 assert server.live.pin is None
+                # Review's causal control reader drops the pin exactly at this reset.
+                from datetime import timedelta
+                from tft_review.controls import project_session_controls
+                events=logs.read_events('123')
+                def at(event):
+                    moment=datetime.fromisoformat(event['timestamp'])+timedelta(milliseconds=1)
+                    return replace(frame,captured_at=moment,fields={name:replace(field,read_at=moment) for name,field in frame.fields.items()})
+                assert project_session_controls(at(pin),events,through_seq=pin['seq']).snapshot.fields['pinned_line'].source=='ui_pin'
+                after=project_session_controls(at(reset),events,through_seq=reset['seq'])
+                assert 'pinned_line' not in after.snapshot.fields
+                assert after.provenance['reset']['log_seq']==reset['seq']
     asyncio.run(scenario())
