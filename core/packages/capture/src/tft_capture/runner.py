@@ -8,8 +8,9 @@ from tft_capture.windows import CaptureUnavailable
 
 
 class CaptureRunner:
-    def __init__(self, source, pipeline):
+    def __init__(self, source, pipeline, *, layout_provider=None):
         self.source, self.pipeline = source, pipeline
+        self.layout_provider = layout_provider
         self._last_window = None
         self._last_time = None
         self._gap = False
@@ -19,6 +20,8 @@ class CaptureRunner:
     def step(self, *, timestamp: datetime | None = None) -> dict:
         now = timestamp or datetime.now(timezone.utc)
         try:
+            if self.layout_provider:
+                self.pipeline.layout = self.layout_provider()
             captured = self.source.capture()
             status = {
                 "state": "capturing",
@@ -39,16 +42,18 @@ class CaptureRunner:
                 False,
             )
             frame = captured.image
+            geometry = captured.geometry()
         except CaptureUnavailable as error:
             status = {"state": "unavailable", "error": str(error)}
             frame = None
+            geometry = None
             self._gap = True
         if status != self._status:
             self.pipeline.sink.append_event(
                 "capture_status", status, timestamp=now.isoformat()
             )
             self._status = status
-        return self.pipeline.tick(frame, timestamp=now)
+        return self.pipeline.tick(frame, timestamp=now, geometry=geometry)
 
     @property
     def status(self):

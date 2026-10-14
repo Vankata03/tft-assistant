@@ -342,3 +342,26 @@ def test_positive_empty_shop_does_not_require_invented_ocr_text(tmp_path):
     assert snapshot["fields"]["shop"]["value"] == [{"slot": i, "unit_id": None, "cost": None, "traits": []} for i in range(5)]
     assert snapshot["fields"]["shop"]["source"] == "recorded-vision"
     assert snapshot["fields"]["shop"]["confidence"] == .9
+
+
+def test_roll_down_field_is_certified_by_current_shop_reads_and_keeps_age_on_loss(tmp_path):
+    from datetime import datetime,UTC,timedelta
+    from PIL import Image
+    from tft_capture.pipeline import CapturePipeline
+    from tft_capture.ocr import TextLine
+    from tft_capture.ocr import NameCatalog
+    from tft_core.storage import SessionStore
+    class ShopOCR:
+        source='external-recorded-shop'
+        def read(self,image,*,region):
+            return [line for slot in range(5) for line in (TextLine('Alpha',box=(slot*.2+.01,.82,slot*.2+.12,.96)),TextLine('1',box=(slot*.2+.16,.82,slot*.2+.19,.96)))] if region=='shop' else []
+    logs=SessionStore(tmp_path/'app',tmp_path/'config',live_installed=False);logs.start_game('123')
+    now=datetime(2026,10,13,tzinfo=UTC)
+    pipeline=CapturePipeline('123',sink=logs,ocr=ShopOCR(),catalog=NameCatalog({'units':{'a':'Alpha'}}),regions={'shop':(0,0,1,1)})
+    pipeline.start_roll_down(gold_floor=10,timestamp=now)
+    first=pipeline.tick(Image.new('RGB',(100,50)),timestamp=now)
+    assert first['fields']['roll_down']['value'] is True
+    assert first['fields']['roll_down_floor']['value']==10
+    assert first['fields']['roll_down']['read_at']==now.isoformat()
+    lost=pipeline.tick(None,timestamp=now+timedelta(seconds=1))
+    assert lost['fields']['roll_down']['read_at']==first['fields']['roll_down']['read_at']

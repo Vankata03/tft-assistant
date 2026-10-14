@@ -10,9 +10,11 @@ import json
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, RootModel, TypeAdapter
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, RootModel, TypeAdapter, JsonValue, StrictInt, model_validator
 
 from tft_core.baseline.contracts import BaselineState
+from tft_core.live_contracts import LiveContent
+from tft_core.surface_geometry import SurfaceGeometry, LiveSurfaceAnchor
 
 SCHEMA_VERSION = 1
 
@@ -68,6 +70,49 @@ class SurfaceShown(_Message):
     timestamp: AwareDatetime
 
 
+class RequestLiveState(_Message):
+    type: Literal["request_live_state"] = "request_live_state"
+
+
+class RequestSurfaceGeometry(_Message):
+    type: Literal["request_surface_geometry"] = "request_surface_geometry"
+
+
+class RequestEvidencePage(_Message):
+    type: Literal["request_evidence_page"] = "request_evidence_page"
+    request_id: str = Field(min_length=1, max_length=100)
+    game_id: str = Field(pattern=r"^[1-9][0-9]*$")
+    revision: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    path: tuple[str | StrictInt, ...] = Field(max_length=64)
+    cursor: StrictInt = Field(default=0, ge=0)
+    limit: StrictInt = Field(default=32, ge=1, le=128)
+
+
+class LiveSurfaceShown(_Message):
+    type: Literal["live_surface_shown"] = "live_surface_shown"
+    game_id: str = Field(pattern=r"^[1-9][0-9]*$")
+    revision: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    decision_id: str = Field(min_length=1, max_length=500)
+    option_id: str = Field(max_length=500)
+    surface: Literal["cockpit", "overlay", "voice"]
+    timestamp: AwareDatetime
+
+
+class PinLine(_Message):
+    type: Literal["pin_line"] = "pin_line"
+    game_id: str = Field(pattern=r"^[1-9][0-9]*$")
+    revision: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    comp_id: str | None = Field(default=None, min_length=1, max_length=200)
+    line_id: str | None = Field(default=None, min_length=1, max_length=200)
+    seed: str | None = Field(default=None, pattern=r"^[0-9]{1,20}$")
+
+    @model_validator(mode="after")
+    def complete_reference(self):
+        if len({self.comp_id is None, self.line_id is None, self.seed is None}) != 1:
+            raise ValueError("Line pin requires all reference fields or none to unpin")
+        return self
+
+
 # Core to shell.
 
 
@@ -93,6 +138,7 @@ class SessionModeState(_Message):
 
 
 class ErrorMessage(_Message):
+    request_id: str | None = None
     """The core rejected a message from the shell."""
 
     type: Literal["error"] = "error"
@@ -100,10 +146,115 @@ class ErrorMessage(_Message):
     message: str
 
 
+class LiveState(_Message):
+    type: Literal["live_state"] = "live_state"
+    mode: SessionMode
+    status: str
+    revision: str | None = None
+    content: LiveContent | None = None
+    pin: dict[str, str] | None = None
+    invalidated: dict[str, str] = {}
+    roster_qualified: bool | None = None
+    ownership_qualified: bool | None = None
+    observed_phase: Literal['planning','roll_down','augment','carousel','combat','end','unknown'] | None = None
+
+    @model_validator(mode="after")
+    def permitted_content(self):
+        if self.mode != SessionMode.LIVE and self.content is not None:
+            raise ValueError("Live content requires Live mode")
+        json.dumps(self.model_dump(mode="json"), allow_nan=False)
+        return self
+
+
+class ReviewReady(_Message):
+    type: Literal['review_ready'] = 'review_ready'
+    game_id: str = Field(pattern=r'^[1-9][0-9]*$')
+    mode: Literal['baseline','live']
+    report_id: str = Field(pattern=r'^sha256:[0-9a-f]{64}$')
+    evidence_id: str = Field(pattern=r'^sha256:[0-9a-f]{64}$')
+    ended_at: AwareDatetime
+    ready_at: AwareDatetime
+    latency_seconds: float = Field(ge=0, allow_inf_nan=False)
+    late: bool
+
+
+class EvidencePage(_Message):
+    type: Literal["evidence_page"] = "evidence_page"
+    request_id: str
+    game_id: str
+    revision: str
+    page: dict[str, JsonValue]
+
+
+class SurfaceGeometryState(_Message):
+    type: Literal["surface_geometry"] = "surface_geometry"
+    mode: SessionMode
+    geometry: SurfaceGeometry | None = None
+    anchors: tuple[LiveSurfaceAnchor, ...] = ()
+    status: str = "Desktop geometry unavailable"
+
+    @model_validator(mode="after")
+    def permitted_geometry(self):
+        if self.mode is SessionMode.SILENT and (self.geometry is not None or self.anchors):
+            raise ValueError("Silent mode suppresses surface geometry")
+        if self.mode is SessionMode.BASELINE and any(row.kind in ('player', 'hex', 'line', 'xp') for row in self.anchors):
+            raise ValueError("Baseline geometry cannot include ranked or player-row anchors")
+        return self
+
+
+class RequestReviewGames(_Message):
+    type: Literal['request_review_games'] = 'request_review_games'
+    request_id: str = Field(min_length=1,max_length=100)
+
+
+class ReviewGames(_Message):
+    type: Literal['review_games'] = 'review_games'
+    request_id: str
+    games: tuple[dict[str,JsonValue],...]
+
+
+class RequestReview(_Message):
+    type: Literal['request_review'] = 'request_review'
+    request_id: str = Field(min_length=1,max_length=100)
+    game_id: str = Field(pattern=r'^[1-9][0-9]*$')
+    operation: Literal['summary','page','what_if','tag','media']
+    report_id: str | None = None
+    evidence_id: str | None = None
+    path: tuple[str | StrictInt,...] = Field(default=(),max_length=64)
+    cursor: StrictInt = Field(default=0,ge=0)
+    limit: StrictInt = Field(default=32,ge=1,le=49152)
+    moment_id: str | None = Field(default=None,max_length=500)
+    option_id: str | None = Field(default=None,max_length=500)
+    tag: Literal['agree','disagree','unsure'] | None = None
+    name: str | None = Field(default=None,pattern=r'^media/[0-9a-f]{32}\.(webp|mp4)$')
+
+    @model_validator(mode='after')
+    def required_arguments(self):
+        if any(isinstance(part,str) and len(part)>500 or type(part) is int and part<0 for part in self.path):
+            raise ValueError('Invalid review evidence path')
+        if self.operation not in ('summary','media') and (not self.report_id or not self.evidence_id):
+            raise ValueError('Review details require the current report and evidence identities')
+        if self.operation in ('tag','what_if') and not self.moment_id:
+            raise ValueError('Known review moment required')
+        if self.operation=='tag' and not self.tag:raise ValueError('Review tag required')
+        if self.operation=='what_if' and not self.option_id:raise ValueError('Known scored option required')
+        if self.operation=='media' and not self.name:raise ValueError('Logged media name required')
+        if self.operation=='page' and self.limit>128:raise ValueError('Review page limit exceeds 128')
+        return self
+
+
+class ReviewResponse(_Message):
+    type: Literal['review_response'] = 'review_response'
+    request_id: str
+    game_id: str
+    operation: Literal['summary','page','what_if','tag','media']
+    value: dict[str,JsonValue]
+
+
 class UiMessage(
     RootModel[
         Annotated[
-            Hello | SetSessionMode | RequestBaselineState | SelectGuide | SurfaceShown,
+            Hello | SetSessionMode | RequestBaselineState | SelectGuide | SurfaceShown | RequestLiveState | RequestEvidencePage | LiveSurfaceShown | PinLine | RequestSurfaceGeometry | RequestReview | RequestReviewGames,
             Field(discriminator="type"),
         ]
     ]
@@ -114,7 +265,7 @@ class UiMessage(
 class CoreMessage(
     RootModel[
         Annotated[
-            Gameflow | SessionModeState | ErrorMessage | BaselineState,
+            Gameflow | SessionModeState | ErrorMessage | BaselineState | LiveState | EvidencePage | SurfaceGeometryState | ReviewResponse | ReviewGames | ReviewReady,
             Field(discriminator="type"),
         ]
     ]
@@ -132,7 +283,7 @@ _core_adapter = TypeAdapter(CoreMessage)
 
 def _check_version(raw: str | bytes) -> object:
     data = json.loads(raw)
-    if not isinstance(data, dict) or data.get("v") != SCHEMA_VERSION:
+    if not isinstance(data, dict) or (type(data.get("v")) is not int or data.get("v") != SCHEMA_VERSION):
         version = data.get("v") if isinstance(data, dict) else None
         raise UnsupportedVersion(
             f"expected schema version {SCHEMA_VERSION}, got {version!r}"

@@ -52,12 +52,30 @@ class EvidenceGraph:
         objects = {}
 
         def encode(row, force=False):
+            if not force:
+                # Conservative encoded-length bounds preserve the exact old
+                # threshold decision while avoiding tiny primitive envelopes.
+                if threshold >= 128 and (type(row) in (bool, float) or
+                        type(row) is int and row.bit_length() < 256):
+                    return row
+                if isinstance(row, str) and len(row) * 6 + 20 < threshold:
+                    return row
+                if row is None and threshold > 20:
+                    return row
             if isinstance(row, dict):
                 result = {key: encode(child) for key, child in row.items()}
                 if set(result) in ({"$evidence"}, {"$literal"}):
                     result = {"$literal": result}
             elif isinstance(row, list):
-                result = [encode(child) for child in row]
+                # The initial finite JSON normalization already checked these
+                # primitives. Each envelope is smaller than 128 bytes, so none
+                # would become a record at this threshold. Encode the containing
+                # numeric vector in C rather than serialize each scalar again.
+                primitive_vector = threshold >= 128 and all(
+                    type(child) in (bool, float) or
+                    type(child) is int and child.bit_length() < 256
+                    for child in row)
+                result = row if primitive_vector else [encode(child) for child in row]
             else:
                 result = row
             body = canonical_bytes({"v": 1, "value": result})

@@ -381,8 +381,14 @@
         "mapping": {
           "baseline_state": "#/$defs/BaselineState",
           "error": "#/$defs/ErrorMessage",
+          "evidence_page": "#/$defs/EvidencePage",
           "gameflow": "#/$defs/Gameflow",
-          "session_mode": "#/$defs/SessionModeState"
+          "live_state": "#/$defs/LiveState",
+          "review_games": "#/$defs/ReviewGames",
+          "review_ready": "#/$defs/ReviewReady",
+          "review_response": "#/$defs/ReviewResponse",
+          "session_mode": "#/$defs/SessionModeState",
+          "surface_geometry": "#/$defs/SurfaceGeometryState"
         },
         "propertyName": "type"
       },
@@ -398,6 +404,24 @@
         },
         {
           "$ref": "#/$defs/BaselineState"
+        },
+        {
+          "$ref": "#/$defs/LiveState"
+        },
+        {
+          "$ref": "#/$defs/EvidencePage"
+        },
+        {
+          "$ref": "#/$defs/SurfaceGeometryState"
+        },
+        {
+          "$ref": "#/$defs/ReviewResponse"
+        },
+        {
+          "$ref": "#/$defs/ReviewGames"
+        },
+        {
+          "$ref": "#/$defs/ReviewReady"
         }
       ],
       "title": "CoreMessage"
@@ -435,7 +459,6 @@
     },
     "ErrorMessage": {
       "additionalProperties": false,
-      "description": "The core rejected a message from the shell.",
       "properties": {
         "code": {
           "title": "Code",
@@ -444,6 +467,18 @@
         "message": {
           "title": "Message",
           "type": "string"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
         },
         "type": {
           "const": "error",
@@ -460,11 +495,58 @@
       },
       "required": [
         "v",
+        "request_id",
         "type",
         "code",
         "message"
       ],
       "title": "ErrorMessage",
+      "type": "object"
+    },
+    "EvidencePage": {
+      "additionalProperties": false,
+      "properties": {
+        "game_id": {
+          "title": "Game Id",
+          "type": "string"
+        },
+        "page": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Page",
+          "type": "object"
+        },
+        "request_id": {
+          "title": "Request Id",
+          "type": "string"
+        },
+        "revision": {
+          "title": "Revision",
+          "type": "string"
+        },
+        "type": {
+          "const": "evidence_page",
+          "default": "evidence_page",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "type",
+        "request_id",
+        "game_id",
+        "revision",
+        "page"
+      ],
+      "title": "EvidencePage",
       "type": "object"
     },
     "FacedResult": {
@@ -711,6 +793,7 @@
       "title": "ItemRecipe",
       "type": "object"
     },
+    "JsonValue": {},
     "LayoutUnit": {
       "additionalProperties": false,
       "properties": {
@@ -737,6 +820,863 @@
         "position"
       ],
       "title": "LayoutUnit",
+      "type": "object"
+    },
+    "LiveAdviceDisplay": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "title": "Action",
+          "type": "string"
+        },
+        "anchors": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Anchors",
+          "type": "object"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "decision_id": {
+          "title": "Decision Id",
+          "type": "string"
+        },
+        "domain": {
+          "title": "Domain",
+          "type": "string"
+        },
+        "evidence_path": {
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "title": "Evidence Path",
+          "type": "array"
+        },
+        "numbers": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "title": "Numbers",
+          "type": "object"
+        },
+        "option_id": {
+          "title": "Option Id",
+          "type": "string"
+        },
+        "options": {
+          "items": {
+            "$ref": "#/$defs/LiveOptionDisplay"
+          },
+          "title": "Options",
+          "type": "array"
+        },
+        "payload": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Payload",
+          "type": "object"
+        },
+        "placement_impact": {
+          "title": "Placement Impact",
+          "type": "number"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "urgency": {
+          "enum": [
+            "act_this_phase",
+            "soon",
+            "information"
+          ],
+          "title": "Urgency",
+          "type": "string"
+        },
+        "valid_until": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Valid Until"
+        },
+        "validity": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Validity",
+          "type": "array"
+        }
+      },
+      "required": [
+        "decision_id",
+        "option_id",
+        "domain",
+        "action",
+        "urgency",
+        "confidence",
+        "reason",
+        "numbers",
+        "placement_impact",
+        "payload",
+        "anchors",
+        "validity",
+        "valid_until",
+        "evidence_path",
+        "options"
+      ],
+      "title": "LiveAdviceDisplay",
+      "type": "object"
+    },
+    "LiveContent": {
+      "additionalProperties": false,
+      "properties": {
+        "advice": {
+          "items": {
+            "$ref": "#/$defs/LiveAdviceDisplay"
+          },
+          "title": "Advice",
+          "type": "array"
+        },
+        "captured_at": {
+          "format": "date-time",
+          "title": "Captured At",
+          "type": "string"
+        },
+        "confidence_medium_min": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence Medium Min"
+        },
+        "data_snapshot_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Data Snapshot Id"
+        },
+        "entity_names": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "title": "Entity Names",
+          "type": "object"
+        },
+        "evaluated_at": {
+          "format": "date-time",
+          "title": "Evaluated At",
+          "type": "string"
+        },
+        "evidence_id": {
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "fits": {
+          "items": {
+            "$ref": "#/$defs/LiveFitDisplay"
+          },
+          "title": "Fits",
+          "type": "array"
+        },
+        "game_id": {
+          "title": "Game Id",
+          "type": "string"
+        },
+        "lines": {
+          "items": {
+            "$ref": "#/$defs/LiveLineDisplay"
+          },
+          "title": "Lines",
+          "type": "array"
+        },
+        "model_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Model Hash"
+        },
+        "opponents": {
+          "default": [],
+          "items": {
+            "additionalProperties": {
+              "$ref": "#/$defs/JsonValue"
+            },
+            "type": "object"
+          },
+          "title": "Opponents",
+          "type": "array"
+        },
+        "ownership_valid_until": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ownership Valid Until"
+        },
+        "phase": {
+          "enum": [
+            "planning",
+            "roll_down",
+            "augment",
+            "carousel",
+            "combat",
+            "end",
+            "unknown"
+          ],
+          "title": "Phase",
+          "type": "string"
+        },
+        "plan": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Plan",
+          "type": "object"
+        },
+        "projection": {
+          "items": {
+            "$ref": "#/$defs/LiveProjectionDisplay"
+          },
+          "title": "Projection",
+          "type": "array"
+        },
+        "recommended_board": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Recommended Board"
+        },
+        "roll_tracker": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Roll Tracker"
+        },
+        "roster_valid_until": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Roster Valid Until"
+        },
+        "round_id": {
+          "title": "Round Id",
+          "type": "string"
+        },
+        "snapshot_id": {
+          "title": "Snapshot Id",
+          "type": "string"
+        },
+        "warnings": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "game_id",
+        "snapshot_id",
+        "captured_at",
+        "evaluated_at",
+        "data_snapshot_id",
+        "model_hash",
+        "round_id",
+        "phase",
+        "advice",
+        "plan",
+        "lines",
+        "projection",
+        "recommended_board",
+        "fits",
+        "roster_valid_until",
+        "ownership_valid_until",
+        "opponents",
+        "roll_tracker",
+        "confidence_medium_min",
+        "entity_names",
+        "warnings",
+        "evidence_id"
+      ],
+      "title": "LiveContent",
+      "type": "object"
+    },
+    "LiveFitDisplay": {
+      "additionalProperties": false,
+      "properties": {
+        "comp_id": {
+          "title": "Comp Id",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "evidence_path": {
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "title": "Evidence Path",
+          "type": "array"
+        },
+        "score": {
+          "title": "Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "comp_id",
+        "score",
+        "confidence",
+        "evidence_path"
+      ],
+      "title": "LiveFitDisplay",
+      "type": "object"
+    },
+    "LiveLineDisplay": {
+      "additionalProperties": false,
+      "properties": {
+        "comp_id": {
+          "title": "Comp Id",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "death_probability": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Death Probability",
+          "type": "number"
+        },
+        "evidence_path": {
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "title": "Evidence Path",
+          "type": "array"
+        },
+        "expected_placement": {
+          "title": "Expected Placement",
+          "type": "number"
+        },
+        "hit_probability": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Hit Probability",
+          "type": "number"
+        },
+        "line_id": {
+          "title": "Line Id",
+          "type": "string"
+        },
+        "schedule": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Schedule",
+          "type": "object"
+        },
+        "seed": {
+          "title": "Seed",
+          "type": "string"
+        },
+        "standard_error": {
+          "minimum": 0,
+          "title": "Standard Error",
+          "type": "number"
+        }
+      },
+      "required": [
+        "comp_id",
+        "line_id",
+        "seed",
+        "expected_placement",
+        "standard_error",
+        "hit_probability",
+        "death_probability",
+        "confidence",
+        "schedule",
+        "evidence_path"
+      ],
+      "title": "LiveLineDisplay",
+      "type": "object"
+    },
+    "LiveOptionDisplay": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "title": "Action",
+          "type": "string"
+        },
+        "evidence_path": {
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "title": "Evidence Path",
+          "type": "array"
+        },
+        "expected_placement": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Expected Placement"
+        },
+        "option_id": {
+          "title": "Option Id",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Payload",
+          "type": "object"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "standard_error": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Standard Error"
+        }
+      },
+      "required": [
+        "option_id",
+        "action",
+        "expected_placement",
+        "standard_error",
+        "reason",
+        "payload",
+        "evidence_path"
+      ],
+      "title": "LiveOptionDisplay",
+      "type": "object"
+    },
+    "LiveProjectionDisplay": {
+      "additionalProperties": false,
+      "properties": {
+        "expected_placement": {
+          "title": "Expected Placement",
+          "type": "number"
+        },
+        "gold": {
+          "title": "Gold",
+          "type": "number"
+        },
+        "hit_probability": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Hit Probability",
+          "type": "number"
+        },
+        "hp": {
+          "title": "Hp",
+          "type": "number"
+        },
+        "level": {
+          "title": "Level",
+          "type": "number"
+        },
+        "planned_gold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Planned Gold"
+        },
+        "round_id": {
+          "title": "Round Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "round_id",
+        "gold",
+        "level",
+        "hit_probability",
+        "hp",
+        "expected_placement",
+        "planned_gold"
+      ],
+      "title": "LiveProjectionDisplay",
+      "type": "object"
+    },
+    "LiveState": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LiveContent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "invalidated": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "title": "Invalidated",
+          "type": "object"
+        },
+        "mode": {
+          "$ref": "#/$defs/SessionMode"
+        },
+        "observed_phase": {
+          "anyOf": [
+            {
+              "enum": [
+                "planning",
+                "roll_down",
+                "augment",
+                "carousel",
+                "combat",
+                "end",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed Phase"
+        },
+        "ownership_qualified": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ownership Qualified"
+        },
+        "pin": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pin"
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision"
+        },
+        "roster_qualified": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Roster Qualified"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        },
+        "type": {
+          "const": "live_state",
+          "default": "live_state",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "type",
+        "mode",
+        "status",
+        "revision",
+        "content",
+        "pin",
+        "invalidated",
+        "roster_qualified",
+        "ownership_qualified",
+        "observed_phase"
+      ],
+      "title": "LiveState",
+      "type": "object"
+    },
+    "LiveSurfaceAnchor": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Height",
+          "type": "number"
+        },
+        "index": {
+          "maximum": 27,
+          "minimum": 0,
+          "title": "Index",
+          "type": "integer"
+        },
+        "kind": {
+          "enum": [
+            "shop",
+            "level",
+            "par",
+            "augment",
+            "carousel",
+            "wisp",
+            "xp",
+            "player",
+            "hex",
+            "line",
+            "review"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Width",
+          "type": "number"
+        },
+        "x": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "index",
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "title": "LiveSurfaceAnchor",
+      "type": "object"
+    },
+    "LiveSurfaceShown": {
+      "additionalProperties": false,
+      "properties": {
+        "decision_id": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Decision Id",
+          "type": "string"
+        },
+        "game_id": {
+          "pattern": "^[1-9][0-9]*$",
+          "title": "Game Id",
+          "type": "string"
+        },
+        "option_id": {
+          "maxLength": 500,
+          "title": "Option Id",
+          "type": "string"
+        },
+        "revision": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Revision",
+          "type": "string"
+        },
+        "surface": {
+          "enum": [
+            "cockpit",
+            "overlay",
+            "voice"
+          ],
+          "title": "Surface",
+          "type": "string"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "title": "Timestamp",
+          "type": "string"
+        },
+        "type": {
+          "const": "live_surface_shown",
+          "default": "live_surface_shown",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "type",
+        "game_id",
+        "revision",
+        "decision_id",
+        "option_id",
+        "surface",
+        "timestamp"
+      ],
+      "title": "LiveSurfaceShown",
       "type": "object"
     },
     "OverlayBounds": {
@@ -847,6 +1787,118 @@
       "title": "PausedField",
       "type": "object"
     },
+    "PhysicalClientBounds": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "exclusiveMinimum": 0,
+          "maximum": 20000,
+          "title": "Height",
+          "type": "integer"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "maximum": 20000,
+          "title": "Width",
+          "type": "integer"
+        },
+        "x": {
+          "title": "X",
+          "type": "integer"
+        },
+        "y": {
+          "title": "Y",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "title": "PhysicalClientBounds",
+      "type": "object"
+    },
+    "PinLine": {
+      "additionalProperties": false,
+      "properties": {
+        "comp_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Comp Id"
+        },
+        "game_id": {
+          "pattern": "^[1-9][0-9]*$",
+          "title": "Game Id",
+          "type": "string"
+        },
+        "line_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Line Id"
+        },
+        "revision": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Revision",
+          "type": "string"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]{1,20}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed"
+        },
+        "type": {
+          "const": "pin_line",
+          "default": "pin_line",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "type",
+        "game_id",
+        "revision",
+        "comp_id",
+        "line_id",
+        "seed"
+      ],
+      "title": "PinLine",
+      "type": "object"
+    },
     "RecipeComponent": {
       "additionalProperties": false,
       "properties": {
@@ -886,6 +1938,486 @@
         "type"
       ],
       "title": "RequestBaselineState",
+      "type": "object"
+    },
+    "RequestEvidencePage": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Cursor",
+          "type": "integer"
+        },
+        "game_id": {
+          "pattern": "^[1-9][0-9]*$",
+          "title": "Game Id",
+          "type": "string"
+        },
+        "limit": {
+          "default": 32,
+          "maximum": 128,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "path": {
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "maxItems": 64,
+          "title": "Path",
+          "type": "array"
+        },
+        "request_id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Request Id",
+          "type": "string"
+        },
+        "revision": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Revision",
+          "type": "string"
+        },
+        "type": {
+          "const": "request_evidence_page",
+          "default": "request_evidence_page",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "type",
+        "request_id",
+        "game_id",
+        "revision",
+        "path",
+        "cursor",
+        "limit"
+      ],
+      "title": "RequestEvidencePage",
+      "type": "object"
+    },
+    "RequestLiveState": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "request_live_state",
+          "default": "request_live_state",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "type"
+      ],
+      "title": "RequestLiveState",
+      "type": "object"
+    },
+    "RequestReview": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Cursor",
+          "type": "integer"
+        },
+        "evidence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence Id"
+        },
+        "game_id": {
+          "pattern": "^[1-9][0-9]*$",
+          "title": "Game Id",
+          "type": "string"
+        },
+        "limit": {
+          "default": 32,
+          "maximum": 49152,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "moment_id": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Moment Id"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "pattern": "^media/[0-9a-f]{32}\\.(webp|mp4)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "operation": {
+          "enum": [
+            "summary",
+            "page",
+            "what_if",
+            "tag",
+            "media"
+          ],
+          "title": "Operation",
+          "type": "string"
+        },
+        "option_id": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Option Id"
+        },
+        "path": {
+          "default": [],
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "maxItems": 64,
+          "title": "Path",
+          "type": "array"
+        },
+        "report_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Report Id"
+        },
+        "request_id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Request Id",
+          "type": "string"
+        },
+        "tag": {
+          "anyOf": [
+            {
+              "enum": [
+                "agree",
+                "disagree",
+                "unsure"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tag"
+        },
+        "type": {
+          "const": "request_review",
+          "default": "request_review",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "type",
+        "request_id",
+        "game_id",
+        "operation",
+        "report_id",
+        "evidence_id",
+        "path",
+        "cursor",
+        "limit",
+        "moment_id",
+        "option_id",
+        "tag",
+        "name"
+      ],
+      "title": "RequestReview",
+      "type": "object"
+    },
+    "RequestReviewGames": {
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Request Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "request_review_games",
+          "default": "request_review_games",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "type",
+        "request_id"
+      ],
+      "title": "RequestReviewGames",
+      "type": "object"
+    },
+    "RequestSurfaceGeometry": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "request_surface_geometry",
+          "default": "request_surface_geometry",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "type"
+      ],
+      "title": "RequestSurfaceGeometry",
+      "type": "object"
+    },
+    "ReviewGames": {
+      "additionalProperties": false,
+      "properties": {
+        "games": {
+          "items": {
+            "additionalProperties": {
+              "$ref": "#/$defs/JsonValue"
+            },
+            "type": "object"
+          },
+          "title": "Games",
+          "type": "array"
+        },
+        "request_id": {
+          "title": "Request Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "review_games",
+          "default": "review_games",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "type",
+        "request_id",
+        "games"
+      ],
+      "title": "ReviewGames",
+      "type": "object"
+    },
+    "ReviewReady": {
+      "additionalProperties": false,
+      "properties": {
+        "ended_at": {
+          "format": "date-time",
+          "title": "Ended At",
+          "type": "string"
+        },
+        "evidence_id": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "game_id": {
+          "pattern": "^[1-9][0-9]*$",
+          "title": "Game Id",
+          "type": "string"
+        },
+        "late": {
+          "title": "Late",
+          "type": "boolean"
+        },
+        "latency_seconds": {
+          "minimum": 0,
+          "title": "Latency Seconds",
+          "type": "number"
+        },
+        "mode": {
+          "enum": [
+            "baseline",
+            "live"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "ready_at": {
+          "format": "date-time",
+          "title": "Ready At",
+          "type": "string"
+        },
+        "report_id": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Report Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "review_ready",
+          "default": "review_ready",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "type",
+        "game_id",
+        "mode",
+        "report_id",
+        "evidence_id",
+        "ended_at",
+        "ready_at",
+        "latency_seconds",
+        "late"
+      ],
+      "title": "ReviewReady",
+      "type": "object"
+    },
+    "ReviewResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "game_id": {
+          "title": "Game Id",
+          "type": "string"
+        },
+        "operation": {
+          "enum": [
+            "summary",
+            "page",
+            "what_if",
+            "tag",
+            "media"
+          ],
+          "title": "Operation",
+          "type": "string"
+        },
+        "request_id": {
+          "title": "Request Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "review_response",
+          "default": "review_response",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        },
+        "value": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Value",
+          "type": "object"
+        }
+      },
+      "required": [
+        "v",
+        "type",
+        "request_id",
+        "game_id",
+        "operation",
+        "value"
+      ],
+      "title": "ReviewResponse",
       "type": "object"
     },
     "SelectGuide": {
@@ -1099,6 +2631,167 @@
       "title": "SurfaceAnchor",
       "type": "object"
     },
+    "SurfaceCalibration": {
+      "additionalProperties": false,
+      "properties": {
+        "client_size": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            }
+          ],
+          "title": "Client Size",
+          "type": "array"
+        },
+        "ui_scale": {
+          "maximum": 1.5,
+          "minimum": 0.5,
+          "title": "Ui Scale",
+          "type": "number"
+        }
+      },
+      "required": [
+        "client_size",
+        "ui_scale"
+      ],
+      "title": "SurfaceCalibration",
+      "type": "object"
+    },
+    "SurfaceGeometry": {
+      "additionalProperties": false,
+      "properties": {
+        "calibration": {
+          "$ref": "#/$defs/SurfaceCalibration"
+        },
+        "client_bounds": {
+          "$ref": "#/$defs/PhysicalClientBounds"
+        },
+        "coordinate_space": {
+          "const": "physical_pixels",
+          "title": "Coordinate Space",
+          "type": "string"
+        },
+        "layout_read_at": {
+          "format": "date-time",
+          "title": "Layout Read At",
+          "type": "string"
+        },
+        "layout_source_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Layout Source Sha256",
+          "type": "string"
+        },
+        "profile_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Profile Sha256",
+          "type": "string"
+        },
+        "read_at": {
+          "format": "date-time",
+          "title": "Read At",
+          "type": "string"
+        },
+        "source": {
+          "const": "Win32-client-rectangle",
+          "title": "Source",
+          "type": "string"
+        },
+        "ui_scale": {
+          "maximum": 1.5,
+          "minimum": 0.5,
+          "title": "Ui Scale",
+          "type": "number"
+        },
+        "window_id": {
+          "title": "Window Id",
+          "type": "string"
+        },
+        "window_mode": {
+          "enum": [
+            "windowed",
+            "borderless",
+            "exclusive_fullscreen",
+            "unknown"
+          ],
+          "title": "Window Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "window_id",
+        "coordinate_space",
+        "client_bounds",
+        "read_at",
+        "layout_read_at",
+        "layout_source_sha256",
+        "source",
+        "window_mode",
+        "ui_scale",
+        "profile_sha256",
+        "calibration"
+      ],
+      "title": "SurfaceGeometry",
+      "type": "object"
+    },
+    "SurfaceGeometryState": {
+      "additionalProperties": false,
+      "properties": {
+        "anchors": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/LiveSurfaceAnchor"
+          },
+          "title": "Anchors",
+          "type": "array"
+        },
+        "geometry": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SurfaceGeometry"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "mode": {
+          "$ref": "#/$defs/SessionMode"
+        },
+        "status": {
+          "default": "Desktop geometry unavailable",
+          "title": "Status",
+          "type": "string"
+        },
+        "type": {
+          "const": "surface_geometry",
+          "default": "surface_geometry",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "type",
+        "mode",
+        "geometry",
+        "anchors",
+        "status"
+      ],
+      "title": "SurfaceGeometryState",
+      "type": "object"
+    },
     "SurfaceShown": {
       "additionalProperties": false,
       "properties": {
@@ -1150,7 +2843,14 @@
       "discriminator": {
         "mapping": {
           "hello": "#/$defs/Hello",
+          "live_surface_shown": "#/$defs/LiveSurfaceShown",
+          "pin_line": "#/$defs/PinLine",
           "request_baseline_state": "#/$defs/RequestBaselineState",
+          "request_evidence_page": "#/$defs/RequestEvidencePage",
+          "request_live_state": "#/$defs/RequestLiveState",
+          "request_review": "#/$defs/RequestReview",
+          "request_review_games": "#/$defs/RequestReviewGames",
+          "request_surface_geometry": "#/$defs/RequestSurfaceGeometry",
           "select_guide": "#/$defs/SelectGuide",
           "set_session_mode": "#/$defs/SetSessionMode",
           "surface_shown": "#/$defs/SurfaceShown"
@@ -1172,6 +2872,27 @@
         },
         {
           "$ref": "#/$defs/SurfaceShown"
+        },
+        {
+          "$ref": "#/$defs/RequestLiveState"
+        },
+        {
+          "$ref": "#/$defs/RequestEvidencePage"
+        },
+        {
+          "$ref": "#/$defs/LiveSurfaceShown"
+        },
+        {
+          "$ref": "#/$defs/PinLine"
+        },
+        {
+          "$ref": "#/$defs/RequestSurfaceGeometry"
+        },
+        {
+          "$ref": "#/$defs/RequestReview"
+        },
+        {
+          "$ref": "#/$defs/RequestReviewGames"
         }
       ],
       "title": "UiMessage"

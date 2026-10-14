@@ -85,6 +85,8 @@ async def run(
         finally:
             watcher.cancel()
             await asyncio.gather(watcher, return_exceptions=True)
+            io_status=await server.shutdown_io(timeout=.25)
+            log.info('Owned I/O shutdown status: %s',io_status)
             await runtime.shutdown()
             log.info("Capture shutdown status: %s", runtime.status)
 
