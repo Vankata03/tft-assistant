@@ -11,14 +11,81 @@ import os
 import re
 import sqlite3
 import threading
+import tempfile
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from weakref import WeakValueDictionary
 
 from tft_core.messages import SessionMode
 
 _MODE_RANK = {SessionMode.SILENT: 0, SessionMode.BASELINE: 1, SessionMode.LIVE: 2}
+_STORE_LOCKS = WeakValueDictionary()
+_STORE_LOCKS_GUARD = threading.Lock()
+
+
+class _StoreLock:
+    """Reentrant thread exclusion and one OS lock shared by all store processes."""
+
+    def __init__(self, root: Path) -> None:
+        self.path = root / ".session-store.lock"
+        self.thread_lock = threading.RLock()
+        self.depth = 0
+        self.stream = None
+
+    def __enter__(self):
+        self.thread_lock.acquire()
+        try:
+            if self.depth == 0:
+                self.stream = self.path.open("a+b")
+                if os.name == "nt":
+                    import msvcrt
+                    self.stream.seek(0)
+                    # The documented blocking call retries ten times, then
+                    # raises visibly. The byte may lie beyond the empty file.
+                    msvcrt.locking(self.stream.fileno(), msvcrt.LK_LOCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(self.stream.fileno(), fcntl.LOCK_EX)
+            self.depth += 1
+            return self
+        except BaseException:
+            if self.depth == 0 and self.stream is not None:
+                self.stream.close()
+                self.stream = None
+            self.thread_lock.release()
+            raise
+
+    def __exit__(self, *error):
+        self.depth -= 1
+        try:
+            if self.depth == 0:
+                try:
+                    if os.name == "nt":
+                        import msvcrt
+                        self.stream.seek(0)
+                        msvcrt.locking(self.stream.fileno(), msvcrt.LK_UNLCK, 1)
+                    else:
+                        import fcntl
+                        fcntl.flock(self.stream.fileno(), fcntl.LOCK_UN)
+                finally:
+                    self.stream.close()
+                    self.stream = None
+        finally:
+            self.thread_lock.release()
+
+
+def _store_lock(root: Path) -> _StoreLock:
+    # Separate SessionStore objects in one process share the reentrant lock.
+    # Keep the on-disk lock file: unlinking it could split live lock holders.
+    root = root.resolve()
+    with _STORE_LOCKS_GUARD:
+        lock = _STORE_LOCKS.get(root)
+        if lock is None:
+            lock = _StoreLock(root)
+            _STORE_LOCKS[root] = lock
+        return lock
 
 
 def utc_now() -> str:
@@ -58,8 +125,9 @@ class SessionStore:
         self.logs.mkdir(parents=True, exist_ok=True)
         self.config_root.mkdir(parents=True, exist_ok=True)
         self.live_installed = importlib.util.find_spec("tft_live") is not None if live_installed is None else live_installed
-        self._lock = threading.RLock()
+        self._lock = _store_lock(self.root)
         self._next_seq: dict[str, int] = {}
+        self._log_sizes: dict[str, int] = {}
         self.active_game_id: str | None = None
         self._mode = self.default_mode
         settings = self.config_root / "session.json"
@@ -114,18 +182,22 @@ class SessionStore:
         return events
 
     def _append(self, game_id: str, kind: str, payload: dict, timestamp: str | None = None) -> dict:
-        if game_id not in self._next_seq:
+        path = self.log_path(game_id)
+        size = path.stat().st_size if path.exists() else 0
+        # A background process may have appended cache evidence since this
+        # instance last wrote. Reuse the fast path only for unchanged bytes.
+        if game_id not in self._next_seq or self._log_sizes.get(game_id) != size:
             self._next_seq[game_id] = len(self.read_events(game_id))
         sequence = self._next_seq[game_id]
         event = {"v": 1, "seq": sequence, "kind": kind, "timestamp": timestamp or utc_now(), "payload": payload}
         encoded = (json.dumps(event, allow_nan=False, separators=(",", ":")) + "\n").encode()
-        path = self.log_path(game_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("ab") as output:
             output.write(encoded)
             output.flush()
             os.fsync(output.fileno())
         self._next_seq[game_id] = sequence + 1
+        self._log_sizes[game_id] = size + len(encoded)
         return event
 
     def append_event(self, kind: str, payload: dict, *, timestamp: str | None = None) -> dict:
@@ -251,16 +323,19 @@ class SessionStore:
                     if game["finished"]:
                         number += 1
                         game.update(block=(number - 1) // 10 + 1, run_number=number)
-            temporary = self.root / "index.rebuild.sqlite3"
-            temporary.unlink(missing_ok=True)
-            with closing(sqlite3.connect(temporary)) as connection:
-                connection.execute("CREATE TABLE IF NOT EXISTS games (game_id TEXT PRIMARY KEY, record TEXT NOT NULL)")
-                connection.execute("CREATE TABLE replay_cache (game_id TEXT NOT NULL, record TEXT NOT NULL)")
-                connection.executemany("INSERT INTO replay_cache VALUES (?, ?)", replay_entries)
-                connection.execute("DELETE FROM games")
-                connection.executemany("INSERT INTO games VALUES (?, ?)", [(g["game_id"], json.dumps(g)) for g in games])
-                connection.commit()
-            os.replace(temporary, self.root / "index.sqlite3")
+            descriptor, name = tempfile.mkstemp(prefix="index.rebuild-", suffix=".sqlite3", dir=self.root)
+            os.close(descriptor)
+            temporary = Path(name)
+            try:
+                with closing(sqlite3.connect(temporary)) as connection:
+                    connection.execute("CREATE TABLE games (game_id TEXT PRIMARY KEY, record TEXT NOT NULL)")
+                    connection.execute("CREATE TABLE replay_cache (game_id TEXT NOT NULL, record TEXT NOT NULL)")
+                    connection.executemany("INSERT INTO replay_cache VALUES (?, ?)", replay_entries)
+                    connection.executemany("INSERT INTO games VALUES (?, ?)", [(g["game_id"], json.dumps(g)) for g in games])
+                    connection.commit()
+                os.replace(temporary, self.root / "index.sqlite3")
+            finally:
+                temporary.unlink(missing_ok=True)
 
     def list_games(self) -> list[dict]:
         with self._lock, closing(sqlite3.connect(self.root / "index.sqlite3")) as connection:
