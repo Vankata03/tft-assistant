@@ -38,3 +38,15 @@ Fixture/API-adapter tests do not qualify the actual Windows EOG endpoint or matc
 ### 2026-10-13 — Independent Windows test handoff
 
 Ticket 57 extracts the build-first launcher and operator instructions requested for tonight's Windows tests. This ticket retains optional login/shortcut settings and all final runtime requirements; a platform handoff does not qualify Live/data/model behavior. The owner explicitly authorized committing and pushing verified integration work.
+
+
+## Comments
+
+### 2026-10-14 — Isolated actual-app runtime proof
+
+- The interrupted runtime recovery is preserved at `3f2fa0a`. Root copied only its unfinished public app test into `implement/runtime-app-proof`, reconciled current `dea8085`, and replaced diagnostic print-only probes with assertions through the actual app, authenticated WebSocket, durable session API and real review child. Original runtime and UI recovery worktrees were not modified.
+- The source-gated Live publication case fails against pushed root `dea8085` with no Engine delivery after eight seconds, and passes on the candidate runtime. The fixture lacks validated Guides, board and inventory inputs, so the real Engine returns paused advice; this is wiring proof, not useful recommendation or asset qualification. Silent downgrade clears content, and an in-game upgrade is rejected.
+- A confirmed end finalizes the log before the actual child publishes a review-ready receipt; authenticated summary access matches its report identity, and missing placement remains null. Positive TFT phase with missing settings reports the exact setup path, opens no capture device, preserves data and still enforces mode guards. The latter case runs with and without the advisor capability.
+- At source `80be282`, the full frozen training suite passed 667 without skips in 103.80 seconds, process 0, with two existing Torch export warnings. This predates the final additional capability parameter case. Final app tests pass four cases in 1.35 seconds. With Live actually uninstalled and import absence checked, the runtime/Engine/jobs/lease/desktop and no-advisor app set passed 61 in 10.95 seconds; Live/train were restored. Imports kept both contracts, schemas, frozen lock, F821 and whitespace passed.
+- The inherited diagnostic probe initially timed out without a confirmed cause. Early test-only assertions used a nonexistent storage method, an absent gameflow field and the wrong error code; they were corrected to the existing public interfaces. Permanent tests wait for reported Lobby before selecting a session mode. No production fix is claimed for that initial diagnostic timeout.
+- Independent UI/runtime review remains unavailable: Claude returned an API rate limit, Antigravity could not open a session, and OpenCode rejected free-tier use through this provider. The UI source is held at `778d0a1`. This runtime branch is a checked partial candidate, not independently accepted or merged; no push or ticket closure is claimed. Full UI, remaining harness/run workflows, runtime resources, production inputs, Windows/live-game behavior and historical native causality remain open.
