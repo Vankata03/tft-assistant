@@ -60,6 +60,7 @@ class SessionStore:
         self.live_installed = importlib.util.find_spec("tft_live") is not None if live_installed is None else live_installed
         self._lock = threading.RLock()
         self._next_seq: dict[str, int] = {}
+        self._tag_locks: dict[str, threading.Lock] = {}
         self.active_game_id: str | None = None
         self._mode = self.default_mode
         settings = self.config_root / "session.json"
@@ -515,8 +516,15 @@ class SessionStore:
     def set_review_tag(self, game_id: str | int, decision_id: str, tag: str) -> None:
         if tag not in {"agree", "disagree", "unsure"}:
             raise ValueError("tag must be agree, disagree or unsure")
+        game_id = _game_id(game_id)
         with self._lock:
-            game_id = _game_id(game_id)
+            tag_lock=self._tag_locks.setdefault(game_id,threading.Lock())
+        # Separate tag serialization leaves capture and mode changes independent
+        # of immutable report reads and the tag file's native flush.
+        with tag_lock:
+            report_path=self.root/"reviews"/f"{game_id}.json"
+            before=report_path.stat()
+            report_version=(before.st_ino,before.st_size,before.st_mtime_ns)
             stored = self.read_review(game_id)
             review = stored["review"] if stored else {}
             known = set(review.get("decision_ids", ()))
@@ -526,9 +534,31 @@ class SessionStore:
             if decision_id not in known:
                 raise ValueError("unknown review decision id")
             path = self.root / "reviews" / f"{game_id}.tags.json"
-            tags = json.loads(path.read_text()) if path.exists() else {}
+            original=path.stat() if path.exists() else None
+            tag_version=(original.st_ino,original.st_size,original.st_mtime_ns) if original else None
+            tags = json.loads(path.read_text()) if original else {}
             tags[decision_id] = tag
-            _atomic_json(path, tags)
+            from uuid import uuid4
+            temporary=path.with_suffix(f".{uuid4().hex}.tmp")
+            try:
+                with temporary.open("w",encoding="utf-8") as output:
+                    json.dump(tags,output,allow_nan=False)
+                    output.flush()
+                    os.fsync(output.fileno())
+                with self._lock:
+                    if self.active_game_id and self.mode is SessionMode.SILENT:
+                        raise ValueError("Silent games suppress review surfaces")
+                    game=next((row for row in self.list_games() if row['game_id']==game_id),None)
+                    if not game or game['review_locked']:
+                        raise PermissionError("silent-game review is locked")
+                    current=report_path.stat()
+                    current_tags=path.stat() if path.exists() else None
+                    current_tag_version=(current_tags.st_ino,current_tags.st_size,current_tags.st_mtime_ns) if current_tags else None
+                    if (current.st_ino,current.st_size,current.st_mtime_ns)!=report_version or current_tag_version!=tag_version:
+                        raise ValueError("Review or tags changed; reload before retrying")
+                    os.replace(temporary,path)
+            finally:
+                temporary.unlink(missing_ok=True)
 
     @property
     def media_mode(self) -> str:
