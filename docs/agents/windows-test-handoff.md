@@ -10,10 +10,19 @@ Have enough local disk space for full-resolution screenshots every 1.5 seconds f
 
 ## Pull and setup
 
-Open PowerShell 7. Enter the existing checkout path at the prompt; do not put a personal path into tracked configuration. Start with a clean checkout. If `git status --short` reports changes, preserve them before switching branches or pulling.
+Open PowerShell 7. On a machine without a checkout, choose a local parent folder and clone the integration branch:
 
 ```powershell
-$repo = Read-Host 'Existing tft-assistant checkout path'
+$parentFolder = Read-Host 'Local parent folder for the new checkout'
+Set-Location -LiteralPath $parentFolder
+git clone --branch implement/mvp --single-branch https://github.com/Vankata03/tft-assistant.git tft-assistant
+if ($LASTEXITCODE -ne 0) { throw 'clone failed; retain the error before continuing' }
+$repo = Join-Path $parentFolder 'tft-assistant'
+```
+
+For an existing checkout, set `$repo` to its local path instead. Keep personal paths out of tracked configuration. Run the following setup from either checkout. If `git status --short` reports changes, preserve them before switching branches or pulling.
+
+```powershell
 Set-Location -LiteralPath $repo
 git status --short
 git fetch origin
@@ -104,7 +113,9 @@ Output goes to ignored `probe/out/<timestamp>/`. Stop with Ctrl+C or allow the 9
 
 The probe records `env-start.json`, `env-ingame.json` when a game is detected, `env-end.json`, `poll.jsonl`, changed response bodies under `liveclient/`, screenshots under `shots/`, and manual captures under `manual/`. LCU discovery may produce `lcu-help-tft.json` or `lcu-help-raw.txt`. Port 2999 being closed or returning errors is a recorded observation, not proof that the launcher failed. A missing discovery file can mean the client was not readable at startup.
 
-The probe reads LCU endpoint discovery and gameflow phase. It does **not** save actual TFT gameflow-session metadata or end-of-game statistics. Its output cannot qualify the runtime session parser or placement extraction. Record that gap explicitly; this handoff adds no guessed endpoint payloads.
+Each poll also reads `/lol-gameflow/v1/session` and `/lol-end-of-game/v1/tft-eog-stats`. The ignored `lcu/receipts.jsonl` records request and response UTC times, HTTP status, and the corresponding JSON body filename. Known authentication material and credential fields are redacted. A three-second request deadline and one-MiB body limit bound collection; failed, oversized or non-JSON responses retain a receipt with an unavailable reason and no body file.
+
+These receipts preserve the observed payload shape for later parser and placement checks. A missing endpoint or response error is not a game result. Local HTTP fixtures verify collection and redaction; real Windows session metadata and end-of-game bodies still need capture and inspection before qualifying the runtime parser or placement extraction.
 
 Follow [probe/CHECKLIST.md](../../probe/CHECKLIST.md) for manual captures and round observations. Any checklist unit or mechanic that does not exist in the tested patch should be marked unavailable rather than forced into the evidence. Take manual screenshots of a normal planning view, one scouted board, an augment offer, a reconnect if tested, and the actual end-of-game screen. Note timestamps, game mode, patch, language, display mode and whether each image belongs to the owner or a scouted player.
 
@@ -127,3 +138,5 @@ No probe folder, no `poll.jsonl`, missing shutdown artifacts, black screenshots,
 ## Verification recorded with this change
 
 PowerShell 7.5.3 on macOS exercised the launcher with external uv/npm stand-ins: fresh checkout order, existing dependency rebuild, and exit-code propagation at sync, install, build and start. Those six cases failed against the old launcher and passed after the change. This is executable orchestration evidence. Windows npm/uv/Electron execution, native capture, real LCU session payloads, source availability and game-device performance still require the run described above.
+
+The receipt helper also ran against a real local HTTP fixture through PowerShell 7.5.3 on macOS. Three cases passed: JSON payloads with successful and missing-endpoint statuses, an oversized response, and a non-JSON response. The checks verified endpoint paths, authentication removal, UTC receipt times, retained session fields and explicit unavailable outcomes. Both probe scripts passed PowerShell parsing. The clone commands remain operator instructions; this check did not clone or run the application on Windows.

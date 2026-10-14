@@ -26,6 +26,7 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
+. (Join-Path $PSScriptRoot 'lcu-receipts.ps1')
 $start = Get-Date
 $out = Join-Path $OutRoot ($start.ToString('yyyy-MM-dd_HHmmss'))
 $null = New-Item -ItemType Directory -Force -Path $out, "$out/liveclient", "$out/shots", "$out/manual"
@@ -110,7 +111,7 @@ function Get-Lcu {
   $token = [regex]::Match($ux.CommandLine, '--remoting-auth-token=([\w-]+)').Groups[1].Value
   if (-not $port -or -not $token) { return $null }
   $b64 = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("riot:$token"))
-  @{ Base = "https://127.0.0.1:$port"; Headers = @{ Authorization = "Basic $b64" } }
+  @{ Base = "https://127.0.0.1:$port"; Headers = @{ Authorization = "Basic $b64" }; Secrets = @($token, $b64, "riot:$token") }
 }
 
 function Invoke-Get($url, $headers = @{}) {
@@ -226,6 +227,7 @@ try {
       if ($lcu) {
         $ph = Invoke-Get "$($lcu.Base)/lol-gameflow/v1/gameflow-phase" $lcu.Headers
         $line.phase = $ph.Body
+        $line.lcu_receipts = @(Save-LcuReceipts -Base $lcu.Base -Headers $lcu.Headers -Secrets $lcu.Secrets -OutputRoot (Join-Path $out 'lcu'))
         if ($ph.Body -ne $phaseLast) { $phaseLast = $ph.Body; Log "Client phase: $($ph.Body)" }
       }
       ($line | ConvertTo-Json -Depth 5 -Compress) | Add-Content "$out/poll.jsonl"
