@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { describeSchedule } from "../lineSchedule";
 
 type Path = (string | number)[];
 type RecordValue = Record<string, unknown>;
@@ -33,6 +34,11 @@ const fields = new Set([
   "unavailable",
   "evidence_path",
   "line_id",
+  "schedule",
+  "id",
+  "levels",
+  "rolls",
+  "death_placement_cost",
   "expected_placement",
   "standard_error",
   "death_probability",
@@ -45,6 +51,7 @@ const fields = new Set([
   "planned_gold",
   "status",
   "target",
+  "candidates",
   "backup",
   "called_status",
   "observed_lock",
@@ -57,6 +64,8 @@ const fields = new Set([
   "planning_round",
   "target_similarity",
   "opponent_id",
+  "start_log_seq",
+  "start_at",
   "result",
   "actual_hp_loss",
   "win_probability",
@@ -65,6 +74,7 @@ const fields = new Set([
   "winner_unit_count",
   "winner_unit_count_source",
   "moment_id",
+  "engine_decision_id",
   "category",
   "cost",
   "paired_uncertainty",
@@ -73,13 +83,19 @@ const fields = new Set([
   "shown",
   "reason",
   "action",
+  "layout",
+  "unit_index",
+  "unit_id",
+  "cell",
 ]);
+// Round-keyed maps and reason maps keep every recorded key.
+const openMaps = new Set(["observed", "unavailable", "levels", "rolls"]);
 function normalValue(value: unknown, field?: string): unknown {
   if (Array.isArray(value)) return value.map((child) => normalValue(child));
   if (value !== null && typeof value === "object") {
     return Object.fromEntries(
       Object.entries(value)
-        .filter(([key]) => fields.has(key) || field === "unavailable")
+        .filter(([key]) => fields.has(key) || openMaps.has(field ?? ""))
         .map(([key, child]) => [key, normalValue(child, key)]),
     );
   }
@@ -135,7 +151,7 @@ async function readMember(
       if (
         kind === "object" &&
         !fields.has(key) &&
-        !["observed", "unavailable"].includes(String(path.at(-1)))
+        !openMaps.has(String(path.at(-1)))
       )
         continue;
       const value =
@@ -205,12 +221,26 @@ function Forecast({
   const projections = Array.isArray(row.projections)
     ? row.projections.map(object)
     : [];
+  if (value === null || typeof value !== "object")
+    return (
+      <section style={{ minWidth: 0 }}>
+        <h4>{label}</h4>
+        <p>Forecast unavailable</p>
+      </section>
+    );
   return (
     <section style={{ minWidth: 0 }}>
       <h4>{label}</h4>
       <p>
         {text(row.line_id)} · Expected placement {text(row.expected_placement)}{" "}
         ± {text(row.standard_error)}
+      </p>
+      <p>{describeSchedule(row.schedule)}</p>
+      <p>
+        Hit {percent(row.hit_probability) ?? "unavailable"} · death{" "}
+        {percent(row.death_probability) ?? "unavailable"} · death placement
+        cost {number(row.death_placement_cost)?.toFixed(2) ?? "unavailable"} ·
+        confidence {percent(row.confidence) ?? "unavailable"}
       </p>
       <svg
         role="img"
@@ -299,6 +329,137 @@ function Forecast({
       </table>
       {projections.length === 0 ? <p>Forecast unavailable</p> : null}
     </section>
+  );
+}
+
+const label = (value: unknown): string =>
+  text(value).replaceAll("_", " ");
+const optional = (value: unknown, prefix: string): string | null =>
+  value === null || value === undefined ? null : `${prefix} ${text(value)}`;
+
+const percent = (value: unknown): string | null => {
+  const probability = number(value);
+  return probability === null ? null : `${Math.round(probability * 100)}%`;
+};
+
+function PositioningRow({ row }: { row: RecordValue }): React.JSX.Element {
+  const layout = Array.isArray(row.layout) ? row.layout.map(object) : [];
+  return (
+    <>
+      <p>
+        {text(row.action)} · Engine decision {text(row.engine_decision_id)} ·
+        log {text(row.log_seq)} · confidence{" "}
+        {percent(row.confidence) ?? "unavailable"}
+      </p>
+      {layout.length ? (
+        <ul>
+          {layout.map((unit, index) => (
+            <li key={index}>
+              {text(unit.unit_id)} → hex {text(unit.cell)}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p>No target layout recorded</p>
+      )}
+      <p>Not costed · {label(row.reason)}</p>
+    </>
+  );
+}
+
+function TimelineRow({ row }: { row: RecordValue }): React.JSX.Element {
+  const unavailable = object(row.unavailable);
+  const shown = object(row.shown);
+  const cost = number(row.cost);
+  const uncertainty = number(row.paired_uncertainty);
+  return (
+    <>
+      <p>
+        {label(row.category)} · Engine decision {text(row.engine_decision_id)} ·
+        log {text(row.log_seq)}
+      </p>
+      <p>
+        {cost === null
+          ? `${row.differed ? "Differed" : "Matched"} · no placement cost · ${label(unavailable.cost ?? "not recorded")}`
+          : `Estimated signed cost ${cost.toFixed(2)} ± ${uncertainty === null ? "unavailable" : uncertainty.toFixed(2)}${row.close_call ? " · close call" : ""}`}
+      </p>
+      <p>
+        Shown status {label(shown.status ?? "unavailable")}
+        {shown.reason ? ` · ${label(shown.reason)}` : ""}
+      </p>
+      <p>Reason {label(row.reason)}</p>
+    </>
+  );
+}
+
+function FightRow({ row }: { row: RecordValue }): React.JSX.Element {
+  const unavailable = object(row.unavailable);
+  const win = percent(row.win_probability);
+  const predicted = number(row.predicted_hp_loss);
+  return (
+    <>
+      <p>
+        Opponent {text(row.opponent_id)} · fight started log{" "}
+        {text(row.start_log_seq)} · {text(row.start_at)}
+      </p>
+      <p>
+        {win === null && predicted === null
+          ? `Forecast unavailable · ${label(unavailable.forecast ?? "not recorded")}`
+          : `Forecast · win ${win ?? "unavailable"} · predicted HP loss ${predicted ?? "unavailable"}`}
+      </p>
+      <p>
+        Actual · {row.result === null ? "result unknown" : label(row.result)} ·
+        HP lost {number(row.actual_hp_loss) ?? "unavailable"}
+      </p>
+    </>
+  );
+}
+
+function PlanRow({ row }: { row: RecordValue }): React.JSX.Element {
+  const candidates = Array.isArray(row.candidates)
+    ? row.candidates.map(text)
+    : [];
+  const status = row.status === "committed" ? "Committed" : "Open";
+  return (
+    <>
+      <p>
+        {[
+          status,
+          optional(row.target, "target") ?? "no target",
+          optional(row.backup, "backup"),
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+      </p>
+      <p>
+        {candidates.length
+          ? `Candidates ${candidates.join(", ")}`
+          : "No candidate comps recorded"}
+      </p>
+      {row.pivot_to !== null && row.pivot_to !== undefined ? (
+        <p>
+          Pivot {text(row.pivot_from)} → {text(row.pivot_to)} at{" "}
+          {text(row.pivot_round)}
+        </p>
+      ) : null}
+      {row.rejected_target !== null && row.rejected_target !== undefined ? (
+        <p>Rejected target {text(row.rejected_target)}</p>
+      ) : null}
+      <p>
+        {[
+          optional(row.player_label, "Player comp") ?? "Player comp unread",
+          optional(row.divergence_round, "diverged"),
+          optional(row.observed_lock, "locked"),
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+      </p>
+      <p>
+        {row.called_status === "display_attribution_unavailable"
+          ? "Called status unavailable · display attribution unavailable"
+          : `Called status ${label(row.called_status)}`}
+      </p>
+    </>
   );
 }
 
@@ -391,6 +552,12 @@ function ScopedSection({
   return (
     <section aria-label={`${name.replaceAll("_", " ")} review`}>
       {state.error ? <p role="alert">{state.error}</p> : null}
+      {name === "timeline" ? (
+        <p>
+          Capture gaps are not rows in this section; the review records them
+          under Debug.
+        </p>
+      ) : null}
       {state.rows.length === 0 && !state.error ? (
         <p>No records in this section</p>
       ) : null}
@@ -422,7 +589,11 @@ function ScopedSection({
               borderRadius: 8,
             }}
           >
-            <h3>Round {text(row.round_id)}</h3>
+            <h3>
+              {row.round_id === undefined
+                ? `Log ${text(row.log_seq)}`
+                : `Round ${text(row.round_id)}`}
+            </h3>
             {name === "lines" ? (
               <>
                 <p>
@@ -443,7 +614,29 @@ function ScopedSection({
                   value={row.actual}
                   scales={scales}
                 />
+                {row.pin === null || row.pin === undefined ? (
+                  <p>No Line pinned at this decision</p>
+                ) : (
+                  <section>
+                    <h4>
+                      Pinned Line {text(object(row.pin).id)} ·{" "}
+                      {describeSchedule(row.pin)}
+                    </h4>
+                    <p>
+                      Pinned forecast unavailable · this review records the
+                      pinned schedule only
+                    </p>
+                  </section>
+                )}
               </>
+            ) : name === "positioning" ? (
+              <PositioningRow row={row} />
+            ) : name === "timeline" ? (
+              <TimelineRow row={row} />
+            ) : name === "fights" ? (
+              <FightRow row={row} />
+            ) : name === "plan_timeline" ? (
+              <PlanRow row={row} />
             ) : (
               <dl>
                 {Object.entries(row)

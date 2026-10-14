@@ -1,8 +1,9 @@
-import {useEffect,useState} from 'react'
+import {useEffect,useRef,useState} from 'react'
 import type {JsonValue,RequestReview,ReviewGames} from '../../../shared/messages'
 import type {ShellState} from '../../../shared/state'
 import './review.css'
 import {RecordedChoice,ReviewMoment} from './ReviewMoment'
+import {ReviewSection} from './ReviewSection'
 
 type Document=Record<string,unknown>
 const documentValue=(value:unknown):Document=>typeof value==='object'&&value!==null&&!Array.isArray(value)?value as Document:{}
@@ -30,6 +31,11 @@ export function ReviewSummaryView({summary,onMoment,onTag}:ReviewSummaryProps):R
 export function ReviewPanel({state,onOpenChange}:{state:ShellState;onOpenChange?:(open:boolean)=>void}):React.JSX.Element|null{
  const [open,setOpen]=useState(false),[games,setGames]=useState<ReviewGames['games']>([]),[game,setGame]=useState<string|null>(null),[summary,setSummary]=useState<Document|null>(null),[error,setError]=useState<string|null>(null)
  const [path,setPath]=useState<readonly(string|number)[]|null>(null),[cursor,setCursor]=useState(0),[page,setPage]=useState<Document|null>(null),[notice,setNotice]=useState<string|null>(null),[selectedMoment,setSelectedMoment]=useState<Document|null>(null)
+ const [section,setSection]=useState<string|null>(null)
+ // Any mode or connection change starts a new authorization scope for loaded pages.
+ const scope=useRef({mode:state.mode,core:state.core,epoch:0})
+ if(scope.current.mode!==state.mode||scope.current.core!==state.core)scope.current={mode:state.mode,core:state.core,epoch:scope.current.epoch+1}
+ const epoch=scope.current.epoch
  const suppressed=state.core!=='running'||(state.mode==='silent'&&['InProgress','Reconnect','PreEndOfGame'].includes(state.gameflow?.phase??''))
  useEffect(()=>{if(state.reviewRequest&&!suppressed){setGame(state.reviewRequest.game_id);setOpen(true)}},[state.reviewRequest?.serial,suppressed])
  useEffect(()=>{onOpenChange?.(open&&!suppressed)},[open,suppressed,onOpenChange])
@@ -37,7 +43,7 @@ export function ReviewPanel({state,onOpenChange}:{state:ShellState;onOpenChange?
   if(!game)return Promise.reject(new Error('Select a logged game'))
   return window.coach.requestReview({game_id:game,operation,report_id:typeof summary?.report_id==='string'?summary.report_id:null,evidence_id:typeof summary?.evidence_id==='string'?summary.evidence_id:null,path:[],cursor:0,limit:32,moment_id:null,option_id:null,tag:null,name:null,...arguments_})
  }
- useEffect(()=>{if(suppressed){setOpen(false);setSummary(null);setPage(null);setPath(null);setSelectedMoment(null)}},[suppressed])
+ useEffect(()=>{if(suppressed){setOpen(false);setSummary(null);setPage(null);setPath(null);setSection(null);setSelectedMoment(null)}},[suppressed])
  useEffect(()=>{
   if(!open||suppressed)return
   let active=true
@@ -47,7 +53,7 @@ export function ReviewPanel({state,onOpenChange}:{state:ShellState;onOpenChange?
  },[open,suppressed])
  useEffect(()=>{
   if(!open||suppressed||!game)return
-  let active=true;setSummary(null);setPath(null);setPage(null);setSelectedMoment(null);setError(null)
+  let active=true;setSummary(null);setPath(null);setSection(null);setPage(null);setSelectedMoment(null);setError(null)
   void window.coach.requestReview({game_id:game,operation:'summary',report_id:null,evidence_id:null,path:[],cursor:0,limit:32,moment_id:null,option_id:null,tag:null,name:null}).then(response=>{if(active)setSummary(response.value)}).catch((e:unknown)=>{if(active)setError(String(e))})
   return()=>{active=false}
  },[game,open,suppressed])
@@ -56,7 +62,7 @@ export function ReviewPanel({state,onOpenChange}:{state:ShellState;onOpenChange?
   let active=true;setPage(null);setError(null)
   void request('page',{path:[...path],cursor}).then(response=>{if(active)setPage(response.value)}).catch((e:unknown)=>{if(active)setError(String(e))})
   return()=>{active=false}
- },[path,cursor,summary?.report_id,suppressed])
+ },[path,cursor,summary?.report_id,suppressed,epoch])
  if(suppressed)return null
  const browse=(next:readonly(string|number)[])=>{setPath(next);setCursor(0)}
  return <section className="review-shell">
@@ -64,7 +70,8 @@ export function ReviewPanel({state,onOpenChange}:{state:ShellState;onOpenChange?
   {open?<div className="review-grid"><aside className="panel"><h2>Logged games</h2>{games.map(row=><button className="review-game" disabled={!row.finished} key={String(row.game_id)} onClick={()=>setGame(String(row.game_id))}>{String(row.game_id)} · {String(row.mode)} · {row.review_locked?'locked':row.placement===null?'placement unavailable':`placement ${String(row.placement)}`}</button>)}</aside><div>
    {error?<p role="alert" className="status-banner">{error}</p>:null}{notice?<p role="status">{notice}</p>:null}
    {summary?<ReviewSummaryView summary={summary} onMoment={(id)=>{setPath(null);setSelectedMoment((Array.isArray(summary.top5)?summary.top5.map(documentValue):[]).find(moment=>moment.moment_id===id)??null)}} onTag={(moment_id,tag)=>{void request('tag',{moment_id,tag}).then(()=>setNotice(`Saved ${tag}`)).catch((e:unknown)=>setError(String(e)))}}/>:game?<p role="status">Loading protected review…</p>:<p>Select a finished logged game.</p>}
-   {summary&&!summary.locked?<>{selectedMoment?<ReviewMoment key={`${summary.report_id}:${String(selectedMoment.moment_id)}`} moment={selectedMoment} request={async(operation,args)=>(await request(operation,args)).value} onDebug={browse}/>:null}<nav className="review-sections">{[['Game plan','plan_timeline'],['Lines · actual / recommended / pinned','lines'],['Fights · forecast / result','fights'],['Full round timeline','timeline'],['Positioning','positioning'],['Debug','debug']] .map(([label,key])=><button key={key} onClick={()=>browse([key!])}>{label}</button>)}</nav>
+   {summary&&!summary.locked?<>{selectedMoment?<ReviewMoment key={`${summary.report_id}:${String(selectedMoment.moment_id)}`} moment={selectedMoment} request={async(operation,args)=>(await request(operation,args)).value} onDebug={browse}/>:null}<nav className="review-sections">{[['Game plan','plan_timeline'],['Lines · actual / recommended / pinned','lines'],['Fights · forecast / result','fights'],['Full round timeline','timeline'],['Positioning','positioning']].map(([label,key])=><button key={key} aria-pressed={section===key} onClick={()=>setSection(key!)}>{label}</button>)}<button onClick={()=>browse(['debug'])}>Debug</button></nav>
+    {section?<ReviewSection name={section} path={['surface',section]} scopeKey={JSON.stringify([game,summary.report_id,summary.evidence_id,epoch])} request={async(operation,args)=>(await request(operation,args)).value} onDebug={browse}/>:null}
     {path?<section className="panel review-evidence"><h3>{path.join(' / ')}</h3>{path.length?<button onClick={()=>browse(path.slice(0,-1))}>Parent evidence</button>:null}
      {!page?<p>Loading bounded evidence…</p>:<>{Array.isArray(page.items)?page.items.map((raw,index)=>{const row=documentValue(raw),location=Array.isArray(row.path)?row.path as (string|number)[]:[];return <article key={`${cursor}:${index}`}><strong>{String(location.at(-1)??index)}</strong>{row.reference?<button onClick={()=>browse(location)}>Open recorded evidence</button>:<pre>{typeof row.value==='string'?row.value:JSON.stringify(row.value,null,2)}</pre>}</article>}):null}
       <div className="page-controls"><button disabled={cursor===0} onClick={()=>setCursor(Math.max(0,cursor-32))}>Previous</button><button disabled={typeof page.next_cursor!=='number'} onClick={()=>setCursor(Number(page.next_cursor))}>Next</button></div></>}
