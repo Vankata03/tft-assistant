@@ -7,6 +7,7 @@ from tft_engine import GameSnapshot, TraitSighting, evaluate, snapshot_seed
 from .contracts import ReplayBatch, ReplayContext, ReplayRecord, frozen_json, history_prefix, json_value
 from .identity import replay_identity
 from .segmentation import semantic_fingerprint
+from .controls import SessionControlLog
 
 
 def aware_timestamp(value):
@@ -86,10 +87,12 @@ class ReplayProducer:
                 return batch
         contexts, records = [], []
         previous_fingerprint, evaluation_log_seq = None, None
+        controls = SessionControlLog(events)
         for event in events:
             if event['kind'] != 'snapshot':
                 continue
-            snapshot = GameSnapshot.from_dict(event['payload'])
+            projection = controls.frame(event)
+            snapshot = projection.snapshot
             seed = snapshot_seed(snapshot, data)
             # Later crash annotations may invalidate capture evidence. They never
             # become causal Engine information or reset an earlier history prefix.
@@ -98,7 +101,7 @@ class ReplayProducer:
                 and snapshot.captured_at < datetime.fromisoformat(row['payload']['end'])]
             in_gap = bool(gaps)
             history = history_prefix(events, through_seq=event['seq']-1,
-                captured_at=event['payload']['captured_at'])
+                captured_at=event['payload']['captured_at'], controls=controls)
             fingerprint = semantic_fingerprint(snapshot, data, events, event['seq']-1, hooks=self.hooks)
             duplicate = (not in_gap and self.decision_segmentation == 'semantic'
                 and fingerprint == previous_fingerprint)
@@ -112,7 +115,8 @@ class ReplayProducer:
                     'evaluation_log_seq': evaluation_log_seq, 'fingerprint': fingerprint}),) if duplicate else ()) + tuple({'kind': 'capture_gap', 'log_seq': row['seq'],
                     'timestamp': row['timestamp'], 'payload': row['payload'],
                     'retrospective': row['seq'] >= event['seq'] or aware_timestamp(row['timestamp']) > snapshot.captured_at}
-                    for row in gaps))
+                    for row in gaps),
+                evaluation_overlay=projection.to_dict(through_seq=event['seq']-1))
             contexts.append(context)
             if not duplicate:
                 previous_fingerprint = None if in_gap else fingerprint
