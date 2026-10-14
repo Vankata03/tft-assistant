@@ -138,6 +138,7 @@ def support_logs(tmp_path):
     tunables = tomllib.loads(tunables_path.read_text())
     tunables['fields']['sighting_persistence_weight']['value'] = 2
     tunables['fields']['emblem_slack_max']['value'] = 0
+    tunables['fields']['opponent_inference_state_cap']['value'] = 64
     tunables_path.write_text(tomli_w.dumps(tunables))
     refreshed = store.refresh(root, now=NOW+timedelta(seconds=1), sources=(PublicSupportFeed(),))
     assert refreshed.error is None

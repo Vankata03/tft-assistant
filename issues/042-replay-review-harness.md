@@ -130,3 +130,14 @@ At source `e9b35869080673713e64971173a26b425e37f752`, the frozen training-group 
 - At source `fd374c86aed7c4ffb39427f419726bda0e4ae7b1`, the frozen training-group root suite passed 619 tests without skips in 88.41 seconds, process exit 0. Cached pinned reader assets and portable PowerShell supplied the existing external test prerequisites. Two existing Torch ONNX-export deprecation warnings remain.
 - Root import contracts were kept (2 kept, 0 broken); schemas, frozen lock and whitespace checks passed. UI source is unchanged, so this checkpoint retains the earlier root 35-case UI/type/generated-type/build evidence rather than claiming a new UI run. The isolated chart helper and dirty Live/runtime drafts are not included.
 - Independent relevant 163-case and physically Live-absent 162-case checks remain recorded above. Full ticket 42, complete-review resource acceptance, qualified production data, Windows/live-game behavior and historical native causality remain open.
+
+
+### 2026-10-14 — Isolated next-sighting consumer proof; review held
+
+Root preserved the interrupted recovery and copied its one-line synthetic inference-state-cap correction into `implement/sighting-forecast-proof`, based on current integration `dea80857a4d4293dbcf5db5e61d7e2a71c7c4cfc`. The slice consumes explicitly declared, source-qualified whole-board support before target traits enter, applies the existing persistence prior, and compares the same support with persistence disabled. Missing or malformed declarations remain unavailable. The harness scores original causal log prefixes, preserves finite log probabilities for positive underflow, and keeps locked-game examples hidden while allowing aggregate metrics. This is fixture-backed software proof, not a qualified production support model.
+
+The public harness tracer fails on pushed integration with `KeyError: next_sighting_log_loss` and passes on the candidate. All nine sighting-consumer cases pass. The full frozen training-group suite with cached pinned models and portable PowerShell passed 657 tests without skips in 98.61 seconds, process exit 0, with two existing Torch export warnings. An earlier default-group run passed 634 and skipped 23 because external test prerequisites were omitted; it is not the full verification claim. Import contracts (2 kept), schema, frozen lock, scoped F821 and whitespace checks passed.
+
+Actual Live-uninstalled related sighting/harness/replay/policy checks passed 88 cases in 20.23 seconds, process exit 0; import absence was asserted before execution and Live/train dependencies were restored afterward.
+
+The original recovery and native author worktrees remain untouched. Different-reviewer/merger execution is unavailable; this source is held and must not be self-merged. Full ticket 42, remaining prediction/fitting/report/CLI requirements, full-game resource acceptance, production inputs and Windows/live-game qualification remain open.
