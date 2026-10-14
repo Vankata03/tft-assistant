@@ -22,6 +22,14 @@ Implement all referenced requirements. Verify through the approved public seams 
 
 ## Comments
 
+### 2026-10-14 — Independent joint-law and margin helper integration
+
+The different reviewer integrated clean exact joint-law `9365bda291f643e3b8e55dd78b26c5727912c8cd` as `7dd13b8b156cb351fa65239d538eee5be233e3e6`, then clean exact margin helper `d25c9150cf00fc84ccd300df377bb17d0e4c5c2e` as `c283638ee476ea44c78e979cf6665ba1b288fbfb`. Their deltas from previously accepted authored code were the current storage/docs merge only. No helper source was changed by the merger. Author corrections cover Boolean/float context aliases, positive item-grant certificates, nested support immutability and integral recorded trait counts. Rare positive event mass retains a finite log probability even when its probability representation underflows; real zero mass remains distinct. Margins combine paired rollout standard error with model-gap spread in the declared guard units and retain sourced floors when uncertainty is unavailable.
+
+Combined merged-root Engine, harness/fit/baseline, margins, storage/process, worker, protected policy and replay checks: 299 passed in 33.33 seconds, process 0; with `tft_live` physically absent, the same 299 passed in 31.97 seconds, process 0. Live/train were restored. Imports 2 kept, schema, frozen lock, scoped F821 and diff checks exited 0. Earlier independent related law/capacity/Engine checks passed 100 in 0.79 seconds; margin/harness/fit checks passed 37 in 14.35 seconds. Two earlier selectors named absent legacy test files and exited 4 without running tests; the corrected actual-file checks above passed. UI/schema source did not change; prior 35 UI/type/build proof applies. The unrelated root `.DS_Store` remains untracked and preserved.
+
+These are declared-input math helpers. Full ticket 42 remains open: a causal general-law producer/adapter, actual family-1 uncertainty draw generation and family-2 fit integration, remaining metrics/baselines/reports/CLI and policy attribution are still required. No owner data/API/run, production law/margin value, target latency, Windows execution or historical native-cause qualification is claimed.
+
 ### 2026-10-14 — Independent corrected storage integration
 
 A different merger reviewed exact author commit `5427406dde960b8c7e4a6118ad876767752c8a93` against integration `2fe0820` and merged it as `197022d434cdfb8c89b65180b7c6bd5b347be6be`. Source inspection covered shared per-root reentrant exclusion, the shared one-second acquisition deadline, nonblocking OS contention, private SQLite rebuild files, connection closure before replacement, failed-rebuild preservation and sequence invalidation after external appends. No storage-scope blocker was found; storage source was not changed during review.
