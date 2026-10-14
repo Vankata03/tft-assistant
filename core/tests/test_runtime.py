@@ -1157,3 +1157,55 @@ def test_positive_game_gates_blocked_startup_refresh_even_when_capture_cannot_st
             await runtime.shutdown()
 
     asyncio.run(scenario())
+
+
+def test_native_finalization_immediately_retires_capture_publication(tmp_path):
+    class ClosingDevices(Devices):
+        def __init__(self):
+            super().__init__()
+            self.closing = threading.Event()
+            self.release = threading.Event()
+
+        def close(self):
+            self.closing.set()
+            self.release.wait(2)
+            super().close()
+
+    async def scenario():
+        devices = ClosingDevices()
+        runtime, sessions, data, server = fixture_runtime(tmp_path, devices=devices)
+        await runtime.update(GameflowUpdate(True, 'InProgress', '123', 'TFT'))
+        await wait_snapshot(runtime)
+        generation = runtime.publication_generation
+        ending = asyncio.create_task(runtime.update(GameflowUpdate(True, 'EndOfGame', '123', 'TFT')))
+        try:
+            for _ in range(200):
+                if devices.closing.is_set():
+                    break
+                await asyncio.sleep(.005)
+            assert devices.closing.is_set()
+            assert runtime.latest_snapshot is None
+            assert runtime.publication_generation != generation
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(runtime.next_snapshot(), .02)
+        finally:
+            devices.release.set()
+            await ending
+            await runtime.shutdown()
+        assert sessions.list_games()[0]['finished'] is True
+
+    asyncio.run(scenario())
+
+
+def test_clean_checkout_missing_settings_names_the_required_local_setup(tmp_path):
+    import pytest
+    from tft_core.runtime import RuntimeSettings
+
+    missing = tmp_path / 'config' / 'settings.toml'
+    with pytest.raises(ValueError) as failure:
+        RuntimeSettings.load(missing)
+    message = str(failure.value)
+    assert str(missing) in message
+    assert 'docs/agents/runtime-boundary.md' in message
+    assert 'reviewed capture inputs' in message
+    assert not missing.exists()
