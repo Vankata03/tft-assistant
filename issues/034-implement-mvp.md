@@ -98,3 +98,9 @@ Source: [MVP spec](../docs/spec.md), its area files, and the resolved planning t
 ### 2026-10-06 — codex
 
 Ticket 46 extracts the verified contract/name-list prerequisite from ticket 36. Capture and Engine depend on 46; full data refresh and Baseline Guides remain dependent on 36.
+
+### 2026-10-14 — Verified storage and declared-input harness integration
+
+The independently reviewed cross-process storage correction and supplied joint-law/family-2 margin helpers are integrated at source `e9b35869080673713e64971173a26b425e37f752`. The original eight-child storage reproduction now has zero failures; independent combined affected checks and actual Live-absent checks each passed 299 cases. The helper interfaces consume declared support and uncertainty; production producers, fitting/CLI integration and full ticket 42 remain open.
+
+Root verification with the frozen training group, pinned cached CPU assets and portable PowerShell passed 594 Python tests without skips in 72.06 seconds, process exit 0. Two existing Torch ONNX-export deprecation warnings remain. UI passed 35 tests, typecheck, generated-type checks and build, process exit 0. The different mergers' import/schema/frozen-lock/scoped-F821/whitespace checks passed. This is macOS software evidence, not Windows capture, current production data, target latency or a causal repair of the historical native shutdown abort. Full 42, 44 and 55 remain open. The clean-checkout operator receipt checkpoint is separately under corrected independent review; no owner client, credentials, matches or measurement run was accessed.
