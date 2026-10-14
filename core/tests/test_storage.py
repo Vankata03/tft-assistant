@@ -1,3 +1,4 @@
+from tests.test_harness_baseline import baseline_fixture
 from pathlib import Path
 
 import pytest
@@ -53,7 +54,7 @@ def test_run_freezes_baseline_unlocks_reviews_and_numbers_same_set_live_games(tm
     session.start_game("100", set_id="18", timestamp="2026-10-05T12:00:00Z")
     session.end_game(placement=3)
     assert session.list_games()[0]["review_locked"] is True
-    baseline = {"average_placement": 4.62, "game_count": 50, "rank": "Platinum III"}
+    baseline = baseline_fixture(sessions=session, at="2026-10-06T12:00:00Z")
     session.start_run(baseline, set_id="18", timestamp="2026-10-06T12:00:00Z")
     assert session.mode is SessionMode.LIVE
     assert session.run["baseline"] == baseline
@@ -84,7 +85,7 @@ def test_lossless_keyframes_media_cap_keep_logs_and_pinned_run_media(tmp_path):
     image = Image.new("RGB", (4, 4), (19, 42, 201))
     old_frame = session.write_keyframe(image, reason="shop_after_roll")
     session.end_game()
-    session.start_run({"game_count": 50, "average_placement": 4.62, "rank": "P3"}, set_id="18", timestamp="2026-10-06T12:00:00Z")
+    session.start_run(baseline_fixture(sessions=session, at="2026-10-06T12:00:00Z"), set_id="18", timestamp="2026-10-06T12:00:00Z")
     session.start_game("502", set_id="18", timestamp="2026-10-07T12:00:00Z")
     pinned_frame = session.write_keyframe(image, reason="augment_offer")
     session.end_game()
@@ -110,7 +111,7 @@ def test_replay_cache_dirty_versions_and_review_locks(tmp_path):
     session.rebuild_index()
     assert session.read_replay_cache("600", engine_version="abc", tunables_hash="t1", data_snapshot_id="data-a") == [{"decision_id": "4-2", "choice": "save"}]
     assert session.read_replay_cache("600", engine_version="abc+dirty", tunables_hash="t1", data_snapshot_id="data-a") is None
-    session.start_run({"game_count": 50, "average_placement": 4.62, "rank": "P3"}, set_id="18")
+    session.start_run(baseline_fixture(sessions=session), set_id="18")
     session.set_review_tag("600", "4-2", "disagree")
     session.write_review("600", {"moments": []}, engine_version="def", data_snapshot_id="data-a")
     assert session.read_review("600")["tags"] == {"4-2": "disagree"}

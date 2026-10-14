@@ -3,6 +3,24 @@ from dataclasses import dataclass, field
 from typing import Callable, Mapping
 from tft_data.models import freeze
 
+# This is the shared dependency contract of the built-in plan/Line pipeline.
+# Domain-specific additions belong on DomainHook, so replay and runtime can
+# ignore unrelated capture fields without hiding a new declared input.
+CORE_DEPENDENCY_FIELDS = ('board','bench','inventory_complete','gold','hp','level','xp',
+    'streak','lobby','lobby_complete','team_slot_budget','slot_count','shop','phase',
+    'planning_phase','roll_down','comp_lock','pinned_line','include_unguided',
+    'held_augments','held_augments_complete','item_bench','item_inventory_complete',
+    'remaining_effects','remaining_effects_complete')
+
+
+def evaluation_dependency_fields(hooks=None):
+    names = list(CORE_DEPENDENCY_FIELDS)
+    for hook in default_hooks() if hooks is None else hooks:
+        names.extend(hook.required_fields+hook.fit_required_fields+hook.dependency_fields)
+        if hook.activation_field:
+            names.append(hook.activation_field)
+    return tuple(dict.fromkeys(names))
+
 @dataclass(frozen=True)
 class FitTerm:
     delta: float

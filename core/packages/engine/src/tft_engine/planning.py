@@ -435,7 +435,8 @@ def decision_evidence(advice,context,names):
 
 
 def core_evidence(items,context):
-    names=('board','bench','inventory_complete','gold','hp','level','xp','streak','lobby','lobby_complete','team_slot_budget','slot_count','shop','phase','planning_phase','roll_down','comp_lock','pinned_line','include_unguided','held_augments','held_augments_complete','item_bench','item_inventory_complete','remaining_effects','remaining_effects_complete')
+    from .registry import CORE_DEPENDENCY_FIELDS
+    names=CORE_DEPENDENCY_FIELDS
     return tuple(decision_evidence(a,context,names) if a.decision in ('econ','pivot','plan','transition') else a for a in items)
 
 

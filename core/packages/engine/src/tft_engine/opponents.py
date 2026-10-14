@@ -20,6 +20,7 @@ class InferredBoard:
     certainty: float
     candidate_count: int
     fallback_reason: str | None = None
+    evidence_mass: float | None = None
     def __post_init__(self):
         object.__setattr__(self, 'probabilities', freeze(self.probabilities))
 
@@ -59,6 +60,16 @@ def unit_play_rate(unit_id, data):
     return rate
 
 
+def unit_prior_rate(unit_id, round_id, data, previous=None):
+    rate = unit_play_rate(unit_id, data)
+    if previous is not None:
+        age = age_weight(max(0, round_index(round_id,data)-round_index(previous.round_id,data)),data)
+        rate *= 1+(float(tunable(data,'sighting_persistence_weight'))-1)*previous.probabilities.get(unit_id,0)*age
+    if rate <= 0:
+        raise DataError('Unit-set prior must be positive')
+    return rate
+
+
 def infer_opponent(sighting: TraitSighting, data, *, previous: InferredBoard | None = None) -> InferredBoard:
     visible = sighting.traits
     from .capacity import CapacityModel
@@ -83,8 +94,6 @@ def infer_opponent(sighting: TraitSighting, data, *, previous: InferredBoard | N
     for trait in visible:
         if trait not in first_breakpoint:
             raise DataError(f'Unknown sighting trait: {trait}')
-    previous_age = age_weight(max(0, round_index(sighting.round_id,data) - round_index(previous.round_id,data)),data) if previous else 0
-    boost = float(tunable(data, 'sighting_persistence_weight'))
     roster = []
     for entity in sorted(data.entities.values(), key=lambda e:e.id):
         if entity.kind != 'unit':
@@ -101,9 +110,7 @@ def infer_opponent(sighting: TraitSighting, data, *, previous: InferredBoard | N
             variants.append(counts)
         if not variants:
             continue
-        rate = unit_play_rate(entity.id,data)
-        if previous:
-            rate *= 1 + (boost - 1) * previous.probabilities.get(entity.id,0) * previous_age
+        rate = unit_prior_rate(entity.id,sighting.round_id,data,previous)
         roster.append((entity.id, tuple(variants), log(rate)))
     # Suffix capacities prune branches that cannot fill visible counts, even with emblems.
     suffix = [{t:0 for t in visible} for _ in range(len(roster)+1)]
@@ -174,7 +181,7 @@ def infer_opponent(sighting: TraitSighting, data, *, previous: InferredBoard | N
         candidate_count+=number
         for unit_id,moment in first_moments.items():
             moments[unit_id]=moments.get(unit_id,0.0)+moment*best_prior
-    return InferredBoard(sighting.opponent_id,sighting.round_id,sighting.level,{id:moment/total for id,moment in moments.items()} if total else {},maximum/total if total else 0.0,candidate_count)
+    return InferredBoard(sighting.opponent_id,sighting.round_id,sighting.level,{id:moment/total for id,moment in moments.items()} if total else {},maximum/total if total else 0.0,candidate_count,evidence_mass=total)
 
 @dataclass(frozen=True)
 class OpponentEstimate:

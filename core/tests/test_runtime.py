@@ -1,5 +1,7 @@
 """Supervised runtime through real storage/capture and external device fixtures."""
 
+from tests.test_harness_baseline import baseline_fixture
+
 import asyncio
 import json
 import threading
@@ -525,7 +527,7 @@ def test_completed_permissions_come_from_stored_game_before_mode_reset(
         sessions.live_installed = True
         if with_run:
             sessions.start_run(
-                {"game_count": 50, "average_placement": 4.2, "rank": "Fixture rank"},
+                baseline_fixture(sessions=sessions),
                 set_id="18",
             )
         sessions.set_mode("silent")

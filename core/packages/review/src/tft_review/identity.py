@@ -46,7 +46,8 @@ def replay_identity(repository, events, data, hooks, hook_version):
     registry, cacheable_hooks = [], True
     for hook in default_hooks() if hooks is None else hooks:
         row = {name: json_value(getattr(hook, name)) for name in
-            ('name', 'required_fields', 'fit_required_fields', 'advice_phases')}
+            ('name', 'required_fields', 'fit_required_fields', 'advice_phases',
+             'activation_field', 'dependency_fields')}
         for name in ('fit', 'advice'):
             function = getattr(hook, name)
             if function is None:
