@@ -26,6 +26,10 @@ class EvaluationHarness:
     def __init__(self, sessions, data_store, *, repository, hooks=None):
         self.sessions, self.data_store, self.repository, self.hooks = sessions, data_store, repository, hooks
 
+    def advice_diff(self, candidate, game_ids=None, *, limit=20):
+        from .diagnostics import advice_diff
+        return advice_diff(self, candidate, game_ids, limit=limit)
+
     def fit(self, parameter_grid, *, metric='fight_log_loss', bootstrap_seed=0, bootstrap_draws=2000,
             max_candidates=256):
         from .fitting import fit

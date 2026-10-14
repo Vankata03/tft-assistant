@@ -130,3 +130,12 @@ At source `e9b35869080673713e64971173a26b425e37f752`, the frozen training-group 
 - At source `fd374c86aed7c4ffb39427f419726bda0e4ae7b1`, the frozen training-group root suite passed 619 tests without skips in 88.41 seconds, process exit 0. Cached pinned reader assets and portable PowerShell supplied the existing external test prerequisites. Two existing Torch ONNX-export deprecation warnings remain.
 - Root import contracts were kept (2 kept, 0 broken); schemas, frozen lock and whitespace checks passed. UI source is unchanged, so this checkpoint retains the earlier root 35-case UI/type/generated-type/build evidence rather than claiming a new UI run. The isolated chart helper and dirty Live/runtime drafts are not included.
 - Independent relevant 163-case and physically Live-absent 162-case checks remain recorded above. Full ticket 42, complete-review resource acceptance, qualified production data, Windows/live-game behavior and historical native causality remain open.
+
+
+### 2026-10-14 — Advice-difference report implementation
+
+The isolated `implement/harness-diagnostics` slice adds `EvaluationHarness.advice_diff(candidate, game_ids=None, limit=20)`. It replays accepted historical pins and an immutable candidate overlay at the original log points and seeds, pairs domain occurrences, counts changed selected options and unscored actions, and ranks unlocked examples by absolute expected-placement difference. Missing pairs are excluded explicitly. Locked games contribute aggregate counts only; bounded immutable output contains no private examples. The reference is the historical immutable tunables, not yet the specification's latest-committed-file CLI workflow.
+
+The missing public method failed before implementation. A second public regression reproduced ignored unscored action changes and passed after using the real Advice action field. Seven new diagnostics cases and related harness/fitting/review-policy checks passed 32 cases in 18.68 seconds, process exit 0. An initial test-write command used a redundant `core/` prefix from the core working directory and ran no tests; corrected before the actual red/green proof. The first expected count omitted the existing shared plan advice and was corrected to four paired sub-engine decisions across two captures.
+
+This partial slice remains isolated for independent review. Flip reports, other report-only diagnostics, latest-committed tunable workflow, remaining fitting/prediction metrics and full42 acceptance remain unfinished. No production or Windows/live qualification is claimed.
