@@ -14,6 +14,7 @@ REPLAY_SCHEMA_VERSION = 1
 def history_prefix(observations, *, through_seq, captured_at):
     """Rebuild only earlier committed information observable by this capture."""
     from tft_engine import GameHistory, GameSnapshot, TraitSighting
+    from .controls import project_session_controls
 
     available_at = datetime.fromisoformat(captured_at)
     resume_at = max((datetime.fromisoformat(event['payload']['end'])
@@ -30,7 +31,8 @@ def history_prefix(observations, *, through_seq, captured_at):
         if event['kind'] == 'snapshot':
             snapshot = GameSnapshot.from_dict(json_value(event['payload']))
             if snapshot.captured_at <= available_at:
-                snapshots.append(snapshot)
+                snapshots.append(project_session_controls(snapshot, observations,
+                    through_seq=event['seq']-1).snapshot)
         elif event['kind'] == 'sighting':
             sightings.append(TraitSighting.from_dict(dict(event['payload']) | {'read_at': event['timestamp']}))
     return GameHistory(tuple(snapshots), tuple(sightings))
@@ -85,6 +87,7 @@ class ReplayContext:
     unavailable: tuple[str, ...] = ()
     validity_annotations: tuple[Mapping, ...] = ()
     v: int = REPLAY_SCHEMA_VERSION
+    evaluation_overlay: Mapping | None = None
 
     def __post_init__(self):
         validate_version(self.v)
@@ -93,7 +96,7 @@ class ReplayContext:
             raise ValueError('Invalid replay information prefix')
         if datetime.fromisoformat(self.timestamp).tzinfo is None:
             raise ValueError('Replay timestamp requires a timezone')
-        for name in ('snapshot', 'game_start', 'engine_identity', 'evaluation'):
+        for name in ('snapshot', 'game_start', 'engine_identity', 'evaluation', 'evaluation_overlay'):
             value = getattr(self, name)
             if value is not None:
                 object.__setattr__(self, name, frozen_json(value))
@@ -177,6 +180,14 @@ class ReplayBatch:
                 or event is None or event['kind'] != 'snapshot'
                 or context.snapshot != event['payload'] or context.timestamp != event['timestamp']):
                 raise ValueError('Replay context does not match its historical observation')
+            if context.evaluation_overlay is not None:
+                from tft_engine import GameSnapshot
+                from .controls import project_session_controls
+
+                projection = project_session_controls(GameSnapshot.from_dict(json_value(context.snapshot)),
+                    self.observations, through_seq=context.prefix_through_seq)
+                if frozen_json(projection.to_dict(through_seq=context.prefix_through_seq)) != context.evaluation_overlay:
+                    raise ValueError('Replay control overlay does not match its causal prefix')
         for record in self.records:
             context = contexts.get(record.log_seq)
             if (context is None or record.game_id != self.game_id or record.seed != context.seed
@@ -192,6 +203,16 @@ class ReplayBatch:
             raise ValueError('Context does not belong to this replay batch')
         return history_prefix(self.observations, through_seq=context.prefix_through_seq,
             captured_at=context.snapshot['captured_at'])
+
+    def snapshot_for(self, context):
+        """Return the causal evaluation view while retaining the raw context."""
+        from tft_engine import GameSnapshot
+        from .controls import project_session_controls
+
+        if context not in self.contexts:
+            raise ValueError('Context does not belong to this replay batch')
+        return project_session_controls(GameSnapshot.from_dict(json_value(context.snapshot)),
+            self.observations, through_seq=context.prefix_through_seq).snapshot
 
     @classmethod
     def from_dict(cls, value):

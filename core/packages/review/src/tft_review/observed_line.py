@@ -13,7 +13,7 @@ from .identity import digest
 
 
 def observed_line(batch, context, data):
-    snapshot = GameSnapshot.from_dict(json_value(context.snapshot))
+    snapshot = batch.snapshot_for(context)
     horizon = horizon_rounds(snapshot,data)
     later = [row for row in batch.contexts if row.log_seq >= context.log_seq
         and row.snapshot['round_id'] in horizon]
