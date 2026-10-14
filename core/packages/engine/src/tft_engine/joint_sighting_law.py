@@ -92,11 +92,11 @@ def _breakpoint(trait, data):
     return min(points)
 
 
-def _add_grants(counts, grants, data):
+def _add_grants(counts, grants, data, *, minimum=0):
     if not isinstance(grants, Mapping):
         raise DataError('Joint support requires certified integral trait grants')
     for trait, number in grants.items():
-        integral(number, 'joint trait grant')
+        integral(number, 'joint trait grant', minimum)
         _breakpoint(trait, data)
         if number:
             counts[trait] = counts.get(trait, 0) + number
@@ -154,7 +154,7 @@ def predict_joint_sighting(sighting: TraitSighting, data: DataSnapshot,
                 grants = item.values.get('trait_grants') if item else None
                 if not item or item.kind != 'item' or not isinstance(grants, TaggedValue) or not isinstance(grants.value, Mapping):
                     raise DataError('Joint support item trait-grant certificate unavailable')
-                _add_grants(counts, grants.value, data)
+                _add_grants(counts, grants.value, data, minimum=1)
         state = _ResolvedCapacity(data, counts).check(hypothesis.board, sighting.level, hypothesis.capacity, check_observed=True)
         outside = {trait: number for trait, number in counts.items() if trait not in sighting.traits and number}
         hidden = all(number < _breakpoint(trait, data)

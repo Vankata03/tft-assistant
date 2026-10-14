@@ -208,3 +208,18 @@ def test_law_level_cannot_alias_valid_integer_sighting_context(level):
         law = JointSightingLaw(data.snapshot_id, 'rival', '3-2', level, 'synthetic',
             'Declared support', (JointHypothesis(Board((Unit('a'),)), 1),))
         predict_joint_sighting(TraitSighting('rival', '3-2', 1, {'fire': 1}), data, law)
+
+
+def test_item_grants_require_positive_counts_while_explicit_empty_certificate_is_valid():
+    from tft_engine.joint_sighting_law import JointHypothesis, JointSightingLaw, predict_joint_sighting
+
+    data = roster()
+    item = Entity('item', 'item', 'Certified item', values={'trait_grants': tag({'fire': 0})})
+    data = replace(data, entities=dict(data.entities)|{item.id: item})
+    law = JointSightingLaw(data.snapshot_id, 'rival', '3-2', 1, 'synthetic',
+        'Declared item assignment', (JointHypothesis(Board((Unit('a', items=(item.id,)),)), 1),))
+    sighting = TraitSighting('rival', '3-2', 1, {'fire': 1})
+    with pytest.raises(DataError, match='grant'):
+        predict_joint_sighting(sighting, data, law)
+    data = replace(data, entities=dict(data.entities)|{item.id: replace(item, values={'trait_grants': tag({})})})
+    assert predict_joint_sighting(sighting, data, law).probability == 1
