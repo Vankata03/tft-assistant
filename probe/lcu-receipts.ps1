@@ -1,9 +1,9 @@
 # Read-only LCU payload receipts. Credentials stay in memory; files are private probe artifacts.
 function Protect-LcuPayload($Value) {
     if ($Value -is [System.Collections.IDictionary]) {
-        $safe = [ordered]@{}
+        $safe = [System.Collections.Specialized.OrderedDictionary]::new([StringComparer]::Ordinal)
         foreach ($key in $Value.Keys) {
-            if ($key -match '(?i)token|authorization|password|api.?key|encryption.?key|credential') {
+            if ($key -match '(?i)token|authorization|password|api.?key|encryption.?key|credential|secret') {
                 $safe[$key] = '[redacted]'
             } else { $safe[$key] = Protect-LcuPayload $Value[$key] }
         }
