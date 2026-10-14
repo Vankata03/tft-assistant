@@ -197,3 +197,14 @@ def test_certain_event_has_zero_log_loss_even_with_extreme_total_weight():
             JointHypothesis(Board((Unit(identity),)), 1e308) for identity in ('a', 'c', 'd')))
     prediction = predict_joint_sighting(TraitSighting('rival', '3-2', 1, {'fire': 1}), data, law)
     assert prediction.probability == 1 and prediction.log_probability == 0
+
+
+@pytest.mark.parametrize('level', [True, 1.0])
+def test_law_level_cannot_alias_valid_integer_sighting_context(level):
+    from tft_engine.joint_sighting_law import JointHypothesis, JointSightingLaw, predict_joint_sighting
+
+    data = roster()
+    with pytest.raises(DataError, match='level'):
+        law = JointSightingLaw(data.snapshot_id, 'rival', '3-2', level, 'synthetic',
+            'Declared support', (JointHypothesis(Board((Unit('a'),)), 1),))
+        predict_joint_sighting(TraitSighting('rival', '3-2', 1, {'fire': 1}), data, law)

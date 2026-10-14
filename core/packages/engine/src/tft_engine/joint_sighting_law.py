@@ -45,6 +45,7 @@ class JointSightingLaw:
     hypotheses: tuple[JointHypothesis, ...]
 
     def __post_init__(self):
+        integral(self.level, 'joint law level', 1)
         object.__setattr__(self, 'hypotheses', tuple(self.hypotheses))
         for name in ('snapshot_id', 'opponent_id', 'round_id', 'source', 'citation'):
             value = getattr(self, name)
