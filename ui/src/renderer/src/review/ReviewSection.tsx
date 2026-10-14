@@ -1,13 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Path = (string | number)[];
 type RecordValue = Record<string, unknown>;
 export interface ReviewSectionProps {
   name: string;
-  /** Change this when the authenticated report or mode epoch changes. Keep request stable within that scope. */
+  /** Change this when the authenticated report or mode epoch changes. Callback identity may change within that scope. */
   scopeKey?: string;
   path: Path;
-  request: (operation: string, args: RecordValue) => Promise<RecordValue>;
+  request: (
+    operation: "page",
+    args: { path: Path; cursor: number; limit: number },
+  ) => Promise<RecordValue>;
   onDebug: (path: Path) => void;
 }
 const object = (value: unknown): RecordValue =>
@@ -71,6 +74,18 @@ const fields = new Set([
   "reason",
   "action",
 ]);
+function normalValue(value: unknown, field?: string): unknown {
+  if (Array.isArray(value)) return value.map((child) => normalValue(child));
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => fields.has(key) || field === "unavailable")
+        .map(([key, child]) => [key, normalValue(child, key)]),
+    );
+  }
+  return value;
+}
+
 const same = (a: unknown, b: Path): boolean =>
   Array.isArray(a) &&
   a.length === b.length &&
@@ -106,8 +121,8 @@ async function readMember(
       if (kind === "value" || kind === "string") {
         if (!same(member, path) || item.reference === true)
           throw new Error("Invalid review value page");
-        if (kind === "value") return item.value;
-        throw new Error("Long review strings require Debug");
+        if (kind === "value") return normalValue(item.value);
+        return "Long text available in Debug";
       }
       if (!Array.isArray(member) || !same(member.slice(0, -1), path))
         throw new Error("Invalid review member path");
@@ -126,7 +141,7 @@ async function readMember(
       const value =
         item.reference === true
           ? await readMember(request, member as Path, budget, depth + 1)
-          : item.value;
+          : normalValue(item.value, key as string);
       if (kind === "array") array.push(value);
       else result[key as string] = value;
     }
@@ -163,7 +178,7 @@ async function readRows(
     rows.push(
       item.reference === true
         ? await readMember(request, member, budget)
-        : item.value,
+        : normalValue(item.value),
     );
   }
   const next = page.next_cursor ?? null;
@@ -180,9 +195,11 @@ async function readRows(
 function Forecast({
   label,
   value,
+  scales,
 }: {
   label: string;
   value: unknown;
+  scales: { gold: number; level: number };
 }): React.JSX.Element {
   const row = object(value);
   const projections = Array.isArray(row.projections)
@@ -198,19 +215,37 @@ function Forecast({
       <svg
         role="img"
         aria-label={`${label}: gold and level forecast`}
-        viewBox="0 0 480 160"
+        viewBox="0 0 480 180"
         style={{ width: "100%", maxWidth: 640 }}
       >
         <title>{label}: gold and level forecast</title>
         <text x="12" y="16" fill="currentColor">
-          Gold (solid) · level (dashed), separate scales
+          Gold 0–{scales.gold} (solid) · Level 0–{scales.level} (dashed)
         </text>
+        {projections.map((point, index) => (
+          <text
+            key={index}
+            x={25 + (index * 420) / Math.max(1, projections.length - 1)}
+            y="155"
+            textAnchor={
+              index === 0
+                ? "start"
+                : index === projections.length - 1
+                  ? "end"
+                  : "middle"
+            }
+            fill="currentColor"
+            fontSize="12"
+          >
+            {text(point.round_id)}
+          </text>
+        ))}
         <line x1="20" y1="135" x2="460" y2="135" stroke="currentColor" />
         {(["gold", "level"] as const).map((field, series) => {
           const valid = projections
             .map((point, index) => ({ value: number(point[field]), index }))
             .filter((point) => point.value !== null);
-          const maximum = Math.max(1, ...valid.map((point) => point.value!));
+          const maximum = scales[field];
           // Missing values break the curve rather than implying a measured value.
           return valid.map((point) => {
             const next = valid.find((other) => other.index === point.index + 1);
@@ -268,9 +303,23 @@ function Forecast({
 }
 
 export function ReviewSection(props: ReviewSectionProps): React.JSX.Element {
+  const fallbackScope = useRef({ request: props.request, serial: 0 });
+  if (
+    props.scopeKey === undefined &&
+    fallbackScope.current.request !== props.request
+  ) {
+    fallbackScope.current = {
+      request: props.request,
+      serial: fallbackScope.current.serial + 1,
+    };
+  }
   return (
     <ScopedSection
-      key={JSON.stringify([props.scopeKey ?? null, props.name, props.path])}
+      key={JSON.stringify([
+        props.scopeKey ?? fallbackScope.current.serial,
+        props.name,
+        props.path,
+      ])}
       {...props}
     />
   );
@@ -289,7 +338,10 @@ function ScopedSection({
     loading: boolean;
   }>({ rows: [], next: null, error: null, loading: true });
   const [cursor, setCursor] = useState(0);
+  const [retry, setRetry] = useState(0);
   const pathKey = JSON.stringify(path);
+  const requestRef = useRef(request);
+  requestRef.current = request;
   useEffect(() => {
     let active = true;
     setState((previous) => ({
@@ -308,7 +360,7 @@ function ScopedSection({
       });
       return;
     }
-    void readRows(request, selected, cursor)
+    void readRows(requestRef.current, selected, cursor)
       .then(({ rows, next }) => {
         if (active)
           setState((previous) => ({
@@ -333,16 +385,32 @@ function ScopedSection({
     return () => {
       active = false;
     };
-  }, [name, pathKey, request, cursor]);
+  }, [name, pathKey, cursor, retry]);
   if (state.loading && state.rows.length === 0)
     return <p role="status">Loading review section…</p>;
-  if (state.error) return <p role="alert">{state.error}</p>;
   return (
     <section aria-label={`${name.replaceAll("_", " ")} review`}>
-      {state.rows.length === 0 ? <p>No records in this section</p> : null}
+      {state.error ? <p role="alert">{state.error}</p> : null}
+      {state.rows.length === 0 && !state.error ? (
+        <p>No records in this section</p>
+      ) : null}
       {state.rows.map((value, index) => {
         const row = object(value),
           observed = object(row.observed);
+        const forecasts = [row.recommended, row.actual].flatMap((value) => {
+          const projections = object(value).projections;
+          return Array.isArray(projections) ? projections.map(object) : [];
+        });
+        const scales = {
+          gold: Math.max(
+            1,
+            ...forecasts.map((point) => number(point.gold) ?? 0),
+          ),
+          level: Math.max(
+            1,
+            ...forecasts.map((point) => number(point.level) ?? 0),
+          ),
+        };
         const debugPath = row.evidence_path;
         return (
           <article
@@ -365,10 +433,15 @@ function ScopedSection({
                   Forecasts start from this decision. Fitted player policy uses
                   the later observed schedule; it is an ex-post comparison.
                 </p>
-                <Forecast label="Engine forecast" value={row.recommended} />
+                <Forecast
+                  label="Engine forecast"
+                  value={row.recommended}
+                  scales={scales}
+                />
                 <Forecast
                   label="Fitted player policy · ex-post"
                   value={row.actual}
+                  scales={scales}
                 />
               </>
             ) : (
@@ -404,7 +477,11 @@ function ScopedSection({
           </article>
         );
       })}
-      {state.next !== null ? (
+      {state.error ? (
+        <button type="button" onClick={() => setRetry((value) => value + 1)}>
+          Retry load
+        </button>
+      ) : state.next !== null ? (
         <button
           type="button"
           disabled={state.loading}
