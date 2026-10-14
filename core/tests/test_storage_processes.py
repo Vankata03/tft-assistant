@@ -194,3 +194,86 @@ def test_default_locations_resolve_operator_paths_without_opening_a_store(tmp_pa
     assert result.returncode == 0,result.stderr
     assert json.loads(result.stdout) == list(map(str,locations))
     assert not any(path.exists() for path in locations)
+
+
+def test_review_tags_from_separate_processes_serialize_while_a_native_flush_is_held(tmp_path):
+    import threading,time
+    store = SessionStore(tmp_path/'logs',tmp_path/'config',live_installed=False)
+    store.start_game('901')
+    store.end_game(placement=4)
+    store.write_review('901',{'decision_ids':['first','second']},engine_version='fixture',data_snapshot_id='fixture-pin')
+    script = '''
+import os,sys
+from pathlib import Path
+from tft_core.storage import SessionStore
+store=SessionStore(Path(sys.argv[1]),Path(sys.argv[2]),live_installed=False)
+original=os.fsync
+def held_external_flush(descriptor):
+    print('flushing',flush=True)
+    sys.stdin.readline()
+    return original(descriptor)
+os.fsync=held_external_flush
+store.set_review_tag('901','first','agree')
+print('tagged',flush=True)
+'''
+    child = subprocess.Popen([sys.executable,'-c',script,str(store.root),str(store.config_root)],
+        stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+    try:
+        assert child.stdout.readline().strip() == 'flushing'
+        def release():
+            time.sleep(.2)
+            child.stdin.write('release\n')
+            child.stdin.flush()
+        releaser = threading.Thread(target=release)
+        releaser.start()
+        started = time.monotonic()
+        # A tag staged by a sibling process is part of the same per-game sequence.
+        store.set_review_tag('901','second','disagree')
+        elapsed = time.monotonic()-started
+        releaser.join()
+        stdout,stderr = child.communicate(timeout=5)
+        assert child.returncode == 0,stderr
+        assert stdout.strip() == 'tagged'
+        assert .15 < elapsed < 1
+        assert store.read_review('901')['tags'] == {'first':'agree','second':'disagree'}
+    finally:
+        if child.poll() is None:
+            child.kill()
+            child.communicate()
+
+
+@pytest.mark.parametrize('change',('replaced_report','silent_lock'))
+def test_staged_review_tag_rejects_after_report_or_lock_changes_during_native_flush(tmp_path,monkeypatch,change):
+    import os,threading
+    store = SessionStore(tmp_path/'logs',tmp_path/'config',live_installed=True)
+    store.set_mode('baseline')
+    store.start_game('901')
+    store.end_game(placement=4)
+    store.write_review('901',{'decision_ids':['first']},engine_version='fixture',data_snapshot_id='fixture-pin')
+    entered,release = threading.Event(),threading.Event()
+    original = os.fsync
+    def held_flush(descriptor):
+        if threading.current_thread().name == 'tagger':
+            entered.set()
+            assert release.wait(5)
+        return original(descriptor)
+    monkeypatch.setattr(os,'fsync',held_flush)
+    failures = []
+    def tag():
+        try:
+            store.set_review_tag('901','first','agree')
+        except (ValueError,PermissionError) as error:
+            failures.append(error)
+    tagger = threading.Thread(target=tag,name='tagger')
+    tagger.start()
+    assert entered.wait(5)
+    if change == 'replaced_report':
+        store.write_review('901',{'decision_ids':['first']},engine_version='regenerated',data_snapshot_id='fixture-pin')
+    else:
+        store.set_mode('silent')
+        store.start_game('902')
+    release.set()
+    tagger.join(5)
+    assert len(failures) == 1
+    assert not (store.root/'reviews'/'901.tags.json').exists()
+    assert not list((store.root/'reviews').glob('*.tmp'))

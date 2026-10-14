@@ -17,6 +17,7 @@ from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 from weakref import WeakValueDictionary
 from time import monotonic, sleep
 
@@ -33,8 +34,9 @@ _STORE_LOCK_TIMEOUT_SECONDS = 1.0
 class _StoreLock:
     """Reentrant thread exclusion and one OS lock shared by all store processes."""
 
-    def __init__(self, root: Path) -> None:
-        self.path = root / ".session-store.lock"
+    def __init__(self, path: Path, busy: str = "Session store is busy; retry when its writer finishes") -> None:
+        self.path = path
+        self.busy = busy
         self.thread_lock = threading.RLock()
         self.depth = 0
         self.stream = None
@@ -42,7 +44,7 @@ class _StoreLock:
     def __enter__(self):
         deadline = monotonic() + _STORE_LOCK_TIMEOUT_SECONDS
         if not self.thread_lock.acquire(timeout=_STORE_LOCK_TIMEOUT_SECONDS):
-            raise TimeoutError("Session store is busy; retry when its writer finishes")
+            raise TimeoutError(self.busy)
         try:
             if self.depth == 0:
                 self.stream = self.path.open("a+b")
@@ -61,7 +63,7 @@ class _StoreLock:
                             raise
                         remaining = deadline - monotonic()
                         if remaining <= 0:
-                            raise TimeoutError("Session store is busy; retry when its writer finishes") from error
+                            raise TimeoutError(self.busy) from error
                         sleep(min(.01, remaining))
             self.depth += 1
             return self
@@ -92,15 +94,26 @@ class _StoreLock:
 
 
 def _store_lock(root: Path) -> _StoreLock:
+    return _shared_lock(root.resolve() / ".session-store.lock")
+
+
+def _shared_lock(path: Path, busy: str | None = None) -> _StoreLock:
     # Separate SessionStore objects in one process share the reentrant lock.
     # Keep the on-disk lock file: unlinking it could split live lock holders.
-    root = root.resolve()
     with _STORE_LOCKS_GUARD:
-        lock = _STORE_LOCKS.get(root)
+        lock = _STORE_LOCKS.get(path)
         if lock is None:
-            lock = _StoreLock(root)
-            _STORE_LOCKS[root] = lock
+            lock = _StoreLock(path, *(busy,) if busy else ())
+            _STORE_LOCKS[path] = lock
         return lock
+
+
+def _file_version(path: Path) -> tuple[int, int, int] | None:
+    try:
+        status = path.stat()
+    except FileNotFoundError:
+        return None
+    return status.st_ino, status.st_size, status.st_mtime_ns
 
 
 def utc_now() -> str:
@@ -142,7 +155,6 @@ class SessionStore:
         self.live_installed = importlib.util.find_spec("tft_live") is not None if live_installed is None else live_installed
         self._lock = _store_lock(self.root)
         self._next_seq: dict[str, int] = {}
-        self._tag_locks: dict[str, threading.Lock] = {}
         self._log_sizes: dict[str, int] = {}
         self.active_game_id: str | None = None
         self._mode = self.default_mode
@@ -612,14 +624,14 @@ class SessionStore:
         if tag not in {"agree", "disagree", "unsure"}:
             raise ValueError("tag must be agree, disagree or unsure")
         game_id = _game_id(game_id)
-        with self._lock:
-            tag_lock=self._tag_locks.setdefault(game_id,threading.Lock())
-        # Separate tag serialization leaves capture and mode changes independent
+        reviews = self.root / "reviews"
+        reviews.mkdir(parents=True, exist_ok=True)
+        # A per-game OS lock serializes tag writers in every process without
+        # holding the store lock, so capture and mode changes stay independent
         # of immutable report reads and the tag file's native flush.
-        with tag_lock:
-            report_path=self.root/"reviews"/f"{game_id}.json"
-            before=report_path.stat()
-            report_version=(before.st_ino,before.st_size,before.st_mtime_ns)
+        with _shared_lock((reviews / f".{game_id}.tags.lock").resolve(), "Review tags are busy; retry when the pending tag finishes"):
+            report_path = reviews / f"{game_id}.json"
+            report_version = _file_version(report_path)
             stored = self.read_review(game_id)
             review = stored["review"] if stored else {}
             known = set(review.get("decision_ids", ()))
@@ -628,12 +640,10 @@ class SessionStore:
                 known.update(row["decision_id"] for row in rows if "decision_id" in row)
             if decision_id not in known:
                 raise ValueError("unknown review decision id")
-            path = self.root / "reviews" / f"{game_id}.tags.json"
-            original=path.stat() if path.exists() else None
-            tag_version=(original.st_ino,original.st_size,original.st_mtime_ns) if original else None
-            tags = json.loads(path.read_text()) if original else {}
+            path = reviews / f"{game_id}.tags.json"
+            tag_version=path.read_bytes() if path.exists() else None
+            tags = json.loads(tag_version) if tag_version is not None else {}
             tags[decision_id] = tag
-            from uuid import uuid4
             temporary=path.with_suffix(f".{uuid4().hex}.tmp")
             try:
                 with temporary.open("w",encoding="utf-8") as output:
@@ -646,10 +656,8 @@ class SessionStore:
                     game=next((row for row in self.list_games() if row['game_id']==game_id),None)
                     if not game or game['review_locked']:
                         raise PermissionError("silent-game review is locked")
-                    current=report_path.stat()
-                    current_tags=path.stat() if path.exists() else None
-                    current_tag_version=(current_tags.st_ino,current_tags.st_size,current_tags.st_mtime_ns) if current_tags else None
-                    if (current.st_ino,current.st_size,current.st_mtime_ns)!=report_version or current_tag_version!=tag_version:
+                    current_tag_version=path.read_bytes() if path.exists() else None
+                    if _file_version(report_path)!=report_version or current_tag_version!=tag_version:
                         raise ValueError("Review or tags changed; reload before retrying")
                     os.replace(temporary,path)
             finally:
