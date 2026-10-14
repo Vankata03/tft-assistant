@@ -223,3 +223,13 @@ def test_item_grants_require_positive_counts_while_explicit_empty_certificate_is
         predict_joint_sighting(sighting, data, law)
     data = replace(data, entities=dict(data.entities)|{item.id: replace(item, values={'trait_grants': tag({})})})
     assert predict_joint_sighting(sighting, data, law).probability == 1
+
+
+@pytest.mark.parametrize('board', [Board(({'unit_id': 'a'},)), Board((), ({'unit_id': 'a'},)),
+    Board((Unit({'id': 'a'}),)), Board((Unit('a', items=({'item_id': 'x'},)),)),
+    Board((Unit('a', position={'x': 1}),)), Board((Unit('a', stars=True),))])
+def test_hypothesis_rejects_mutable_or_untyped_nested_unit_state(board):
+    from tft_engine.joint_sighting_law import JointHypothesis
+
+    with pytest.raises(DataError):
+        JointHypothesis(board, 1)

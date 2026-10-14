@@ -22,6 +22,18 @@ class JointHypothesis:
     def __post_init__(self):
         if not isinstance(self.board, Board) or not isinstance(self.capacity, CapacityEvidence):
             raise DataError('Joint support requires immutable Board and CapacityEvidence values')
+        for unit in self.board.units + self.board.bench:
+            if not isinstance(unit, Unit) or not isinstance(unit.unit_id, str) or not unit.unit_id.strip():
+                raise DataError('Joint support requires typed units with nonempty IDs')
+            integral(unit.stars, 'joint unit stars', 1)
+            if unit.stars > 3:
+                raise DataError('Joint unit stars must be 1, 2 or 3')
+            if any(not isinstance(item, str) or not item.strip() for item in unit.items):
+                raise DataError('Joint support requires nonempty item IDs')
+            if unit.position is not None:
+                integral(unit.position, 'joint unit position')
+                if unit.position > 27:
+                    raise DataError('Joint unit position must be between 0 and 27')
         if isinstance(self.weight, bool) or not isinstance(self.weight, (int, float)) or not isfinite(self.weight) or self.weight < 0:
             raise DataError('Joint support requires finite nonnegative weights')
         if self.forms is not None:
