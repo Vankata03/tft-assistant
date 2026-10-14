@@ -163,6 +163,6 @@ def predict_joint_sighting(sighting: TraitSighting, data: DataSnapshot,
     normalizer = fsum(hypothesis.weight / scale for hypothesis in law.hypotheses)
     probability = fsum(weight / scale for weight in matching) / normalizer
     event_scale = max(matching, default=0)
-    log_probability = (log(event_scale) + log(fsum(weight / event_scale for weight in matching))
-        - log(scale) - log(normalizer)) if event_scale > 0 else None
+    log_probability = min(0.0, (log(event_scale) - log(scale))
+        + (log(fsum(weight / event_scale for weight in matching)) - log(normalizer))) if event_scale > 0 else None
     return JointSightingPrediction(probability, None, law.source, log_probability)

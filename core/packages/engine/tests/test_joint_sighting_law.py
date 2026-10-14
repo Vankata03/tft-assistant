@@ -186,3 +186,14 @@ def test_joint_support_cannot_retain_untyped_mutable_board_or_inventory(change):
 
     with pytest.raises(DataError):
         JointHypothesis(**({'board': Board((Unit('a'),)), 'weight': 1} | change))
+
+
+def test_certain_event_has_zero_log_loss_even_with_extreme_total_weight():
+    from tft_engine.joint_sighting_law import JointHypothesis, JointSightingLaw, predict_joint_sighting
+
+    data = roster()
+    law = JointSightingLaw(data.snapshot_id, 'rival', '3-2', 1, 'synthetic',
+        'Every declared outcome has one fire unit', tuple(
+            JointHypothesis(Board((Unit(identity),)), 1e308) for identity in ('a', 'c', 'd')))
+    prediction = predict_joint_sighting(TraitSighting('rival', '3-2', 1, {'fire': 1}), data, law)
+    assert prediction.probability == 1 and prediction.log_probability == 0
