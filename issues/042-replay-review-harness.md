@@ -123,3 +123,10 @@ Exact source `baaed9c1dcff8e82d7671642e23e55bf5af8808a` passes 34 joint-law case
 ### 2026-10-14 — Full-root verification of the integrated helper checkpoint
 
 At source `e9b35869080673713e64971173a26b425e37f752`, the frozen training-group root suite passed 594 tests without skips in 72.06 seconds, process exit 0, with two existing Torch export warnings. UI passed 35 tests and type/generated-type/build checks. The storage, immutable supplied joint-law and declared-uncertainty margin slices are integrated; their actual producers, fit/CLI consumers and remaining full-review acceptance are not complete. Existing independent combined/no-Live and source gates remain recorded above. No production fit, Windows runtime or native-cause qualification is claimed.
+
+
+### 2026-10-14 — Full-root causal-control checkpoint verification
+
+- At source `fd374c86aed7c4ffb39427f419726bda0e4ae7b1`, the frozen training-group root suite passed 619 tests without skips in 88.41 seconds, process exit 0. Cached pinned reader assets and portable PowerShell supplied the existing external test prerequisites. Two existing Torch ONNX-export deprecation warnings remain.
+- Root import contracts were kept (2 kept, 0 broken); schemas, frozen lock and whitespace checks passed. UI source is unchanged, so this checkpoint retains the earlier root 35-case UI/type/generated-type/build evidence rather than claiming a new UI run. The isolated chart helper and dirty Live/runtime drafts are not included.
+- Independent relevant 163-case and physically Live-absent 162-case checks remain recorded above. Full ticket 42, complete-review resource acceptance, qualified production data, Windows/live-game behavior and historical native causality remain open.
