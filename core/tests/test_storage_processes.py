@@ -130,3 +130,67 @@ print('completed',flush=True)
             if child.poll() is None:
                 child.kill()
             child.communicate()
+
+
+def test_busy_external_store_lock_fails_within_deadline_and_keeps_last_good_state(tmp_path):
+    store = SessionStore(tmp_path/'logs',tmp_path/'config',live_installed=False)
+    store.start_game('901')
+    store.end_game(placement=4)
+    known = store.list_games()
+    before = store.log_path('901').read_bytes()
+    holder_script = '''
+import os,sys
+with open(sys.argv[1],'a+b') as stream:
+    if os.name == 'nt':
+        import msvcrt
+        stream.seek(0)
+        msvcrt.locking(stream.fileno(),msvcrt.LK_NBLCK,1)
+    else:
+        import fcntl
+        fcntl.flock(stream.fileno(),fcntl.LOCK_EX)
+    print('held',flush=True)
+    sys.stdin.readline()
+'''
+    attempt_script = '''
+import json,sys,time
+from pathlib import Path
+from tft_core.storage import SessionStore
+start=time.monotonic()
+try:
+    SessionStore(Path(sys.argv[1]),Path(sys.argv[2]),live_installed=False)
+except TimeoutError as error:
+    print(json.dumps({'status':'busy','reason':str(error),'elapsed':time.monotonic()-start}))
+else:
+    raise AssertionError('A held external store lock was ignored')
+'''
+    holder = subprocess.Popen([sys.executable,'-c',holder_script,str(store.root/'.session-store.lock')],
+        stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+    try:
+        assert holder.stdout.readline().strip() == 'held'
+        try:
+            attempt = subprocess.run([sys.executable,'-c',attempt_script,str(store.root),str(store.config_root)],
+                capture_output=True,text=True,timeout=2)
+        except subprocess.TimeoutExpired:
+            pytest.fail('Store acquisition blocked beyond its two-second process deadline')
+        assert attempt.returncode == 0,attempt.stderr
+        result = json.loads(attempt.stdout)
+        assert result['status'] == 'busy' and 'busy' in result['reason'].lower()
+        assert result['elapsed'] < 1.5
+    finally:
+        holder.communicate('release\n',timeout=5)
+    assert store.list_games() == known
+    assert store.log_path('901').read_bytes() == before
+    assert SessionStore(store.root,store.config_root,live_installed=False).list_games() == known
+
+
+def test_default_locations_resolve_operator_paths_without_opening_a_store(tmp_path):
+    import os
+    locations = [tmp_path/'data with spaces',tmp_path/'config with spaces']
+    environment = {'PATH':os.environ.get('PATH',''),'SystemRoot':os.environ.get('SystemRoot',''),
+        'TFT_ASSISTANT_DATA_ROOT':str(locations[0]),'TFT_ASSISTANT_CONFIG_ROOT':str(locations[1])}
+    result = subprocess.run([sys.executable,'-c',
+        'import json; from tft_core.storage import SessionStore; print(json.dumps(list(map(str,SessionStore.default_locations()))))'],
+        env=environment,capture_output=True,text=True,timeout=5)
+    assert result.returncode == 0,result.stderr
+    assert json.loads(result.stdout) == list(map(str,locations))
+    assert not any(path.exists() for path in locations)

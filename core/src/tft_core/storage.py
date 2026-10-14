@@ -6,6 +6,7 @@ capture the next snapshot. Only an incomplete final record may be discarded.
 """
 
 import importlib.util
+import errno
 import json
 import os
 import re
@@ -17,12 +18,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from weakref import WeakValueDictionary
+from time import monotonic, sleep
 
 from tft_core.messages import SessionMode
 
 _MODE_RANK = {SessionMode.SILENT: 0, SessionMode.BASELINE: 1, SessionMode.LIVE: 2}
 _STORE_LOCKS = WeakValueDictionary()
 _STORE_LOCKS_GUARD = threading.Lock()
+# Application I/O policy, not a game rule. A busy store must fail visibly so
+# startup/shutdown can reconcile a child rather than wait on it indefinitely.
+_STORE_LOCK_TIMEOUT_SECONDS = 1.0
 
 
 class _StoreLock:
@@ -35,19 +40,29 @@ class _StoreLock:
         self.stream = None
 
     def __enter__(self):
-        self.thread_lock.acquire()
+        deadline = monotonic() + _STORE_LOCK_TIMEOUT_SECONDS
+        if not self.thread_lock.acquire(timeout=_STORE_LOCK_TIMEOUT_SECONDS):
+            raise TimeoutError("Session store is busy; retry when its writer finishes")
         try:
             if self.depth == 0:
                 self.stream = self.path.open("a+b")
-                if os.name == "nt":
-                    import msvcrt
-                    self.stream.seek(0)
-                    # The documented blocking call retries ten times, then
-                    # raises visibly. The byte may lie beyond the empty file.
-                    msvcrt.locking(self.stream.fileno(), msvcrt.LK_LOCK, 1)
-                else:
-                    import fcntl
-                    fcntl.flock(self.stream.fileno(), fcntl.LOCK_EX)
+                while True:
+                    try:
+                        if os.name == "nt":
+                            import msvcrt
+                            self.stream.seek(0)
+                            msvcrt.locking(self.stream.fileno(), msvcrt.LK_NBLCK, 1)
+                        else:
+                            import fcntl
+                            fcntl.flock(self.stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except OSError as error:
+                        if error.errno not in (errno.EACCES, errno.EAGAIN):
+                            raise
+                        remaining = deadline - monotonic()
+                        if remaining <= 0:
+                            raise TimeoutError("Session store is busy; retry when its writer finishes") from error
+                        sleep(min(.01, remaining))
             self.depth += 1
             return self
         except BaseException:
@@ -138,12 +153,17 @@ class SessionStore:
         self.rebuild_index()
 
     @classmethod
-    def default(cls) -> "SessionStore":
+    def default_locations(cls) -> tuple[Path, Path]:
+        """Resolve operator locations without opening or rebuilding the store."""
         home = Path.home()
         default_root = Path(os.environ.get("LOCALAPPDATA", home / ".local" / "share")) / "tft-assistant"
         root = Path(os.environ.get("TFT_ASSISTANT_DATA_ROOT", default_root))
         config_root = Path(os.environ.get("TFT_ASSISTANT_CONFIG_ROOT", home / ".config" / "tft-assistant"))
-        return cls(root, config_root)
+        return root, config_root
+
+    @classmethod
+    def default(cls) -> "SessionStore":
+        return cls(*cls.default_locations())
 
     @property
     def run(self) -> dict | None:

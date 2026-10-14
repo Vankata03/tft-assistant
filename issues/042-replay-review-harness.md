@@ -22,6 +22,12 @@ Implement all referenced requirements. Verify through the approved public seams 
 
 ## Comments
 
+### 2026-10-14 — Bounded store acquisition after independent review
+
+The storage reviewer found that POSIX lock acquisition could wait indefinitely and the Windows blocking CRT call could wait about ten seconds. A public process holding the actual OS lock reproduced a constructor blocked past a two-second deadline. Acquisition now uses one shared one-second deadline for the reentrant thread lock and nonblocking OS contention attempts. Timeout raises a visible busy error; unrelated I/O errors propagate. The last-good metadata/log test passes after timeout and subsequent retry. This bounds acquisition only, not an already-running transaction; ticket 55 owns verified orphan-child reconciliation before store initialization. `SessionStore.default_locations()` resolves the same operator paths without constructing a store, enabling that ordering; its actual environment/process test failed before the helper and now passes without creating directories. The global lock does not replace ticket 44's separate tag/fsync transaction correction, which its author owns.
+
+After bounded-acquisition correction: full train 530 passed, no skips, 72.53 seconds, process 0, two existing Torch warnings. The later path-only helper is covered by combined storage/worker/policy/replay/runtime 99 passed in 15.34 seconds, process 0; with Live physically absent, 99 passed in 15.42 seconds, process 0. Live/train were restored. That helper was not present in the 530-test run. Imports 2 kept, schema, lock, scoped F821 and diff checks passed. UI source is unchanged; prior 35 UI/type/build evidence applies. Full ticket 42 and Windows/native-cause qualification remain open.
+
 ### 2026-10-14 — Shared core/child store race correction
 
 The real two- and eight-process constructor regression failed with `table replay_cache already exists`, readonly-database and disk-I/O errors. Every constructor reused and unlinked `index.rebuild.sqlite3` while another SQLite connection could still be building it. Private temporary databases removed that collision. A per-root reentrant thread/OS lock now serializes existing guarded lifecycle writes, cache/review publication and SQLite reads/rebuilds, so an older build cannot publish after a newer authoritative transaction. Connections close before replacement; a failed rebuild keeps the last-good index. The original eight-child fixture now reports all ten games from every child with zero failures.
