@@ -1302,6 +1302,18 @@ requires-dist = [
 name = "tft-harness"
 version = "0.1.0"
 source = { editable = "packages/harness" }
+dependencies = [
+    { name = "tft-data" },
+    { name = "tft-engine" },
+    { name = "tft-review" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "tft-data", editable = "packages/data" },
+    { name = "tft-engine", editable = "packages/engine" },
+    { name = "tft-review", editable = "packages/review" },
+]
 
 [[package]]
 name = "tft-live"

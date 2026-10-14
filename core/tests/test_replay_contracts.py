@@ -1,4 +1,6 @@
 """Historical replay through real logs, immutable data and the shared Engine."""
+from tests.test_harness_baseline import baseline_fixture
+
 import json
 import shutil
 import subprocess
@@ -332,7 +334,7 @@ def test_review_facade_locks_records_tags_and_media_but_keeps_raw_training_media
         lambda: sessions.set_review_tag('901', batch.records[0].decision_id, 'agree')):
         with pytest.raises(PermissionError, match='locked'):
             operation()
-    sessions.start_run({'game_count': 50, 'average_placement': 4.62, 'rank': 'P3'}, set_id='18')
+    sessions.start_run(baseline_fixture(sessions=sessions), set_id='18')
     assert access.read_batch('901') == batch
     assert access.read_media('901', media) == sessions.read_media('901', media)
     decision_id = batch.records[0].decision_id
