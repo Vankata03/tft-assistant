@@ -245,3 +245,15 @@ def test_joint_event_rejects_nonintegral_recorded_trait_truth(traits, hidden):
         'Declared whole-board support', (JointHypothesis(Board((Unit('a'),)), 1),))
     with pytest.raises(DataError):
         predict_joint_sighting(TraitSighting('rival', '3-2', 1, traits, hidden), data, law)
+
+
+@pytest.mark.parametrize('number', [True, 1.0])
+def test_joint_support_rejects_nonintegral_observed_board_counts(number):
+    from tft_engine.joint_sighting_law import JointHypothesis, JointSightingLaw, predict_joint_sighting
+
+    data = roster()
+    with pytest.raises(DataError):
+        law = JointSightingLaw(data.snapshot_id, 'rival', '3-2', 1, 'synthetic',
+            'Declared whole-board support', (
+                JointHypothesis(Board((Unit('a'),), trait_counts={'fire': number}), 1),))
+        predict_joint_sighting(TraitSighting('rival', '3-2', 1, {'fire': 1}), data, law)

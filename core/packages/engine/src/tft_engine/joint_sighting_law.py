@@ -22,6 +22,11 @@ class JointHypothesis:
     def __post_init__(self):
         if not isinstance(self.board, Board) or not isinstance(self.capacity, CapacityEvidence):
             raise DataError('Joint support requires immutable Board and CapacityEvidence values')
+        if self.board.trait_counts is not None:
+            if not isinstance(self.board.trait_counts, Mapping):
+                raise DataError('Joint support requires typed observed trait counts')
+            for number in self.board.trait_counts.values():
+                integral(number, 'joint observed trait count')
         for unit in self.board.units + self.board.bench:
             if not isinstance(unit, Unit) or not isinstance(unit.unit_id, str) or not unit.unit_id.strip():
                 raise DataError('Joint support requires typed units with nonempty IDs')
