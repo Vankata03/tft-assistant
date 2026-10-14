@@ -209,3 +209,99 @@ def test_actual_engine_replay_uses_a_causally_accepted_scored_line_pin(tmp_path)
     assert advice['payload']['pinned'] is True
     assert batch.contexts[-1].evaluation['plan']['line']['id'] == chosen['id']
     assert 'pinned_line' not in batch.contexts[-1].snapshot['fields']
+
+
+def long_controlled_batch(tmp_path, frames, *, extra=3):
+    """A public replay batch whose controls and log grow with the session."""
+    from tft_review import ReplayBatch, ReplayContext, project_session_controls
+
+    tmp_path.mkdir()
+    sessions, _, data, _ = logged_game(tmp_path, finish=False, mode='live')
+    for index in range(1, frames):
+        at = NOW+timedelta(seconds=index)
+        for count in range(extra):
+            sessions.append_event('advice_shown', {'frame': index, 'count': count}, timestamp=at.isoformat())
+        if index % 10 == 1:
+            payload = pin_payload(data, line_id=f'line-{index}')
+            if index % 20 == 11:
+                payload = dict(payload, pin=None, schedule=None)
+            sessions.append_event('line_pin', payload, timestamp=at.isoformat())
+        sessions.append_event('snapshot', log_snapshot(data, at=at+timedelta(seconds=.5),
+            snapshot_id=f'frame-{index}'), timestamp=(at+timedelta(seconds=.5)).isoformat())
+    events = sessions.read_events('901')
+    start, identity = events[0]['payload'], {'data_snapshot_id': data.snapshot_id}
+    contexts = tuple(ReplayContext('901', event['seq'], event['timestamp'], event['payload'], start,
+        data.snapshot_id, identity, 0, event['seq']-1, None,
+        evaluation_overlay=project_session_controls(GameSnapshot.from_dict(event['payload']), events,
+            through_seq=event['seq']-1).to_dict(through_seq=event['seq']-1))
+        for event in events if event['kind'] == 'snapshot')
+    return lambda: ReplayBatch('901', contexts, (), tuple(events), identity)
+
+
+def replay_every_frame(build):
+    from time import perf_counter
+
+    best = None
+    for _ in range(2):
+        started = perf_counter()
+        batch = build()
+        for context in batch.contexts:
+            batch.history_for(context)
+            batch.snapshot_for(context)
+        elapsed = perf_counter()-started
+        best = elapsed if best is None else min(best, elapsed)
+    return best
+
+
+def test_replaying_every_frame_of_a_long_controlled_session_grows_no_faster_than_its_history(tmp_path):
+    # Every frame's history holds every earlier frame, so doubling a session
+    # whose log and controls grow with it may quadruple the work, never more.
+    small = replay_every_frame(long_controlled_batch(tmp_path/'small', 150))
+    large = replay_every_frame(long_controlled_batch(tmp_path/'large', 300))
+    assert large < 5.5*small, (small, large)
+
+
+def test_reused_frame_projections_keep_each_frame_own_nonmonotonic_control_prefix(tmp_path):
+    from tft_engine import DomainHook
+    from tft_review import ReplayBatch, ReplayProducer
+
+    sessions, store, data, _ = logged_game(tmp_path, finish=False, mode='live')
+
+    def snapshot(name, seconds):
+        at = NOW+timedelta(seconds=seconds)
+        return sessions.append_event('snapshot', log_snapshot(data, at=at, snapshot_id=name), timestamp=at.isoformat())
+
+    snapshot('before', 1)
+    # Accepted later than the next capture, although committed before it.
+    future = sessions.append_event('line_pin', pin_payload(data, line_id='future-line'),
+        timestamp=(NOW+timedelta(seconds=5)).isoformat())
+    snapshot('earlier-capture', 3)
+    snapshot('after-pin', 6)
+    # Backdated, but committed after the previous capture, so only later frames see it.
+    unpin = sessions.append_event('line_pin', dict(pin_payload(data), pin=None, schedule=None),
+        timestamp=(NOW+timedelta(seconds=2)).isoformat())
+    snapshot('after-unpin', 7)
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=8)).isoformat())
+    batch = ReplayProducer(sessions, store, repository=ROOT,
+        hooks=(DomainHook('controls', (), advice=control_advice, dependency_fields=('pinned_line',)),)).produce('901')
+
+    def shown(context):
+        payload = next(row['payload'] for row in context.evaluation['advice'] if row['decision'] == 'controls')
+        return (payload['pin']['id'] if payload['pin'] else None,
+            [(row['snapshot_id'], row['pin']['id'] if row['pin'] else None) for row in payload['history']])
+
+    assert [shown(context) for context in batch.contexts] == [
+        (None, []),
+        (None, [('original', None)]),
+        (None, [('original', None), ('before', None)]),
+        ('future-line', [('original', None), ('before', None), ('earlier-capture', None)]),
+        (None, [('original', None), ('before', None), ('earlier-capture', None), ('after-pin', 'future-line')])]
+    assert batch.contexts[3].evaluation_overlay['provenance']['line_pin']['log_seq'] == future['seq']
+    assert batch.contexts[4].evaluation_overlay['provenance']['reset']['log_seq'] == unpin['seq']
+    assert batch.snapshot_for(batch.contexts[3]).fields['pinned_line'].read_at == NOW+timedelta(seconds=5)
+    assert all('pinned_line' not in context.snapshot['fields'] for context in batch.contexts)
+    for reread in (batch, ReplayBatch.from_dict(batch.to_dict())):
+        assert [[(row.snapshot_id, row.fields['pinned_line'].value['id'] if 'pinned_line' in row.fields else None)
+            for row in reread.history_for(context).snapshots] for context in reread.contexts] == [
+            shown(context)[1] for context in batch.contexts]
+        assert reread == batch

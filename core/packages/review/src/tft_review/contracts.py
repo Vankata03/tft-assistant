@@ -11,10 +11,14 @@ from tft_data.models import freeze
 REPLAY_SCHEMA_VERSION = 1
 
 
-def history_prefix(observations, *, through_seq, captured_at):
-    """Rebuild only earlier committed information observable by this capture."""
-    from tft_engine import GameHistory, GameSnapshot, TraitSighting
-    from .controls import project_session_controls
+def history_prefix(observations, *, through_seq, captured_at, controls=None):
+    """Rebuild only earlier committed information observable by this capture.
+
+    Callers replaying many frames of one log pass its SessionControlLog so each
+    earlier frame's control projection is computed once, not once per frame.
+    """
+    from tft_engine import GameHistory, TraitSighting
+    from .controls import SessionControlLog
 
     available_at = datetime.fromisoformat(captured_at)
     resume_at = max((datetime.fromisoformat(event['payload']['end'])
@@ -29,10 +33,11 @@ def history_prefix(observations, *, through_seq, captured_at):
         if resume_at is not None and datetime.fromisoformat(event['timestamp']) < resume_at:
             continue
         if event['kind'] == 'snapshot':
-            snapshot = GameSnapshot.from_dict(json_value(event['payload']))
+            if controls is None:
+                controls = SessionControlLog(observations)
+            snapshot = controls.frame(event).snapshot
             if snapshot.captured_at <= available_at:
-                snapshots.append(project_session_controls(snapshot, observations,
-                    through_seq=event['seq']-1).snapshot)
+                snapshots.append(snapshot)
         elif event['kind'] == 'sighting':
             sightings.append(TraitSighting.from_dict(dict(event['payload']) | {'read_at': event['timestamp']}))
     return GameHistory(tuple(snapshots), tuple(sightings))
@@ -181,11 +186,7 @@ class ReplayBatch:
                 or context.snapshot != event['payload'] or context.timestamp != event['timestamp']):
                 raise ValueError('Replay context does not match its historical observation')
             if context.evaluation_overlay is not None:
-                from tft_engine import GameSnapshot
-                from .controls import project_session_controls
-
-                projection = project_session_controls(GameSnapshot.from_dict(json_value(context.snapshot)),
-                    self.observations, through_seq=context.prefix_through_seq)
+                projection = self._project(context)
                 if frozen_json(projection.to_dict(through_seq=context.prefix_through_seq)) != context.evaluation_overlay:
                     raise ValueError('Replay control overlay does not match its causal prefix')
         for record in self.records:
@@ -202,17 +203,31 @@ class ReplayBatch:
         if context not in self.contexts:
             raise ValueError('Context does not belong to this replay batch')
         return history_prefix(self.observations, through_seq=context.prefix_through_seq,
-            captured_at=context.snapshot['captured_at'])
+            captured_at=context.snapshot['captured_at'], controls=self._controls())
 
     def snapshot_for(self, context):
         """Return the causal evaluation view while retaining the raw context."""
-        from tft_engine import GameSnapshot
-        from .controls import project_session_controls
-
         if context not in self.contexts:
             raise ValueError('Context does not belong to this replay batch')
-        return project_session_controls(GameSnapshot.from_dict(json_value(context.snapshot)),
-            self.observations, through_seq=context.prefix_through_seq).snapshot
+        return self._project(context).snapshot
+
+    def _controls(self):
+        # Derived from the frozen observations; not a field, so never serialized or compared.
+        from .controls import SessionControlLog
+
+        if '_control_log' not in self.__dict__:
+            object.__setattr__(self, '_control_log', SessionControlLog(self.observations))
+        return self.__dict__['_control_log']
+
+    def _project(self, context):
+        from tft_engine import GameSnapshot
+
+        # Validation proved this payload is the logged snapshot at this sequence.
+        controls = self._controls()
+        if context.prefix_through_seq == context.log_seq-1:
+            return controls.frame({'seq': context.log_seq, 'payload': context.snapshot})
+        return controls.project(GameSnapshot.from_dict(json_value(context.snapshot)),
+            through_seq=context.prefix_through_seq)
 
     @classmethod
     def from_dict(cls, value):
