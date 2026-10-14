@@ -15,3 +15,4 @@ from .planning import best_choice_fit
 from .lines import paired_value, candidate_lines
 
 from .wisps import compute_wisp_worth
+from .sighting_prediction import SightingPrediction, predict_sighting

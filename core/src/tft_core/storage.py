@@ -275,9 +275,12 @@ class SessionStore:
                 raise ValueError("cannot start a run during a game")
             if not self.live_installed:
                 raise ValueError("Live advisor is not installed")
-            if baseline.get("game_count") != 50 or not 1 <= baseline.get("average_placement", 0) <= 8 or not baseline.get("rank"):
-                raise ValueError("baseline requires 50 games, average placement and rank")
-            run = {"v": 1, "started_at": timestamp or utc_now(), "set_id": str(set_id), "baseline": baseline}
+            from tft_harness.baseline import validate_baseline
+            baseline = validate_baseline(baseline, set_id=set_id, logged_games=self.list_games())
+            started_at = timestamp or utc_now()
+            if datetime.fromisoformat(baseline["refreshed_at"]) > datetime.fromisoformat(started_at.replace("Z", "+00:00")):
+                raise ValueError("baseline refresh must precede run start")
+            run = {"v": 1, "started_at": started_at, "set_id": str(set_id), "baseline": baseline}
             _atomic_json(self.config_root / "run.json", run)
             self._mode = self.default_mode
             _atomic_json(self.config_root / "session.json", {"mode": self._mode.value})
