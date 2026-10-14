@@ -407,8 +407,18 @@ class _CaptureWorker:
                 own_player_name=settings.owner_name,
                 tracking_events=history,
                 video=video,
+                surface_profile=profile.surface,
             )
-            self.runner = CaptureRunner(source, pipeline)
+            def checked_layout():
+                try:
+                    current = HudLayout.from_config(settings.game_config)
+                    if current.window_mode not in {"windowed", "borderless"} or current.ui_scale != layout.ui_scale:
+                        raise ValueError("Game layout changed; verify window mode and recalibrate UI scale")
+                    return current
+                except (OSError, ValueError) as error:
+                    from tft_capture.windows import CaptureUnavailable
+                    raise CaptureUnavailable(str(error)) from error
+            self.runner = CaptureRunner(source, pipeline, layout_provider=checked_layout)
             if self.stop_requested.is_set():
                 self.runner.request_stop()
             first_round = None
@@ -696,6 +706,11 @@ class CaptureRuntime:
         for warning in (*self._refresh_warnings, self._client_error):
             if warning and warning not in status:
                 status += "; " + warning
+        self.server.observe_live_capture(
+            snapshot if capturing else None,
+            self.pinned_data if capturing else None,
+        )
+        self.server.publish_surface_geometry(snapshot if capturing else None)
         self.server.publish_baseline(
             data=self.pinned_data if capturing else None,
             snapshot=snapshot,

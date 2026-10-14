@@ -33,10 +33,11 @@ class EventSink(Protocol):
 
 class CapturePipeline:
     def __init__(self, game_id: str, *, ocr: OCR, sink: EventSink, regions: dict[str, tuple] | None = None,
-                 catalog: NameCatalog | None = None, layout: HudLayout | None = None, visual_reader: VisualReader | None = None, own_player_name: str | None = None, tracking_events=(), unit_traits=None, item_traits=None, sale_values=None, video=None, unit_variants=None, data_snapshot_id=None, effect_sources=None, item_trait_sources=None, snapshot_projector=None, unit_counter=None, unit_slot_costs=None):
+                 catalog: NameCatalog | None = None, layout: HudLayout | None = None, visual_reader: VisualReader | None = None, own_player_name: str | None = None, tracking_events=(), unit_traits=None, item_traits=None, sale_values=None, video=None, unit_variants=None, data_snapshot_id=None, effect_sources=None, item_trait_sources=None, snapshot_projector=None, unit_counter=None, unit_slot_costs=None, surface_profile=None):
         self.game_id, self.ocr, self.sink = str(game_id), ocr, sink
         self.video = video
         self.snapshot_projector = snapshot_projector
+        self.surface_profile = deepcopy(surface_profile)
         self._closed = False
         self._media_status = None
         self.regions = regions
@@ -118,7 +119,7 @@ class CapturePipeline:
         options.update(kwargs)
         return cls(game_id, data_snapshot_id=data.snapshot_id, **options)
 
-    def tick(self, frame: Image.Image | None, *, timestamp: datetime | None = None) -> dict:
+    def tick(self, frame: Image.Image | None, *, timestamp: datetime | None = None, geometry: dict | None = None) -> dict:
         now = timestamp or datetime.now(timezone.utc)
         if self._closed:
             raise ValueError("Capture pipeline is closed")
@@ -193,7 +194,9 @@ class CapturePipeline:
         snapshot = {"game_id": self.game_id, "round_id": self.fields.get("round", {}).get("value", ""),
                     "captured_at": now.isoformat(), "fields": deepcopy(self.fields), "data_snapshot_id": self.data_snapshot_id, "roll_down": self._rolling,
                     "snapshot_id": f"{self.game_id}:{self._instance_id}:{self._sequence}", "stale_fields": stale,
-                    "capture_layout": self.layout.describe(self._frame_size) if self._frame_size else None}
+                    "capture_layout": self.layout.describe(self._frame_size) if self._frame_size else None,
+                    "capture_geometry": deepcopy(geometry) if frame is not None else None,
+                    "surface_profile": deepcopy(self.surface_profile)}
         phase = self.fields.get("phase", {})
         snapshot["phase"] = phase.get("value", "unknown") if phase and (now-datetime.fromisoformat(phase["read_at"])).total_seconds() <= 2 else "unknown"
         self._sequence += 1
@@ -231,6 +234,14 @@ class CapturePipeline:
                 self._media_status = status
         snapshot["capture_copy"] = deepcopy(getattr(frame, "copy_stats", {}))
         snapshot["roll_down"] = self._rolling
+        shop = self.fields.get("shop", {})
+        if frame is not None and shop.get("read_at") == now.isoformat():
+            self.fields["roll_down"] = {"value": self._rolling, "read_at": shop["read_at"],
+                "source": "confirmed-roll-activity-and-current-shop", "confidence": shop["confidence"]}
+            if self._rolling and self._gold_floor is not None:
+                self.fields['roll_down_floor'] = {"value":self._gold_floor,"read_at":shop['read_at'],
+                    "source":"fixed-roll-start-floor-and-current-shop","confidence":shop['confidence']}
+            snapshot["fields"] = deepcopy(self.fields)
         if self.snapshot_projector is not None:
             snapshot = self.snapshot_projector(snapshot)
         self.sink.append_event("snapshot", snapshot, timestamp=now.isoformat())

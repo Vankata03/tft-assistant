@@ -7,6 +7,8 @@ Geometry support is distinct from verified OCR accuracy at a new layout.
 """
 import configparser
 import math
+import hashlib
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -33,6 +35,8 @@ class HudLayout:
     ui_scale: float = 1.0
     window_mode: str = "unknown"
     scale_source: str = "probe-reference"
+    read_at: str | None = None
+    config_sha256: str | None = None
 
     def __post_init__(self):
         if not math.isfinite(self.ui_scale) or not .5 <= self.ui_scale <= 1.5:
@@ -41,14 +45,19 @@ class HudLayout:
     @classmethod
     def from_config(cls, path: Path):
         config = configparser.ConfigParser()
-        if not config.read(path, encoding="utf-8"):
+        raw = path.read_bytes()
+        if not raw:
             raise ValueError(f"Game UI configuration unavailable: {path}")
+        try:
+            config.read_string(raw.decode('utf-8'))
+        except configparser.Error as error:
+            raise ValueError('Game UI configuration is unreadable; revalidate its layout') from error
         try:
             scale = config.getfloat("HUD", "GlobalScale")
         except (ValueError, configparser.Error) as error:
             raise ValueError("Game configuration has no readable HUD GlobalScale; verify the new-client layout") from error
         mode = config.getint("General", "WindowMode", fallback=-1)
-        return cls(scale, {0: "exclusive_fullscreen", 1: "windowed", 2: "borderless"}.get(mode, "unknown"), "game-config")
+        return cls(scale, {0: "exclusive_fullscreen", 1: "windowed", 2: "borderless"}.get(mode, "unknown"), "game-config", datetime.now(timezone.utc).isoformat(), hashlib.sha256(raw).hexdigest())
 
     def regions(self, size: tuple[int, int]) -> dict[str, tuple[float, float, float, float]]:
         width, height = size
@@ -70,4 +79,5 @@ class HudLayout:
 
     def describe(self, size: tuple[int, int]) -> dict:
         return {"ui_scale": self.ui_scale, "scale_source": self.scale_source,
-                "window_mode": self.window_mode, "size": list(size)}
+                "window_mode": self.window_mode, "size": list(size),
+                "read_at": self.read_at, "config_sha256": self.config_sha256}
