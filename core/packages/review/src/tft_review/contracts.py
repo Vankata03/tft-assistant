@@ -33,8 +33,7 @@ def history_prefix(observations, *, through_seq, captured_at, controls=None):
         if resume_at is not None and datetime.fromisoformat(event['timestamp']) < resume_at:
             continue
         if event['kind'] == 'snapshot':
-            if controls is None:
-                controls = SessionControlLog(observations)
+            controls = controls or SessionControlLog(observations)
             snapshot = controls.frame(event).snapshot
             if snapshot.captured_at <= available_at:
                 snapshots.append(snapshot)

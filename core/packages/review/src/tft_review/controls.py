@@ -76,34 +76,37 @@ class SessionControlLog:
     """
 
     def __init__(self, events):
-        self.events = tuple(events)
-        if not self.events or self.events[0]['kind'] != 'game_start':
-            raise ValueError('Session controls require a game_start')
-        self.start = self.events[0]['payload']
-        self.error, controls = None, []
-        try:
-            for event in self.events:
-                at = datetime.fromisoformat(event['timestamp'])
-                if at.tzinfo is None:
-                    raise ValueError('Session control timestamps require a timezone')
-                if event['kind'] in _CONTROL_KINDS:
-                    controls.append((event, at))
-        except Exception as error:
-            # A full scan reports this only after checking the game identity.
-            self.error = error
-        self.controls = tuple(controls)
-        self._frames = {}
+        self.events, self.controls, self._frames = tuple(events), None, {}
+
+    def _index(self):
+        # Built on first projection so a log is checked only when a frame needs it.
+        if self.controls is None:
+            if not self.events or self.events[0]['kind'] != 'game_start':
+                raise ValueError('Session controls require a game_start')
+            self.start = self.events[0]['payload']
+            self.error, controls = None, []
+            try:
+                for event in self.events:
+                    at = datetime.fromisoformat(event['timestamp'])
+                    if at.tzinfo is None:
+                        raise ValueError('Session control timestamps require a timezone')
+                    if event['kind'] in _CONTROL_KINDS:
+                        controls.append((event, at))
+            except Exception as error:
+                # A full scan reports this after the game identity and every
+                # earlier control, and never reads past it.
+                self.error = error
+            self.controls = tuple(controls)
 
     def project(self, snapshot, *, through_seq):
         if not isinstance(snapshot, GameSnapshot):
             raise TypeError('Session controls require a GameSnapshot')
         if type(through_seq) is not int or through_seq < 0:
             raise ValueError('Session controls require a nonnegative sequence')
+        self._index()
         start = self.start
         if str(start['game_id']) != snapshot.game_id:
             raise ValueError('Session controls belong to another game')
-        if self.error is not None:
-            raise self.error
         pin, provenance, mode = None, {}, start.get('mode')
         for event, at in self.controls:
             if event['seq'] > through_seq or at > snapshot.captured_at:
@@ -140,6 +143,8 @@ class SessionControlLog:
                     pin = FieldValue(schedule, at, 'ui_pin')
                 provenance['line_pin'] = {'log_seq': event['seq'], 'timestamp': event['timestamp'],
                     'delivery_revision': payload.get('delivery_revision'), 'pin': reference}
+        if self.error is not None:
+            raise self.error
         fields = dict(snapshot.fields)
         if fields.get('pinned_line') and fields['pinned_line'].source == 'ui_pin':
             del fields['pinned_line']
@@ -164,8 +169,4 @@ def project_session_controls(snapshot, events, *, through_seq):
     read time is its acceptance time, never a later capture time. Callers pass
     each historical frame's own earlier sequence, not the current frame's.
     """
-    if not isinstance(snapshot, GameSnapshot):
-        raise TypeError('Session controls require a GameSnapshot')
-    if type(through_seq) is not int or through_seq < 0:
-        raise ValueError('Session controls require a nonnegative sequence')
     return SessionControlLog(events).project(snapshot, through_seq=through_seq)
