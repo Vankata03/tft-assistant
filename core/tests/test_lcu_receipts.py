@@ -24,7 +24,14 @@ def test_real_local_endpoint_receipts_preserve_status_time_and_redact_credential
             requests.append((self.path, self.headers.get('Authorization')))
             status = 200 if self.path.endswith('/session') else 404
             body = json.dumps({'gameData': {'gameId': 901, 'gameMode': 'TFT'},
-                'token': secret, 'nested': {'note': encoded}, 'placements': [4]}).encode()
+                'token': secret, 'nested': {'note': encoded,
+                    'clientSecret': 'fixture-client-credential',
+                    'client_secret': 'fixture-snake-credential',
+                    'SECRET': 'fixture-uppercase-credential',
+                    'ClientSECRET': 'fixture-mixed-credential',
+                    'secret': 'fixture-secret-field',
+                    'displayName': 'preserved player label',
+                    'Title': 'upper-case label', 'title': 'lower-case label'}, 'placements': [4]}).encode()
             if payload_kind == 'oversize':
                 body = b'x' * 1048577
             elif payload_kind == 'nonjson':
@@ -59,11 +66,19 @@ Save-LcuReceipts -Base $Base -Headers @{Authorization="Basic $Encoded"} -Secrets
         outputs = ''.join(p.read_text() for p in (tmp_path / 'receipts').rglob('*') if p.is_file())
         assert secret not in outputs and encoded not in outputs
         assert secret not in result.stdout + result.stderr and encoded not in result.stdout + result.stderr
+        for credential in ('fixture-client-credential', 'fixture-snake-credential',
+                'fixture-uppercase-credential', 'fixture-mixed-credential', 'fixture-secret-field'):
+            assert credential not in outputs + result.stdout + result.stderr
         if payload_kind == 'valid':
             payload = json.loads(Path(receipts[0]['body_file']).read_text())
             assert payload['gameData'] == {'gameId': 901, 'gameMode': 'TFT'}
             assert payload['placements'] == [4]
             assert payload['token'] == '[redacted]'
+            assert payload['nested']['displayName'] == 'preserved player label'
+            assert payload['nested']['Title'] == 'upper-case label'
+            assert payload['nested']['title'] == 'lower-case label'
+            for key in ('clientSecret', 'client_secret', 'SECRET', 'ClientSECRET', 'secret'):
+                assert payload['nested'][key] == '[redacted]'
         else:
             reason = 'payload_limit' if payload_kind == 'oversize' else 'payload_not_json'
             assert all(r['unavailable_reason'] == reason and r['body_file'] is None for r in receipts)
