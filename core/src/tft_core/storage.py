@@ -17,6 +17,7 @@ from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 from weakref import WeakValueDictionary
 from time import monotonic, sleep
 
@@ -33,8 +34,9 @@ _STORE_LOCK_TIMEOUT_SECONDS = 1.0
 class _StoreLock:
     """Reentrant thread exclusion and one OS lock shared by all store processes."""
 
-    def __init__(self, root: Path) -> None:
-        self.path = root / ".session-store.lock"
+    def __init__(self, path: Path, busy: str = "Session store is busy; retry when its writer finishes") -> None:
+        self.path = path
+        self.busy = busy
         self.thread_lock = threading.RLock()
         self.depth = 0
         self.stream = None
@@ -42,7 +44,7 @@ class _StoreLock:
     def __enter__(self):
         deadline = monotonic() + _STORE_LOCK_TIMEOUT_SECONDS
         if not self.thread_lock.acquire(timeout=_STORE_LOCK_TIMEOUT_SECONDS):
-            raise TimeoutError("Session store is busy; retry when its writer finishes")
+            raise TimeoutError(self.busy)
         try:
             if self.depth == 0:
                 self.stream = self.path.open("a+b")
@@ -61,7 +63,7 @@ class _StoreLock:
                             raise
                         remaining = deadline - monotonic()
                         if remaining <= 0:
-                            raise TimeoutError("Session store is busy; retry when its writer finishes") from error
+                            raise TimeoutError(self.busy) from error
                         sleep(min(.01, remaining))
             self.depth += 1
             return self
@@ -92,15 +94,26 @@ class _StoreLock:
 
 
 def _store_lock(root: Path) -> _StoreLock:
+    return _shared_lock(root.resolve() / ".session-store.lock")
+
+
+def _shared_lock(path: Path, busy: str | None = None) -> _StoreLock:
     # Separate SessionStore objects in one process share the reentrant lock.
     # Keep the on-disk lock file: unlinking it could split live lock holders.
-    root = root.resolve()
     with _STORE_LOCKS_GUARD:
-        lock = _STORE_LOCKS.get(root)
+        lock = _STORE_LOCKS.get(path)
         if lock is None:
-            lock = _StoreLock(root)
-            _STORE_LOCKS[root] = lock
+            lock = _StoreLock(path, *(busy,) if busy else ())
+            _STORE_LOCKS[path] = lock
         return lock
+
+
+def _file_version(path: Path) -> tuple[int, int, int] | None:
+    try:
+        status = path.stat()
+    except FileNotFoundError:
+        return None
+    return status.st_ino, status.st_size, status.st_mtime_ns
 
 
 def utc_now() -> str:
@@ -220,12 +233,16 @@ class SessionStore:
         self._log_sizes[game_id] = size + len(encoded)
         return event
 
-    def append_event(self, kind: str, payload: dict, *, timestamp: str | None = None) -> dict:
+    def append_event(self, kind: str, payload: dict, *, timestamp: str | None = None, expected_game_id=None, expected_mode=None) -> dict:
         with self._lock:
             if self.active_game_id is None:
                 raise ValueError("no active game")
             if kind in {"game_start", "mode_change", "game_end", "session_detached"}:
                 raise ValueError("session events must use the session lifecycle API")
+            if expected_game_id is not None and self.active_game_id != str(expected_game_id):
+                raise ValueError("event game was superseded")
+            if expected_mode is not None and self.mode != SessionMode(expected_mode):
+                raise ValueError("event mode permission changed")
             return self._append(self.active_game_id, kind, payload, timestamp)
 
     def start_game(self, game_id: str | int, *, patch: str | None = None, data_snapshot_id: str | None = None,
@@ -426,6 +443,74 @@ class SessionStore:
             raise ValueError("media path must stay within its game's media directory")
         return path.read_bytes() if path.is_file() else None
 
+    def write_evidence(self, graph, *, expected_game_id=None, expected_mode=None, cancelled=None) -> dict:
+        """Persist outside the session lock; publish only under current permissions.
+
+        The immutable graph file is encoded and flushed before acquiring the
+        short log-publication lock. A mode change or finished/different game
+        removes the temporary file and cannot publish a reference into its log.
+        """
+        from hashlib import sha256
+        from uuid import uuid4
+        from tft_engine.evidence import canonical_bytes
+
+        def permitted(game_id):
+            if cancelled and cancelled():raise ValueError('evidence publication was cancelled')
+            if self.active_game_id != game_id or game_id is None:
+                raise ValueError("evidence game was superseded")
+            if expected_mode is not None and self.mode != SessionMode(expected_mode):
+                raise ValueError("evidence mode permission changed")
+        with self._lock:
+            game_id = str(expected_game_id) if expected_game_id is not None else self.active_game_id
+            permitted(game_id)
+            name = graph.root_id.removeprefix("sha256:")
+            if not re.fullmatch(r"[0-9a-f]{64}", name):
+                raise ValueError("invalid evidence identity")
+            path = self.log_path(game_id).parent / "evidence" / (name + ".json")
+        content = canonical_bytes(graph.to_dict())
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(f".{uuid4().hex}.tmp")
+        try:
+            existing = path.read_bytes() if path.exists() else None
+            if existing is not None and canonical_bytes(json.loads(existing)) != content:
+                raise ValueError("immutable evidence artifact was changed")
+            if existing is None:
+                with temporary.open("wb") as output:
+                    output.write(content)
+                    output.flush()
+                    os.fsync(output.fileno())
+            with self._lock:
+                permitted(game_id)
+                if path.exists():
+                    stored = path.read_bytes()
+                    if stored != existing and canonical_bytes(json.loads(stored)) != content:
+                        raise ValueError("immutable evidence artifact was changed")
+                else:
+                    os.replace(temporary,path)
+                    stored = content
+                reference = {"evidence_id": graph.root_id, "sha256": sha256(stored).hexdigest(), "bytes": len(stored)}
+                self._append(game_id,"engine_evidence",reference)
+                return reference
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def read_evidence(self, game_id: str | int, evidence_id: str):
+        """Raw offline access; UI/review callers must enforce their own access facade."""
+        from hashlib import sha256
+        from tft_engine.evidence import EvidenceGraph
+
+        if not isinstance(evidence_id, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", evidence_id):
+            raise ValueError("invalid evidence identity")
+        references = [event["payload"] for event in self.read_events(game_id)
+                      if event["kind"] == "engine_evidence" and event["payload"].get("evidence_id") == evidence_id]
+        if not references:
+            raise ValueError("evidence is not referenced by this game")
+        path = self.log_path(game_id).parent / "evidence" / (evidence_id[7:] + ".json")
+        content = path.read_bytes()
+        if any(reference["sha256"] != sha256(content).hexdigest() or reference["bytes"] != len(content) for reference in references):
+            raise ValueError("stored evidence bytes were changed")
+        return EvidenceGraph.from_dict(json.loads(content))
+
     def enforce_media_cap(self, cap_bytes: int = 20 * 1024 ** 3) -> dict:
         """Delete oldest unpinned media, retaining structured logs forever."""
         if cap_bytes < 0:
@@ -516,27 +601,37 @@ class SessionStore:
 
     def read_review(self, game_id: str | int) -> dict | None:
         game_id = _game_id(game_id)
+        def permitted():
+            game = next((g for g in self.list_games() if g['game_id']==game_id),None)
+            if game is None:raise ValueError('review requires a game log')
+            if game['review_locked']:raise PermissionError('silent-game review is locked until the Live-mode run starts')
+        # Review files are replaced atomically. Heavy immutable reads do not
+        # hold the capture/session lock or block a mode downgrade.
+        permitted()
+        path=self.root/'reviews'/f'{game_id}.json'
+        if not path.exists():return None
+        review=json.loads(path.read_text())
+        tags_path=self.root/'reviews'/f'{game_id}.tags.json'
+        tags=json.loads(tags_path.read_text()) if tags_path.exists() else {}
         with self._lock:
-            game = next((g for g in self.list_games() if g["game_id"] == game_id), None)
-            if game is None:
-                raise ValueError("review requires a game log")
-            if game["review_locked"]:
-                raise PermissionError("silent-game review is locked until the Live-mode run starts")
-            path = self.root / "reviews" / f"{game_id}.json"
-            if not path.exists():
-                return None
-            review = json.loads(path.read_text())
-            if "log_hash" in review and _observation_hash(self.read_events(game_id)) != review["log_hash"]:
-                raise ValueError("review log evidence changed; regeneration required")
-            tags_path = self.root / "reviews" / f"{game_id}.tags.json"
-            review["tags"] = json.loads(tags_path.read_text()) if tags_path.exists() else {}
-            return review
+            permitted()
+            if 'log_hash' in review and _observation_hash(self.read_events(game_id)) != review['log_hash']:
+                raise ValueError('review log evidence changed; regeneration required')
+        review['tags']=tags
+        return review
 
     def set_review_tag(self, game_id: str | int, decision_id: str, tag: str) -> None:
         if tag not in {"agree", "disagree", "unsure"}:
             raise ValueError("tag must be agree, disagree or unsure")
-        with self._lock:
-            game_id = _game_id(game_id)
+        game_id = _game_id(game_id)
+        reviews = self.root / "reviews"
+        reviews.mkdir(parents=True, exist_ok=True)
+        # A per-game OS lock serializes tag writers in every process without
+        # holding the store lock, so capture and mode changes stay independent
+        # of immutable report reads and the tag file's native flush.
+        with _shared_lock((reviews / f".{game_id}.tags.lock").resolve(), "Review tags are busy; retry when the pending tag finishes"):
+            report_path = reviews / f"{game_id}.json"
+            report_version = _file_version(report_path)
             stored = self.read_review(game_id)
             review = stored["review"] if stored else {}
             known = set(review.get("decision_ids", ()))
@@ -545,10 +640,28 @@ class SessionStore:
                 known.update(row["decision_id"] for row in rows if "decision_id" in row)
             if decision_id not in known:
                 raise ValueError("unknown review decision id")
-            path = self.root / "reviews" / f"{game_id}.tags.json"
-            tags = json.loads(path.read_text()) if path.exists() else {}
+            path = reviews / f"{game_id}.tags.json"
+            tag_version=path.read_bytes() if path.exists() else None
+            tags = json.loads(tag_version) if tag_version is not None else {}
             tags[decision_id] = tag
-            _atomic_json(path, tags)
+            temporary=path.with_suffix(f".{uuid4().hex}.tmp")
+            try:
+                with temporary.open("w",encoding="utf-8") as output:
+                    json.dump(tags,output,allow_nan=False)
+                    output.flush()
+                    os.fsync(output.fileno())
+                with self._lock:
+                    if self.active_game_id and self.mode is SessionMode.SILENT:
+                        raise ValueError("Silent games suppress review surfaces")
+                    game=next((row for row in self.list_games() if row['game_id']==game_id),None)
+                    if not game or game['review_locked']:
+                        raise PermissionError("silent-game review is locked")
+                    current_tag_version=path.read_bytes() if path.exists() else None
+                    if _file_version(report_path)!=report_version or current_tag_version!=tag_version:
+                        raise ValueError("Review or tags changed; reload before retrying")
+                    os.replace(temporary,path)
+            finally:
+                temporary.unlink(missing_ok=True)
 
     @property
     def media_mode(self) -> str:

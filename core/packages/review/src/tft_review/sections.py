@@ -62,7 +62,8 @@ def sections(batch, data=None, *, policies=None):
         target = plan.get('target')
         line_rows = evaluation.get('line_results', {}).get(target, ())
         recommended = next((row for row in line_rows if row['line']['id'] == (plan.get('line') or {}).get('id')), None)
-        pin = fields.get('pinned_line', {}).get('value')
+        projected = batch.snapshot_for(context).fields.get('pinned_line')
+        pin = projected.value if projected else None
         actual = (policies or {}).get(context.log_seq)
         lines.append({'log_seq': context.log_seq, 'round_id': context.snapshot['round_id'],
             'observed': observed, 'recommended': recommended, 'pin': pin,

@@ -1321,6 +1321,16 @@ requires-dist = [
 name = "tft-live"
 version = "0.1.0"
 source = { editable = "packages/live" }
+dependencies = [
+    { name = "tft-data" },
+    { name = "tft-engine" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "tft-data", editable = "packages/data" },
+    { name = "tft-engine", editable = "packages/engine" },
+]
 
 [[package]]
 name = "tft-review"

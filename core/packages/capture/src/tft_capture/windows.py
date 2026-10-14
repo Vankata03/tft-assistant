@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from tft_capture.frames import RegionFrame
 
@@ -21,6 +22,27 @@ class CapturedFrame:
     image: object
     window_id: str
     source: str
+    desktop_bounds: tuple[int, int, int, int] | None = None
+    geometry_read_at: datetime | None = None
+
+    def __post_init__(self):
+        if self.desktop_bounds is None and self.geometry_read_at is None:
+            return
+        if (not isinstance(self.desktop_bounds, tuple) or len(self.desktop_bounds) != 4
+            or any(type(value) is not int for value in self.desktop_bounds)
+            or not isinstance(self.geometry_read_at, datetime) or self.geometry_read_at.tzinfo is None):
+            raise ValueError("Captured desktop geometry requires physical bounds and an aware positive read")
+        left, top, right, bottom = self.desktop_bounds
+        if (right - left, bottom - top) != self.image.size:
+            raise ValueError("Captured frame dimensions differ from its physical client bounds")
+
+    def geometry(self):
+        if self.desktop_bounds is None:
+            return None
+        left, top, right, bottom = self.desktop_bounds
+        return {"window_id": self.window_id, "coordinate_space": "physical_pixels",
+                "client_bounds": {"x": left, "y": top, "width": right-left, "height": bottom-top},
+                "read_at": self.geometry_read_at.isoformat(), "source": "Win32-client-rectangle"}
 
 
 class WindowsCaptureSource:
@@ -105,6 +127,7 @@ class WindowsCaptureSource:
         if sys.platform != "win32":
             raise CaptureUnavailable("Automatic capture requires Windows 11; replay and fixture workflows work on this platform")
         hwnd, bounds = self._window()
+        geometry_read_at = datetime.now(UTC)
         if hwnd != self._hwnd:
             self.close()
             self._hwnd = hwnd
@@ -121,14 +144,14 @@ class WindowsCaptureSource:
             image = RegionFrame(buffer)
             target_size = (bounds[2]-bounds[0], bounds[3]-bounds[1])
             if image.size == target_size:
-                return CapturedFrame(image, str(hwnd), "wgc")
+                return CapturedFrame(image, str(hwnd), "wgc", bounds, geometry_read_at)
             # A windowed WGC frame can contain the non-client border. Do not silently stretch it.
             self._wgc_error = "WGC frame differs from the client rectangle; use BitBlt and check calibration"
         if self.allow_bitblt:
             try:
                 from tft_capture.bitblt import capture_bitblt
                 image = capture_bitblt(bounds)
-                return CapturedFrame(image, str(hwnd), "bitblt")
+                return CapturedFrame(image, str(hwnd), "bitblt", bounds, geometry_read_at)
             except (OSError, RuntimeError) as error:
                 raise CaptureUnavailable(f"WGC/BitBlt capture unavailable: {error}") from error
         raise CaptureUnavailable(self._wgc_error or "WGC has not supplied a fresh frame")

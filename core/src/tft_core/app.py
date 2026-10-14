@@ -148,7 +148,8 @@ async def run(
                 server.publish_runtime_error("engine_shutdown_timeout", engine.status)
             if reviews is not None and not await reviews.shutdown():
                 server.publish_runtime_error("review_shutdown_timeout", reviews.status)
-            await server.shutdown_io(timeout=.25)
+            io_status=await server.shutdown_io(timeout=.25)
+            log.info('Owned I/O shutdown status: %s',io_status)
             await runtime.shutdown()
             log.info("Capture shutdown status: %s", runtime.status)
 

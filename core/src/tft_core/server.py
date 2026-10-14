@@ -6,21 +6,24 @@ web page in a browser) are refused, and so are connections that do not say
 Hello with the right token within five seconds.
 """
 
+from .wire_json import evidence_wire_page
 import asyncio
 import hmac
 import logging
+import json
 from collections.abc import Callable
 
 from pydantic import ValidationError
 from tft_capture.lcu import NOT_RUNNING, GameflowUpdate
 from tft_data import DataError
-from websockets.asyncio.server import ServerConnection, broadcast, serve
+from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
 from tft_core.baseline import BaselineController
 from tft_core.baseline.contracts import BaselineState
 from tft_core.messages import (
     ErrorMessage,
+    ReviewReady,
     Gameflow,
     Hello,
     RequestBaselineState,
@@ -33,7 +36,17 @@ from tft_core.messages import (
     dump,
     parse_ui_message,
 )
+from tft_core.delivery_queue import ClientWriter
 from tft_core.storage import SessionStore
+from tft_core.live_delivery import LiveDeliveryController
+from tft_core.messages import RequestLiveState, RequestEvidencePage, LiveSurfaceShown, EvidencePage, PinLine
+from tft_core.messages import RequestSurfaceGeometry, SurfaceGeometryState
+from contextlib import asynccontextmanager
+from tft_core.io_worker import OwnedIO
+from tft_core.review_queue import ReviewRequests
+from tft_core.review_transport import ReviewTransport
+from tft_core.messages import RequestReview,ReviewResponse,RequestReviewGames,ReviewGames
+from tft_core.surface_geometry import captured_surface
 
 log = logging.getLogger(__name__)
 
@@ -50,27 +63,122 @@ class CoreServer:
         game_metadata: Callable[[str], dict] | None = None,
         baseline: BaselineController | None = None,
         managed_lifecycle: bool = False,
+        review_service=None,
     ) -> None:
         self._token = token
         self._clients: set[ServerConnection] = set()
+        self._writers = {}
+        self._review_requests = {}
+        self.io = OwnedIO()
         self._gameflow = NOT_RUNNING
         self.baseline = baseline or BaselineController()
         self._baseline_clients: set[ServerConnection] = set()
         self.sessions = sessions
+        self.review = ReviewTransport(sessions,review_service)
+        self._review_ready = None
         self._game_metadata = game_metadata or (lambda game_id: {})
         self._managed_lifecycle = managed_lifecycle
         self._mode = sessions.mode if sessions else SessionMode.SILENT
+        self.live = LiveDeliveryController(sessions)
+        self._live_clients: set[ServerConnection] = set()
+        self._geometry_clients: set[ServerConnection] = set()
+        self._geometry = None
+        self._anchors = ()
+        self._geometry_status = "Desktop geometry unavailable"
+
+    def publish_surface_geometry(self, snapshot):
+        try:
+            self._geometry, self._anchors = captured_surface(snapshot)
+            self._geometry_status = "Reviewed physical client geometry" if self._geometry else "Checked window geometry or profile anchors unavailable"
+        except (ValueError, KeyError, TypeError) as error:
+            self._geometry, self._anchors = None, ()
+            self._geometry_status = f"Surface calibration unavailable: {error}"
+        self._publish_geometry_state()
+
+    def _geometry_state(self):
+        if self._mode is SessionMode.SILENT:
+            return SurfaceGeometryState(mode=self._mode, status="Silent game · overlay off")
+        anchors = self._anchors
+        if self._mode is SessionMode.BASELINE:
+            anchors = tuple(row for row in anchors if row.kind in ('shop','level','par','augment','carousel','wisp','review'))
+        return SurfaceGeometryState(mode=self._mode, geometry=self._geometry, anchors=anchors, status=self._geometry_status)
+
+    def _publish_geometry_state(self):
+        self._broadcast(self._geometry_clients, dump(self._geometry_state()))
+
+    def publish_live(self, delivery) -> None:
+        """Accept the optional advisor's public output; dispatch remains runtime-owned."""
+        self.live.publish(delivery)
+        self._publish_live_state()
+
+    async def publish_live_async(self, delivery) -> None:
+        """Runtime55 stages heavy file work off-loop; activation stays loop-owned."""
+        prepared = self.live.prepare(delivery)
+        reference = await self.io.call(self.live.persist,prepared,cooperative=True)
+        self.live.activate(prepared,reference)
+        self._publish_live_state()
+
+    def observe_live_capture(self, snapshot, data) -> None:
+        if self._mode is SessionMode.LIVE:
+            self.live.observe(snapshot, data)
+            self._publish_live_state()
+
+    async def publish_review_ready(self,game_id):
+        """Publish only a checked finished report, using that game's final mode."""
+        from datetime import UTC,datetime
+        if not self.sessions or self.sessions.active_game_id:return None
+        record=await self.io.call(self.review.ready,str(game_id))
+        if record is None or self.sessions.active_game_id:return None
+        self.review.permitted(str(game_id))
+        now=datetime.now(UTC)
+        elapsed=(now-datetime.fromisoformat(record['ended_at'])).total_seconds()
+        if elapsed<0:raise ValueError('Review game-end timestamp is in the future')
+        ready=ReviewReady(**record,ready_at=now,latency_seconds=elapsed,late=elapsed>30)
+        self._review_ready=ready
+        self._broadcast(self._clients,dump(ready))
+        return ready
+
+    def publish_runtime_error(self,code,message) -> None:
+        """Expose a runtime supervisor failure without changing lifecycle guards."""
+        log.error("Runtime %s: %s",code,message)
+        self._broadcast(self._clients,dump(ErrorMessage(code=code,message=message)))
+
+    def publish_live_status(self) -> None:
+        """Broadcast current cleared/paused state after a runtime-owned job error."""
+        self._publish_live_state()
+
+    def _publish_live_state(self) -> None:
+        if self._live_clients:
+            self._broadcast(self._live_clients, dump(self.live.state(self._mode)))
+
+    def _broadcast(self, clients, encoded):
+        key = json.loads(encoded)["type"]
+        for client in clients:
+            self._writers[client].publish(key, encoded)
+
+    async def _send(self, client, encoded):
+        await self._writers[client].send(encoded)
 
     @property
     def mode(self) -> SessionMode:
         return self._mode
 
-    def listen(self, host: str = "127.0.0.1", port: int = 0) -> serve:
-        # origins=[None] admits only clients that send no Origin header.
-        return serve(self._handle, host, port, origins=[None])
+    @asynccontextmanager
+    async def listen(self, host: str = "127.0.0.1", port: int = 0):
+        try:
+            async with serve(self._handle,host,port,origins=[None],close_timeout=.25) as listener:
+                yield listener
+        finally:
+            await self.shutdown_io()
+
+    async def shutdown_io(self, *, timeout=.25):
+        self.live.clear('Core shutting down · Live surfaces off')
+        for jobs in tuple(self._review_requests.values()):await jobs.close()
+        return await self.io.close(timeout=timeout)
 
     def publish_gameflow(self, update: GameflowUpdate) -> None:
         self._gameflow = update
+        if update.phase in {"InProgress","Reconnect","PreEndOfGame"}:self._review_ready=None
         if self.sessions and not self._managed_lifecycle:
             try:
                 if update.phase in {"InProgress", "Reconnect"}:
@@ -83,7 +191,7 @@ class CoreServer:
                             metadata = self._game_metadata(update.game_id)
                         self.sessions.start_game(update.game_id, **metadata)
                     else:
-                        broadcast(
+                        self._broadcast(
                             self._clients,
                             dump(
                                 ErrorMessage(
@@ -101,7 +209,7 @@ class CoreServer:
                     self.sessions.end_game()
             except Exception as error:  # noqa: BLE001 -- Storage/metadata failures must leave the connection usable.
                 log.error("Session logging failed: %s", error)
-                broadcast(
+                self._broadcast(
                     self._clients,
                     dump(
                         ErrorMessage(
@@ -112,16 +220,16 @@ class CoreServer:
                 )
             if self._mode != self.sessions.mode:
                 self._mode = self.sessions.mode
-                broadcast(self._clients, dump(self._mode_message()))
+                self._broadcast(self._clients, dump(self._mode_message()))
                 self._publish_baseline_state()
         log.info(
             "Gameflow: client_running=%s phase=%s", update.client_running, update.phase
         )
         if self.sessions and self._managed_lifecycle:
             self._mode = self.sessions.mode
-            broadcast(self._clients, dump(self._mode_message()))
+            self._broadcast(self._clients, dump(self._mode_message()))
             self._publish_baseline_state()
-        broadcast(self._clients, dump(self._gameflow_message()))
+        self._broadcast(self._clients, dump(self._gameflow_message()))
 
     def publish_baseline(
         self,
@@ -164,7 +272,7 @@ class CoreServer:
 
     def _publish_baseline_state(self) -> None:
         if self._baseline_clients:
-            broadcast(self._baseline_clients, dump(self._baseline_state()))
+            self._broadcast(self._baseline_clients, dump(self._baseline_state()))
 
     def _mode_message(self) -> SessionModeState:
         available = (
@@ -182,10 +290,13 @@ class CoreServer:
     async def _handle(self, ws: ServerConnection) -> None:
         if not await self._authenticate(ws):
             return
+        self._writers[ws] = ClientWriter(ws)
+        self._review_requests[ws] = ReviewRequests(lambda message:self._review_receive(ws,message))
         self._clients.add(ws)
         try:
-            await ws.send(dump(self._gameflow_message()))
-            await ws.send(dump(self._mode_message()))
+            await self._send(ws, dump(self._gameflow_message()))
+            await self._send(ws, dump(self._mode_message()))
+            if self._review_ready and not (self.sessions and self.sessions.active_game_id):await self._send(ws,dump(self._review_ready))
             async for raw in ws:
                 await self._receive(ws, raw)
         except ConnectionClosed:
@@ -193,6 +304,10 @@ class CoreServer:
         finally:
             self._clients.discard(ws)
             self._baseline_clients.discard(ws)
+            self._live_clients.discard(ws)
+            self._geometry_clients.discard(ws)
+            await self._review_requests.pop(ws).close()
+            await self._writers.pop(ws).close()
 
     async def _authenticate(self, ws: ServerConnection) -> bool:
         try:
@@ -208,26 +323,88 @@ class CoreServer:
         await ws.close(POLICY_VIOLATION, "hello required")
         return False
 
+    async def _review_receive(self,ws,message):
+        if isinstance(message,RequestReviewGames):
+            try:
+                if self.sessions and self.sessions.active_game_id and self.sessions.mode is SessionMode.SILENT:
+                    raise ValueError('Silent games suppress post-game surfaces')
+                rows=await self.io.call(self.sessions.list_games) if self.sessions else []
+                if self.sessions and self.sessions.active_game_id and self.sessions.mode is SessionMode.SILENT:
+                    raise ValueError('Review permissions changed')
+                permitted=[]
+                for row in rows:
+                    view={name:row[name] for name in ('game_id','date','mode','finished','review_locked','patch')}
+                    view['placement']=None if row['review_locked'] else row['placement']
+                    permitted.append(view)
+                await self._send(ws,dump(ReviewGames(request_id=message.request_id,games=tuple(permitted))))
+            except (ValueError,KeyError,TypeError) as error:
+                await self._send(ws,dump(ErrorMessage(code='review_request_rejected',request_id=message.request_id,message=str(error))))
+            return
+        if isinstance(message,RequestReview):
+            try:
+                keys={'page':('report_id','evidence_id','path','cursor','limit'),
+                    'what_if':('report_id','evidence_id','moment_id','option_id'),
+                    'tag':('report_id','evidence_id','moment_id','tag'),
+                    'media':('name','cursor','limit'),'summary':()}
+                arguments={name:getattr(message,name) for name in keys[message.operation]}
+                value=await self.io.call(self.review.call,message.operation,message.game_id,**arguments)
+                # Re-check session permissions after work completed off the socket loop.
+                self.review.permitted(message.game_id)
+                if message.operation=='page':value=evidence_wire_page(value)
+                response=ReviewResponse(request_id=message.request_id,game_id=message.game_id,operation=message.operation,value=value)
+                encoded=dump(response)
+                if len(encoded.encode())>256*1024:raise ValueError('Review response exceeds its bounded transport budget')
+                await self._send(ws,encoded)
+            except (ValueError,KeyError,TypeError,OSError) as error:
+                await self._send(ws,dump(ErrorMessage(code='review_request_rejected',message=str(error),request_id=message.request_id)))
+            return
     async def _receive(self, ws: ServerConnection, raw: str | bytes) -> None:
         try:
             message = parse_ui_message(raw)
         except UnsupportedVersion as error:
-            await ws.send(
+            await self._send(ws,
                 dump(ErrorMessage(code="unsupported_version", message=str(error)))
             )
             return
         except (ValueError, ValidationError) as error:
-            await ws.send(
+            await self._send(ws,
                 dump(ErrorMessage(code="invalid_message", message=str(error)))
             )
             return
+        if isinstance(message,(RequestReviewGames,RequestReview)):
+            try:self._review_requests[ws].submit(message)
+            except ValueError as error:
+                await self._send(ws,dump(ErrorMessage(code='review_request_rejected',request_id=message.request_id,message=str(error))))
+            return
         if isinstance(message, RequestBaselineState):
             self._baseline_clients.add(ws)
-            await ws.send(dump(self._baseline_state()))
+            await self._send(ws, dump(self._baseline_state()))
+            return
+        if isinstance(message, RequestLiveState):
+            self._live_clients.add(ws)
+            await self._send(ws, dump(self.live.state(self._mode)))
+            return
+        if isinstance(message, RequestSurfaceGeometry):
+            self._geometry_clients.add(ws)
+            await self._send(ws, dump(self._geometry_state()))
+            return
+        if isinstance(message, (RequestEvidencePage, LiveSurfaceShown, PinLine)):
+            try:
+                if isinstance(message, RequestEvidencePage):
+                    page = evidence_wire_page(self.live.page(message, self._mode))
+                    await self._send(ws, dump(EvidencePage(request_id=message.request_id,
+                        game_id=message.game_id, revision=message.revision, page=page)))
+                elif isinstance(message, LiveSurfaceShown):
+                    self.live.shown(message, self._mode)
+                else:
+                    self.live.pin_line(message, self._mode)
+                    self._publish_live_state()
+            except (ValueError, KeyError, TypeError) as error:
+                await self._send(ws, dump(ErrorMessage(code="live_request_rejected", message=str(error), request_id=getattr(message, 'request_id', None))))
             return
         if isinstance(message, SelectGuide):
             if self._mode is not SessionMode.BASELINE:
-                await ws.send(
+                await self._send(ws,
                     dump(
                         ErrorMessage(
                             code="baseline_request_rejected",
@@ -239,7 +416,7 @@ class CoreServer:
             try:
                 self.baseline.select(message.guide_id)
             except DataError as error:
-                await ws.send(
+                await self._send(ws,
                     dump(ErrorMessage(code="guide_unavailable", message=str(error)))
                 )
                 return
@@ -252,7 +429,7 @@ class CoreServer:
             return
         if isinstance(message, SurfaceShown):
             if self._mode is SessionMode.SILENT:
-                await ws.send(
+                await self._send(ws,
                     dump(
                         ErrorMessage(
                             code="surface_suppressed",
@@ -282,7 +459,7 @@ class CoreServer:
                 self._gameflow.phase in {"InProgress", "Reconnect", "PreEndOfGame"}
                 and ranks[message.mode] > ranks[self._mode]
             ):
-                await ws.send(
+                await self._send(ws,
                     dump(
                         ErrorMessage(
                             code="mode_rejected",
@@ -295,11 +472,15 @@ class CoreServer:
                 try:
                     self.sessions.set_mode(message.mode)
                 except ValueError as error:
-                    await ws.send(
+                    await self._send(ws,
                         dump(ErrorMessage(code="mode_rejected", message=str(error)))
                     )
                     return
             self._mode = message.mode
+            if self._mode is not SessionMode.LIVE:
+                self.live.clear("Live content suppressed by session mode")
             log.info("Session mode: %s", self._mode)
-            broadcast(self._clients, dump(self._mode_message()))
+            self._broadcast(self._clients, dump(self._mode_message()))
             self._publish_baseline_state()
+            self._publish_live_state()
+            self._publish_geometry_state()
