@@ -55,6 +55,13 @@ def main(argv=None, *, riot_client=None):
     )
     refresh.add_argument("--offline", action="store_true")
     refresh.add_argument("--engine-computed", action="store_true")
+    review=commands.add_parser('prepare-review')
+    review.add_argument('patch')
+    review.add_argument('--set',dest='set_number',type=int,required=True)
+    review.add_argument('--review-dir',required=True)
+    review.add_argument('--cdragon-file',required=True)
+    review.add_argument('--ddragon-file',required=True)
+    review.add_argument('--entity-overlay-file')
     for command in ("bootstrap", "new-set"):
         bootstrap = commands.add_parser(command)
         bootstrap.add_argument("patch")
@@ -74,6 +81,12 @@ def main(argv=None, *, riot_client=None):
             )
     args = parser.parse_args(argv)
     try:
+        if args.command=='prepare-review':
+            from .candidate import prepare_review
+            target=prepare_review(args.review_dir,args.patch,args.set_number,args.cdragon_file,args.ddragon_file,
+                entity_overlay_file=args.entity_overlay_file)
+            print(f'Prepared incomplete offline review inputs at {target}; no production patch or snapshot published.')
+            return 0
         if args.command in {"bootstrap", "new-set"}:
             options = {
                 "cdragon": json.loads(Path(args.cdragon_file).read_text())

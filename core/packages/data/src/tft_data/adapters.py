@@ -190,6 +190,17 @@ class CommunityDragon:
             raise DataError(f"CommunityDragon schema changed: {exc}") from None
 
 
+def dragon_bundle(payload):
+    """Validate the bundle boundary before adapters access object fields."""
+    if not isinstance(payload, dict) or any(
+        not isinstance(body, dict) or not isinstance(body.get('data'), dict)
+        or any(not isinstance(row, dict) for row in body['data'].values())
+        for body in payload.values()
+    ):
+        raise DataError('Data Dragon bundle must map kinds to data objects')
+    return payload
+
+
 class DataDragon:
     def __init__(self, payload: dict, version: str, kind: str, *, allowed_ids=None):
         self.payload, self.version, self.kind = payload, version, kind

@@ -14,10 +14,10 @@ from pathlib import Path
 
 import tomli_w
 
-from .adapters import CommunityDragon, DataDragon, merge_entities
+from .adapters import CommunityDragon, DataDragon, merge_entities, dragon_bundle
 from .config import load_patch
 from .models import DataError, plain
-from .entity_overlay import apply_entity_overlay
+from .entity_overlay import apply_entity_overlay, entities_payload, render
 
 
 def download_json(url):
@@ -61,6 +61,8 @@ def new_patch(
         raise DataError(
             "A new set requires a fresh reviewed static file; patch carry is not valid"
         )
+    if ddragon is not None:
+        dragon_bundle(ddragon)
     if not offline:
         cdragon = cdragon or download_json(
             "https://raw.communitydragon.org/latest/cdragon/tft/en_us.json"
@@ -89,7 +91,7 @@ def new_patch(
             entities, CommunityDragon(cdragon, set_number).entities()
         )
     if ddragon:
-        for kind, payload in ddragon.items():
+        for kind, payload in dragon_bundle(ddragon).items():
             entities = merge_entities(
                 entities,
                 DataDragon(
@@ -200,7 +202,7 @@ def bootstrap_patch(
     )
     adapter = CommunityDragon(cdragon, static["set_number"])
     entities = adapter.entities()
-    for kind, payload in (ddragon or {}).items():
+    for kind, payload in dragon_bundle(ddragon if ddragon is not None else {}).items():
         entities = merge_entities(
             entities,
             DataDragon(
@@ -221,23 +223,7 @@ def bootstrap_patch(
         candidate.mkdir()
         (candidate / "static.toml").write_text(tomli_w.dumps(static))
         (candidate / "tunables.toml").write_text(tomli_w.dumps(tunables))
-        (candidate / "entities.json").write_text(
-            json.dumps(
-                {
-                    "entities": [
-                        {
-                            **plain(vars(entity)),
-                            "values": {
-                                key: plain(vars(value))
-                                for key, value in entity.values.items()
-                            },
-                        }
-                        for entity in entities.values()
-                    ]
-                },
-                indent=2,
-            )
-        )
+        (candidate / "entities.json").write_text(render(entities_payload(entities)))
         # Validation fails before any target is published when the rules are incomplete.
         load_patch(candidate)
         report = [
