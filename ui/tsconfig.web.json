@@ -19,9 +19,11 @@
   },
   "include": [
     "src/renderer/**/*",
+    "src/live/**/*",
     "src/shared/**/*",
     "src/preload/*.d.ts",
     "test/**/*.test.tsx",
+    "test/fixtures/**/*",
     "test/browser/**/*.ts"
   ]
 }
