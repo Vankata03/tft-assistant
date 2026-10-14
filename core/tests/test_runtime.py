@@ -1209,3 +1209,40 @@ def test_clean_checkout_missing_settings_names_the_required_local_setup(tmp_path
     assert 'docs/agents/runtime-boundary.md' in message
     assert 'reviewed capture inputs' in message
     assert not missing.exists()
+
+
+def test_blocked_client_discovery_does_not_hold_core_exit(tmp_path):
+    """A process enumeration stuck in the OS must not outlive the shell close."""
+    entered = tmp_path / "discovery-entered"
+    code = """
+import asyncio, sys, threading
+from pathlib import Path
+from tft_core.app import run
+from tft_core.storage import SessionStore
+def blocked_discovery():
+    Path(sys.argv[3]).write_text('entered')
+    threading.Event().wait()
+asyncio.run(run('fixture-token', sessions=SessionStore(Path(sys.argv[1]),Path(sys.argv[2]),live_installed=False),settings_path=Path(sys.argv[1])/'missing.toml',watcher_options={'discover':blocked_discovery}))
+"""
+    child = subprocess.Popen(
+        [sys.executable, "-c", code, str(tmp_path / "logs"), str(tmp_path / "config"), str(entered)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert json.loads(child.stdout.readline())["event"] == "ready"
+        deadline = time.monotonic() + 3
+        while not entered.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert entered.exists()
+        started = time.monotonic()
+        child.stdin.close()
+        child.wait(timeout=5)
+        assert child.returncode == 0, child.stderr.read()
+        assert time.monotonic() - started < 5
+    finally:
+        if child.poll() is None:
+            child.kill()
+            child.wait(timeout=10)
