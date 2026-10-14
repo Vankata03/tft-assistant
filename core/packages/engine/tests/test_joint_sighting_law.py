@@ -233,3 +233,15 @@ def test_hypothesis_rejects_mutable_or_untyped_nested_unit_state(board):
 
     with pytest.raises(DataError):
         JointHypothesis(board, 1)
+
+
+@pytest.mark.parametrize('traits,hidden', [({'fire': True}, 0), ({'fire': 1.0}, 0),
+    ({'fire': 1}, 0.0), ({'fire': 1}, False)])
+def test_joint_event_rejects_nonintegral_recorded_trait_truth(traits, hidden):
+    from tft_engine.joint_sighting_law import JointHypothesis, JointSightingLaw, predict_joint_sighting
+
+    data = roster()
+    law = JointSightingLaw(data.snapshot_id, 'rival', '3-2', 1, 'synthetic',
+        'Declared whole-board support', (JointHypothesis(Board((Unit('a'),)), 1),))
+    with pytest.raises(DataError):
+        predict_joint_sighting(TraitSighting('rival', '3-2', 1, traits, hidden), data, law)

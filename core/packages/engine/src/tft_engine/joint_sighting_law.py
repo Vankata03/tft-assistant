@@ -124,10 +124,12 @@ def predict_joint_sighting(sighting: TraitSighting, data: DataSnapshot,
     """
     if law is None:
         return JointSightingPrediction(None, 'joint_sighting_law_unavailable', None)
+    integral(sighting.hidden_traits, 'observed hidden trait count')
     if (law.snapshot_id, law.opponent_id, law.round_id, law.level) != (
         data.snapshot_id, sighting.opponent_id, sighting.round_id, sighting.level):
         raise DataError('Joint law does not match the snapshot and sighting context')
-    for trait in sighting.traits:
+    for trait, number in sighting.traits.items():
+        integral(number, 'observed visible trait count', 1)
         _breakpoint(trait, data)
     scale = max(hypothesis.weight for hypothesis in law.hypotheses)
     matching = []
