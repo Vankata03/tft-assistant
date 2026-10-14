@@ -113,6 +113,7 @@ class LiveDeliveryController:
                                                "observed_phase": self.observed_phase,"roster_qualified":self.roster_qualified,"ownership_qualified":self.ownership_qualified})
 
     def clear(self, reason):
+        context = self.pin_context
         self.epoch += 1
         self.current = None
         self.pin = None
@@ -121,6 +122,21 @@ class LiveDeliveryController:
         self.pin_context = None
         self.status = reason
         self.invalidated = {}
+        if context is not None:
+            self._log_pin_reset(context, reason)
+
+    def _log_pin_reset(self, context, reason):
+        # Replay sees the accepted pin until a causal reset; memory alone is not
+        # evidence. A detached or replaced game already logged its own boundary.
+        if not self.sessions or self.sessions.active_game_id != context["game_id"]:
+            return
+        try:
+            self.sessions.append_event("session_controls_reset", {"schema_version": 1,
+                "game_id": context["game_id"], "data_snapshot_id": context["data_snapshot_id"],
+                "delivery_revision": context["delivery_revision"], "pin_seq": context["seq"],
+                "pin_read_at": context["read_at"], "reason": reason}, expected_game_id=context["game_id"])
+        except (OSError, ValueError) as error:
+            self.status = f"{reason} · pin reset could not be logged: {error}"
 
     def observe(self, snapshot, data):
         from tft_engine import GameSnapshot
@@ -263,5 +279,5 @@ class LiveDeliveryController:
         self.epoch += 1
         self.pin_read_at=datetime.fromisoformat(event['timestamp']) if self.pin is not None else None
         self.pin_context=({"game_id":message.game_id,"data_snapshot_id":self.current.content.data_snapshot_id,
-            "delivery_revision":message.revision,"epoch":self.epoch,"read_at":event['timestamp'],
+            "delivery_revision":message.revision,"epoch":self.epoch,"read_at":event['timestamp'],"seq":event['seq'],
             "schedule":self.pin_schedule,"pin":self.pin} if self.pin is not None else None)

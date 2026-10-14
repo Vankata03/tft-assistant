@@ -365,3 +365,89 @@ def test_ui_pin_receipt_time_does_not_expire_otherwise_fresh_display_fields():
     dependent=[row for row in view.content['advice'] if 'pinned_line' in row['validity']]
     assert dependent
     assert all(row['valid_until'] is None or datetime.fromisoformat(row['valid_until'])>=frame.captured_at for row in dependent)
+
+
+@pytest.mark.parametrize('cause',('capture_paused','mode_downgrade','unpinned_mode_downgrade','log_unavailable'))
+def test_clearing_an_accepted_pin_records_one_causal_reset_or_fails_visibly(tmp_path,cause):
+    import asyncio,subprocess,sys
+    from dataclasses import replace
+    from datetime import datetime,UTC
+    from websockets.asyncio.client import connect
+    from tft_core.messages import Hello,dump
+    from tft_core.server import CoreServer
+    from tft_core.storage import SessionStore
+    from tft_engine import GameHistory
+    from tft_live.advisor import LiveAdvisor
+    async def scenario():
+        fixtures=runpy.run_path(str(Path(__file__).parents[1]/'packages/engine/tests/test_planning.py'))
+        source=fixtures['snapshot']();data=fixtures['patch']();now=datetime.now(UTC)
+        frame=replace(source,game_id='123',captured_at=now,fields={name:replace(field,read_at=now) for name,field in source.fields.items()})
+        logs=SessionStore(tmp_path/'app',tmp_path/'config',live_installed=True);logs.set_mode('live')
+        logs.start_game('123',data_snapshot_id=data.snapshot_id)
+        server=CoreServer('token',sessions=logs)
+        server.observe_live_capture(frame,data);server.publish_live(LiveAdvisor().evaluate(frame,GameHistory(),data,mode='live'))
+        async with server.listen() as listener:
+            async with connect(f'ws://127.0.0.1:{listener.sockets[0].getsockname()[1]}') as ws:
+                await ws.send(dump(Hello(token='token')));await ws.recv();await ws.recv()
+                await ws.send(json.dumps({'v':1,'type':'request_live_state'}));current=json.loads(await ws.recv())
+                if cause!='unpinned_mode_downgrade':
+                    line=current['content']['lines'][0]
+                    await ws.send(json.dumps({'v':1,'type':'pin_line','game_id':'123','revision':current['revision'],'comp_id':line['comp_id'],'line_id':line['line_id'],'seed':line['seed']}))
+                    assert json.loads(await ws.recv())['pin']['line_id']==line['line_id']
+                before=logs.read_events('123')
+                if cause=='log_unavailable':
+                    holder=subprocess.Popen([sys.executable,'-c','''
+import os,sys
+with open(sys.argv[1],'a+b') as stream:
+    if os.name=='nt':
+        import msvcrt
+        stream.seek(0)
+        msvcrt.locking(stream.fileno(),msvcrt.LK_NBLCK,1)
+    else:
+        import fcntl
+        fcntl.flock(stream.fileno(),fcntl.LOCK_EX)
+    print('held',flush=True)
+    sys.stdin.readline()
+''',str(logs.root/'.session-store.lock')],stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
+                    try:
+                        assert holder.stdout.readline().strip()=='held'
+                        server.observe_live_capture(frame,None)
+                    finally:
+                        holder.communicate('release\n',timeout=5)
+                    state=server.live.state(logs.mode)
+                    assert state.pin is None
+                    assert 'pin reset could not be logged' in state.status
+                    assert logs.read_events('123')==before
+                    return
+                if cause=='capture_paused':
+                    for _ in range(2):server.observe_live_capture(frame,None)
+                else:
+                    await ws.send(json.dumps({'v':1,'type':'set_session_mode','mode':'baseline'}))
+                    await asyncio.sleep(.1)
+                    server.observe_live_capture(frame,None)
+                added=logs.read_events('123')[len(before):]
+                resets=[event for event in added if event['kind']=='session_controls_reset']
+                if cause=='unpinned_mode_downgrade':
+                    assert resets==[]
+                    return
+                pin=next(event for event in before if event['kind']=='line_pin')
+                assert len(resets)==1
+                reset=resets[0]
+                assert reset['payload']=={'schema_version':1,'game_id':'123','data_snapshot_id':data.snapshot_id,
+                    'delivery_revision':current['revision'],'pin_seq':pin['seq'],'pin_read_at':pin['timestamp'],
+                    'reason':reset['payload']['reason']}
+                assert reset['payload']['reason']
+                assert reset['seq']>pin['seq'] and reset['timestamp']>=pin['timestamp']
+                assert server.live.pin is None
+                # Review's causal control reader drops the pin exactly at this reset.
+                from datetime import timedelta
+                from tft_review.controls import project_session_controls
+                events=logs.read_events('123')
+                def at(event):
+                    moment=datetime.fromisoformat(event['timestamp'])+timedelta(milliseconds=1)
+                    return replace(frame,captured_at=moment,fields={name:replace(field,read_at=moment) for name,field in frame.fields.items()})
+                assert project_session_controls(at(pin),events,through_seq=pin['seq']).snapshot.fields['pinned_line'].source=='ui_pin'
+                after=project_session_controls(at(reset),events,through_seq=reset['seq'])
+                assert 'pinned_line' not in after.snapshot.fields
+                assert after.provenance['reset']['log_seq']==reset['seq']
+    asyncio.run(scenario())

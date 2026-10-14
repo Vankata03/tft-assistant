@@ -141,3 +141,49 @@ def test_review_ready_uses_finished_game_last_mode_and_checked_report_not_curren
                 logs.set_mode('baseline');logs.start_game('125')
                 assert await server.publish_review_ready('123') is None  # A later game's UI is not interrupted.
     asyncio.run(scenario())
+
+
+def test_slow_tag_flush_does_not_hold_mode_lock_or_publish_after_silent_downgrade(tmp_path,monkeypatch):
+    import os,threading,time
+    from tft_data import DataStore
+    from tft_engine.evidence import EvidenceGraph
+    from tft_review import ReviewService
+    entered,release=threading.Event(),threading.Event()
+    original=os.fsync
+    held=False
+    def slow_disk(fd):
+        nonlocal held
+        if threading.current_thread().name.startswith('tft-io') and not held:
+            held=True;entered.set()
+            if not release.wait(2):raise OSError('External review-tag flush timeout')
+        return original(fd)
+    async def scenario():
+        logs=SessionStore(tmp_path/'app',tmp_path/'config',live_installed=True)
+        logs.set_mode('baseline');logs.start_game('123');logs.end_game()
+        graph=EvidenceGraph.factor({'game_id':'123','summary':{'top5':[]},'moments':[]})
+        logs.write_review('123',{'schema_version':1,'report_id':graph.root_id,'evidence_graph':graph.to_dict(),'decision_ids':['moment']},engine_version='fixture',data_snapshot_id='fixture')
+        service=ReviewService(logs,DataStore(tmp_path/'data'),repository=tmp_path)
+        logs.set_mode('live');logs.start_game('124')
+        server=CoreServer('token',sessions=logs,review_service=service)
+        monkeypatch.setattr(os,'fsync',slow_disk)
+        async with server.listen() as listener:
+            async with connect(f'ws://127.0.0.1:{listener.sockets[0].getsockname()[1]}') as ws:
+                await ws.send(dump(Hello(token='token')));await ws.recv();await ws.recv()
+                await ws.send(json.dumps({'v':1,'type':'request_review','request_id':'held-tag','game_id':'123','operation':'tag','report_id':graph.root_id,'evidence_id':graph.root_id,'moment_id':'moment','tag':'agree'}))
+                for _ in range(100):
+                    if entered.is_set():break
+                    await asyncio.sleep(.005)
+                assert entered.is_set()
+                started=time.monotonic()
+                try:
+                    await ws.send(json.dumps({'v':1,'type':'set_session_mode','mode':'silent'}))
+                    messages=[]
+                    while not any(row.get('type')=='session_mode' for row in messages):
+                        messages.append(json.loads(await asyncio.wait_for(ws.recv(),1)))
+                    assert time.monotonic()-started<.5
+                finally:release.set()
+                if not any(row.get('request_id')=='held-tag' for row in messages):
+                    messages.append(json.loads(await asyncio.wait_for(ws.recv(),1)))
+                assert any(row.get('request_id')=='held-tag' and row['type']=='error' for row in messages)
+                assert logs.read_review('123')['tags']=={}
+    asyncio.run(scenario())
