@@ -188,11 +188,15 @@ class EngineRuntime:
         try:
             if self._allowed() and request[0] == self._identity():
                 await self.server.publish_live_async(delivery)
-                self.status = 'Engine advice delivered'
+                if self._allowed() and request[0] == self._identity():
+                    self.status = 'Engine advice delivered'
         except (OSError, ValueError, RuntimeError) as error:
+            if not self._allowed() or request[0] != self._identity():
+                return
             self.status = f'Engine publication unavailable: {error}'
-            self.server.live.clear(self.status)
-            self.server.publish_live_status()
+            # Publication failure is not a lifecycle reset. Keep accepted UI
+            # controls and the last delivery; capture still invalidates advice.
+            self.server.publish_runtime_error('engine_publication_unavailable', self.status)
 
     async def shutdown(self, *, timeout=.25):
         self._closed = True

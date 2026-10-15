@@ -40,10 +40,12 @@ class ScriptedClient:
 
 
 @contextlib.asynccontextmanager
-async def core(tmp_path, client, *, live_installed=True, devices=None, **options):
+async def core(tmp_path, client, *, live_installed=True, devices=None, prepare=None, **options):
     from tft_core.app import run
 
     _, sessions, data, _ = fixture_runtime(tmp_path)
+    if prepare is not None:
+        data = prepare(tmp_path)
     sessions.live_installed = live_installed
     closed = asyncio.Event()
 
@@ -169,6 +171,152 @@ def test_actual_app_publishes_source_gated_live_state_and_enforces_downgrade(tmp
             rejected, _ = await receive_until(ws, lambda m: m["type"] == "error")
             assert rejected["code"] == "mode_rejected"
             assert sessions.mode.value == "silent"
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("superseded", [True, False], ids=["new-pin", "disk-failure"])
+def test_actual_app_preserves_accepted_pin_when_publication_fails(tmp_path, monkeypatch, superseded):
+    import hashlib
+    import os
+    import threading
+    import tomllib
+    import tomli_w
+    from PIL import Image
+    from tft_capture.ocr import TextLine
+    from tft_capture.windows import CapturedFrame
+    from tests.test_replay_contracts import historical_data
+
+    # Explicitly synthetic external HUD artwork and OCR. Real capture recognizes
+    # all empty unit slots; real data refresh supplies the scored Guide/Lines.
+    image = Image.new("RGB", (100, 100), "white")
+    for x in range(50):
+        for y in range(100):
+            image.putpixel((x, y), (30, 60, 90))
+
+    def prepare(root):
+        (root / "planning").mkdir()
+        store, _ = historical_data(root / "planning")
+        patch = root / "planning" / "patch"
+        static_path = patch / "static.toml"
+        static = tomllib.loads(static_path.read_text())
+        static["fields"]["capture_unit_counter"] = {
+            "value": {"region": "unit_count", "semantic": "physical_units"},
+            "source": "owner", "citation": "Synthetic empty-slot counter fixture; no HUD qualification",
+        }
+        static_path.write_text(tomli_w.dumps(static))
+        data = store.refresh(patch).snapshot
+        settings = tomllib.loads((root / "settings.toml").read_text())
+        settings.update(expected_patch="fixture", patch_dir=str(patch))
+        (root / "settings.toml").write_text(tomli_w.dumps(settings))
+        (root / "names.json").write_text(json.dumps({
+            "snapshot_id": data.snapshot_id, "locale": "en_us",
+            "names": {"units": {"unit": "Fixture unit"}},
+        }))
+        image.save(root / "empty.png")
+        asset = {"file": "empty.png", "sha256": hashlib.sha256((root / "empty.png").read_bytes()).hexdigest()}
+        regions = {name: [0, 0, 1, 1] for name in (
+            "stage", "players", "gold", "level", "xp", "streak", "phase", "scouted", "unit_count", "board", "bench",
+        )}
+        (root / "profile.json").write_text(json.dumps({
+            "version": 1, "regions": regions,
+            "slot_templates": {"_empty": asset},
+            "unit_slots": [{"zone": zone, "position": index, "box": [0, 0, 1, 1]}
+                           for zone, count in (("board", 28), ("bench", 9)) for index in range(count)],
+            "signals": [{"field": "trait_panel_empty", "region": "board", "box": [0, 0, 1, 1],
+                         "templates": {"true": asset}}],
+        }))
+        return store
+
+    class PlanningDevices(Devices):
+        def __init__(self):
+            super().__init__()
+            self.frames = threading.Semaphore(1)
+            self.frame = 0
+
+        def capture(self):
+            if not self.frames.acquire(timeout=15):
+                raise RuntimeError("Synthetic window frame timed out")
+            self.frame += 1
+            return CapturedFrame(image.copy(), "window-a", "recorded")
+
+        def read(self, image, *, region):
+            if region == "players":
+                return [TextLine(f"{'Owner' if index == 0 else f'Player{index}'} 60", 1,
+                                 (0, index / 8, 1, (index + 1) / 8)) for index in range(8)]
+            text = {"stage": "3-2", "gold": str(28 + self.frame), "level": "1", "xp": "0/2",
+                    "streak": "0", "phase": "planning", "scouted": "Owner Level 1", "unit_count": "0/1"}.get(region)
+            return [TextLine(text, 1)] if text else []
+
+    entered, release, flushed = threading.Event(), threading.Event(), threading.Event()
+    original = os.fsync
+    hold = False
+
+    def flush(fd):
+        nonlocal hold
+        if hold and threading.current_thread().name.startswith("tft-io-"):
+            hold = False
+            entered.set()
+            if not release.wait(3):
+                raise OSError("Synthetic disk flush timed out")
+            result = original(fd)
+            flushed.set()
+            if not superseded:
+                raise OSError("Synthetic disk flush failure")
+            return result
+        return original(fd)
+
+    @contextlib.asynccontextmanager
+    async def release_capture(devices):
+        try:
+            yield
+        finally:
+            # Unblock external capture before the app waits for native shutdown,
+            # including when an assertion fails inside the context.
+            release.set()
+            for _ in range(100):
+                devices.frames.release()
+
+    async def scenario():
+        nonlocal hold
+        client, devices = ScriptedClient(), PlanningDevices()
+        monkeypatch.setattr(os, "fsync", flush)
+        async with core(tmp_path, client, devices=devices, prepare=prepare) as (ws, sessions, _, _), release_capture(devices):
+            await receive_until(ws, lambda m: m["type"] == "gameflow" and m["phase"] == "Lobby")
+            await ws.send(json.dumps({"v": 1, "type": "set_session_mode", "mode": "live"}))
+            await receive_until(ws, lambda m: m["type"] == "session_mode" and m["mode"] == "live")
+            client.phase, client.game_id, client.mode = "InProgress", "123", "TFT"
+            await ws.send(json.dumps({"v": 1, "type": "request_live_state"}))
+            first, _ = await receive_until(ws, lambda m: m["type"] == "live_state" and bool((m.get("content") or {}).get("lines")), seconds=15)
+            line = first["content"]["lines"][0]
+            pin = {"v": 1, "type": "pin_line", "game_id": "123", "revision": first["revision"],
+                   "comp_id": line["comp_id"], "line_id": line["line_id"], "seed": line["seed"]}
+            if not superseded:
+                await ws.send(json.dumps(pin))
+                pinned, _ = await receive_until(ws, lambda m: m["type"] == "live_state" and bool(m.get("pin")))
+            hold = True
+            devices.frames.release()
+            async with asyncio.timeout(2):
+                while not entered.is_set():
+                    await asyncio.sleep(.002)
+            if superseded:
+                await ws.send(json.dumps(pin))
+                pinned, _ = await receive_until(ws, lambda m: m["type"] == "live_state" and bool(m.get("pin")))
+            assert pinned["pin"]["line_id"] == line["line_id"]
+            release.set()
+            async with asyncio.timeout(2):
+                while not flushed.is_set():
+                    await asyncio.sleep(.002)
+            if superseded:
+                await asyncio.sleep(.05)
+            else:
+                error, _ = await receive_until(ws, lambda m: m["type"] == "error" and m["code"] == "engine_publication_unavailable")
+                assert "Synthetic disk flush failure" in error["message"]
+            await ws.send(json.dumps({"v": 1, "type": "request_live_state"}))
+            after, _ = await receive_until(ws, lambda m: m["type"] == "live_state")
+            assert after["pin"] == pinned["pin"]
+            assert after["revision"] == first["revision"]
+            assert not any(e["kind"] == "session_controls_reset" for e in sessions.read_events("123"))
 
     asyncio.run(scenario())
 

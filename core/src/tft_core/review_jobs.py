@@ -22,13 +22,16 @@ def _write(path, value):
 
 class ReviewJobs:
     def __init__(self, sessions, data_store, service, repository, *, ready=None,
-                 deadline=30, error=None):
+                 hard_timeout=600, latency_budget=30, error=None):
         self.sessions, self.data_store, self.service = sessions, data_store, service
         self.repository = Path(repository)
         self.root = sessions.root / 'review-jobs'
         self.requests = self.root / 'requests'
         self.records = self.root / 'jobs'
-        self.ready, self.deadline = ready, deadline
+        # The presentation budget marks late results; only the operational
+        # watchdog terminates a child that has not completed.
+        self.ready, self.hard_timeout = ready, hard_timeout
+        self.latency_budget = latency_budget
         self.error = error
         self.status = 'Review worker waiting for a finalized game'
         self._wake = asyncio.Event()
@@ -37,7 +40,7 @@ class ReviewJobs:
         self._task = None
         self._process = None
         self._future = None
-        self._identity = LatestEngineWorker(service.job_identity, self._identified)
+        self._identity = LatestEngineWorker(self._identify, self._identified)
         self.children = OwnedReviewChildren(self.root / 'leases')
         self._blocked = set()
 
@@ -86,6 +89,12 @@ class ReviewJobs:
                 self._future.set_exception(ValueError(error))
             else:
                 self._future.set_result(identity)
+
+    def _identify(self, game_id):
+        identity = self.service.job_identity(game_id)
+        end = next(event for event in reversed(self.sessions.read_events(game_id))
+                   if event['kind'] == 'game_end')
+        return {**identity, 'ended_at': end['timestamp']}
 
     async def _job_identity(self, game_id):
         self._future = asyncio.get_running_loop().create_future()
@@ -178,7 +187,7 @@ class ReviewJobs:
                 creationflags=flags)
             reads = [asyncio.create_task(self._read_bounded(self._process.stdout, 65536)),
                      asyncio.create_task(self._read_bounded(self._process.stderr, 262144))]
-            async with asyncio.timeout(self.deadline):
+            async with asyncio.timeout(self.hard_timeout):
                 output, diagnostic = await asyncio.gather(*reads)
                 exit_code = await self._process.wait()
             receipt = json.loads(output)
@@ -197,8 +206,11 @@ class ReviewJobs:
                     raise ValueError('Review worker did not establish below-normal priority')
             # Receipt alone is insufficient: locked reviews deliberately have no
             # detail, but successful service publication must still be retrievable.
+            finished = datetime.now(UTC)
+            elapsed = (finished - datetime.fromisoformat(record['ended_at'])).total_seconds()
             record.update(state='completed' if receipt['status'] == 'review_ready' else 'unavailable',
-                          receipt=receipt, finished_at=datetime.now(UTC).isoformat())
+                          receipt=receipt, finished_at=finished.isoformat(),
+                          latency_seconds=elapsed, late=elapsed > self.latency_budget)
             _write(path, record)
             self.status = 'Review stored' if record['state'] == 'completed' else receipt.get('reason', 'Review unavailable')
             if record['state'] == 'completed' and self.ready:

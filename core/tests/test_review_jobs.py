@@ -53,7 +53,7 @@ def test_actual_review_child_timeout_is_durable_and_never_announced(tmp_path):
         async def ready(game_id):
             announced.append(game_id)
 
-        jobs = ReviewJobs(sessions, store, service, ROOT, ready=ready, deadline=.0001)
+        jobs = ReviewJobs(sessions, store, service, ROOT, ready=ready, hard_timeout=.0001)
         jobs.start()
         jobs.enqueue('901')
         for _ in range(400):
@@ -68,6 +68,41 @@ def test_actual_review_child_timeout_is_durable_and_never_announced(tmp_path):
         assert await jobs.shutdown()
         restored = ReviewJobs(sessions, store, service, ROOT)
         assert restored.jobs()[0]['state'] == 'failed'
+
+    asyncio.run(scenario())
+
+
+def test_late_review_child_completes_during_next_game_and_remains_available(tmp_path):
+    from datetime import UTC, datetime
+    from tft_core.review_jobs import ReviewJobs
+    from tft_review import ReviewService
+
+    async def scenario():
+        sessions, store, _, _ = logged_game(tmp_path, mode='baseline', finish=False)
+        sessions.end_game(timestamp=datetime.now(UTC).isoformat())
+        service = ReviewService(sessions, store, repository=ROOT)
+        announced = asyncio.Event()
+
+        async def ready(game_id):
+            assert game_id == '901'
+            assert sessions.active_game_id == '902'
+            announced.set()
+
+        jobs = ReviewJobs(sessions, store, service, ROOT, ready=ready, latency_budget=.0001)
+        jobs.start()
+        try:
+            jobs.enqueue('901')
+            sessions.set_mode('baseline')
+            sessions.start_game('902')
+            await asyncio.wait_for(announced.wait(), 4)
+            record, = jobs.jobs()
+            assert record['state'] == 'completed'
+            assert record['late'] is True
+            assert record['latency_seconds'] > .0001
+            assert record['receipt']['status'] == 'review_ready'
+            assert service.summary('901')['report_id'] == record['receipt']['report_id']
+        finally:
+            assert await jobs.shutdown()
 
     asyncio.run(scenario())
 
