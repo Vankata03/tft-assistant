@@ -69,3 +69,100 @@ def test_run_boundary_rejects_changed_modes_tampered_sample_and_future_refresh(t
     with pytest.raises(ValueError, match='eligibility'):
         sessions.start_run(baseline, set_id='18', timestamp=NOW.isoformat())
     assert sessions.run is None
+
+
+def test_an_independent_store_cannot_start_run_over_another_cores_unfinished_log(tmp_path):
+    core = SessionStore(tmp_path/'logs', tmp_path/'config', live_installed=True)
+    launcher = SessionStore(tmp_path/'logs', tmp_path/'config', live_installed=True)
+    baseline = baseline_fixture(sessions=launcher)
+    core.start_game('901', set_id='18')
+    before = core.read_events('901')
+    with pytest.raises(ValueError, match='during a game|unfinished'):
+        launcher.start_run(baseline, set_id='18', timestamp=NOW.isoformat())
+    assert core.run is None and launcher.run is None
+    assert core.read_events('901') == before
+    assert core.default_mode.value == 'silent'
+    core.end_game(placement=3)
+    assert launcher.start_run(baseline, set_id='18', timestamp=NOW.isoformat())['baseline'] == baseline
+
+
+def test_running_core_uses_cli_started_run_default_for_its_next_game(tmp_path):
+    core = SessionStore(tmp_path/'logs', tmp_path/'config', live_installed=True)
+    launcher = SessionStore(tmp_path/'logs', tmp_path/'config', live_installed=True)
+    launcher.start_run(baseline_fixture(sessions=launcher), set_id='18', timestamp=NOW.isoformat())
+    core.start_game('901', set_id='18')
+    assert core.mode.value == 'live'
+    assert core.read_events('901')[0]['payload']['mode'] == 'live'
+    core.end_game(placement=3)
+    # An explicit Silent selection after the run starts remains authoritative.
+    launcher.set_mode('silent')
+    core.start_game('902', set_id='18')
+    assert core.read_events('902')[0]['payload']['mode'] == 'silent'
+
+
+def test_separate_cli_process_rejects_running_cores_log_without_changing_run(tmp_path):
+    import subprocess
+    import sys
+
+    core = SessionStore(tmp_path/'logs', tmp_path/'config', live_installed=True)
+    core.start_game('901', set_id='18')
+    original = core.read_events('901')
+    script = '''
+import sys
+from pathlib import Path
+from tft_core.storage import SessionStore
+from tests.test_harness_baseline import baseline_fixture, NOW
+store = SessionStore(Path(sys.argv[1]), Path(sys.argv[2]), live_installed=True)
+try:
+    store.start_run(baseline_fixture(sessions=store), set_id='18', timestamp=NOW.isoformat())
+except ValueError as error:
+    print(error)
+    sys.exit(2)
+'''
+    result = subprocess.run([sys.executable, '-c', script, str(core.root), str(core.config_root)],
+        capture_output=True, text=True, timeout=15)
+    assert result.returncode == 2, result.stderr
+    assert 'unfinished' in result.stdout
+    assert core.run is None
+    assert core.read_events('901') == original
+
+
+def test_idle_core_silent_selection_after_cli_started_run_is_honoured(tmp_path):
+    core = SessionStore(tmp_path/'logs', tmp_path/'config', live_installed=True)
+    launcher = SessionStore(tmp_path/'logs', tmp_path/'config', live_installed=True)
+    launcher.start_run(baseline_fixture(sessions=launcher), set_id='18', timestamp=NOW.isoformat())
+    # The owner picks Silent in the running core's tray before the next game.
+    core.set_mode('silent')
+    core.start_game('901', set_id='18')
+    assert core.read_events('901')[0]['payload']['mode'] == 'silent'
+    assert SessionStore(tmp_path/'logs', tmp_path/'config', live_installed=True).mode.value == 'silent'
+
+
+def test_idle_running_core_shows_live_after_cli_started_run(tmp_path):
+    import asyncio
+    import json
+    from websockets.asyncio.client import connect
+    from tft_capture.lcu import GameflowUpdate
+    from tft_core.messages import Hello, dump
+    from tft_core.server import CoreServer
+
+    async def receive(ws):
+        return json.loads(await asyncio.wait_for(ws.recv(), 2))
+
+    async def scenario():
+        core = SessionStore(tmp_path/'logs', tmp_path/'config', live_installed=True)
+        server = CoreServer('launch-token', sessions=core)
+        async with server.listen() as listening:
+            async with connect(f"ws://127.0.0.1:{listening.sockets[0].getsockname()[1]}") as ws:
+                await ws.send(dump(Hello(token='launch-token')))
+                await receive(ws)
+                assert (await receive(ws))['mode'] == 'silent'
+                launcher = SessionStore(tmp_path/'logs', tmp_path/'config', live_installed=True)
+                launcher.start_run(baseline_fixture(sessions=launcher), set_id='18', timestamp=NOW.isoformat())
+                # The idle tray must not keep advertising Silent for the next game.
+                assert core.mode.value == 'live'
+                server.publish_gameflow(GameflowUpdate(True, 'Lobby'))
+                assert (await receive(ws))['mode'] == 'live'
+                assert (await receive(ws))['type'] == 'gameflow'
+
+    asyncio.run(scenario())
