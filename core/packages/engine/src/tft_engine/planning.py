@@ -80,7 +80,13 @@ def field_age(data,name,snapshot):
 
 
 def read(snapshot,data,name):
-    """Use the same source-tagged expiry at both the gate and the value read."""
+    """Read source-tagged telemetry, preserving persistent accepted UI pins."""
+    if name == "pinned_line":
+        pin = snapshot.fields.get(name)
+        if pin is not None and pin.source == "ui_pin":
+            # An accepted local choice persists until unpin or lifecycle reset.
+            # Its original command time cannot become future capture evidence.
+            return pin.value if pin.read_at <= snapshot.captured_at else None
     return snapshot.field(name,max_age_seconds=field_age(data,name,snapshot))
 
 def required(snapshot,data,names):
@@ -92,7 +98,7 @@ def required(snapshot,data,names):
     missing=[]
     from .lobby import lobby_certificate_qualified
     for name in names:
-        value=snapshot.field(name,max_age_seconds=field_age(data,name,snapshot))
+        value=read(snapshot,data,name)
         if value is None or (name=='inventory_complete' and value is not True) or (name=='lobby_complete' and not lobby_certificate_qualified(snapshot,data)):
             missing.append(name)
     return tuple(missing)
