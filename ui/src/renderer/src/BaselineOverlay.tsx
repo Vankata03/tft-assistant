@@ -14,9 +14,10 @@ export function BaselineOverlay({
     state.baseline?.mode === 'baseline'
       ? state.baseline.content
       : null
+  const anchors=state.overlayGeometry?.bounds?state.overlayGeometry.anchors.filter(row=>['shop','level','par','augment','carousel','wisp'].includes(row.kind)):content?.overlay_allowed&&content.overlay_bounds?content.anchors:[]
   const tags =
-    content?.overlay_allowed && content.overlay_bounds
-      ? content.anchors.flatMap((anchor) => {
+    content
+      ? anchors.flatMap((anchor) => {
           let text: string | null = null
           let paused = false
           let details: string | null = null

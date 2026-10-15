@@ -1,0 +1,622 @@
+{
+  "v": 1,
+  "type": "live_state",
+  "mode": "live",
+  "status": "Synthetic Engine renderer fixture",
+  "revision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "content": {
+    "game_id": "123",
+    "snapshot_id": "g:3-2",
+    "captured_at": "2026-10-07T00:00:00Z",
+    "evaluated_at": "2026-10-12T11:31:53.331282Z",
+    "data_snapshot_id": "synthetic",
+    "model_hash": "8f77264f1e9e953bf1500682de52478bf98951f0977e663daf18de2c50eb7356",
+    "round_id": "3-2",
+    "phase": "planning",
+    "advice": [
+      {
+        "decision_id": "123:3-2:econ:48916fcbfe6797c2",
+        "option_id": "guide:A",
+        "domain": "econ",
+        "action": "Hold econ",
+        "urgency": "act_this_phase",
+        "confidence": 0.5,
+        "reason": "line_selected",
+        "numbers": {
+          "expected_placement": 1.3708828427399904,
+          "analytic_hit": 1.0,
+          "death_probability": 0.0
+        },
+        "placement_impact": 0.0,
+        "payload": {
+          "planned_gold": 30.0,
+          "gold_floor": null,
+          "sell_before_roll": [],
+          "line_id": "guide:A",
+          "pinned": false,
+          "pin_alternative": null,
+          "pin_gap": 0.0
+        },
+        "anchors": {},
+        "validity": [
+          "gold",
+          "shop",
+          "round",
+          "board",
+          "bench",
+          "inventory_complete",
+          "hp",
+          "level",
+          "xp",
+          "streak",
+          "lobby",
+          "slot_count",
+          "phase",
+          "planning_phase",
+          "roll_down",
+          "comp_lock",
+          "pinned_line",
+          "include_unguided",
+          "held_augments",
+          "held_augments_complete",
+          "item_bench",
+          "item_inventory_complete",
+          "remaining_effects",
+          "remaining_effects_complete"
+        ],
+        "valid_until": "2026-10-07T00:00:02Z",
+        "evidence_path": [
+          "advice",
+          0
+        ],
+        "options": [
+          {
+            "option_id": "guide:A",
+            "action": "line",
+            "expected_placement": 1.3708828427399904,
+            "standard_error": 0.0,
+            "reason": "line_expected_placement",
+            "payload": {},
+            "evidence_path": [
+              "advice",
+              0,
+              "options",
+              0
+            ]
+          },
+          {
+            "option_id": "roll:now@50",
+            "action": "line",
+            "expected_placement": 1.3708828427399904,
+            "standard_error": 0.0,
+            "reason": "line_expected_placement",
+            "payload": {},
+            "evidence_path": [
+              "advice",
+              0,
+              "options",
+              1
+            ]
+          },
+          {
+            "option_id": "roll:now@30",
+            "action": "line",
+            "expected_placement": 1.3708828427399904,
+            "standard_error": 0.0,
+            "reason": "line_expected_placement",
+            "payload": {},
+            "evidence_path": [
+              "advice",
+              0,
+              "options",
+              2
+            ]
+          },
+          {
+            "option_id": "roll:now@10",
+            "action": "line",
+            "expected_placement": 1.3708828427399904,
+            "standard_error": 0.0,
+            "reason": "line_expected_placement",
+            "payload": {},
+            "evidence_path": [
+              "advice",
+              0,
+              "options",
+              3
+            ]
+          },
+          {
+            "option_id": "roll:now@0",
+            "action": "line",
+            "expected_placement": 1.3708828427399904,
+            "standard_error": 0.0,
+            "reason": "line_expected_placement",
+            "payload": {},
+            "evidence_path": [
+              "advice",
+              0,
+              "options",
+              4
+            ]
+          },
+          {
+            "option_id": "hold",
+            "action": "line",
+            "expected_placement": 1.3708828427399904,
+            "standard_error": 0.0,
+            "reason": "line_expected_placement",
+            "payload": {},
+            "evidence_path": [
+              "advice",
+              0,
+              "options",
+              5
+            ]
+          }
+        ]
+      },
+      {
+        "decision_id": "123:3-2:transition:48916fcbfe6797c2",
+        "option_id": "transition",
+        "domain": "transition",
+        "action": "Swap owned units",
+        "urgency": "act_this_phase",
+        "confidence": 0.5,
+        "reason": "strongest_owned_board",
+        "numbers": {
+          "power": 5.0
+        },
+        "placement_impact": 0.0,
+        "payload": {
+          "swap_out": [],
+          "swap_in": [
+            "c"
+          ]
+        },
+        "anchors": {},
+        "validity": [
+          "board",
+          "bench",
+          "round",
+          "inventory_complete",
+          "gold",
+          "hp",
+          "level",
+          "xp",
+          "streak",
+          "lobby",
+          "slot_count",
+          "shop",
+          "phase",
+          "planning_phase",
+          "roll_down",
+          "comp_lock",
+          "pinned_line",
+          "include_unguided",
+          "held_augments",
+          "held_augments_complete",
+          "item_bench",
+          "item_inventory_complete",
+          "remaining_effects",
+          "remaining_effects_complete"
+        ],
+        "valid_until": "2026-10-07T00:00:02Z",
+        "evidence_path": [
+          "advice",
+          1
+        ],
+        "options": []
+      },
+      {
+        "decision_id": "123:3-2:positioning:464d53fd3f2613d6",
+        "option_id": "",
+        "domain": "positioning",
+        "action": "Advice paused",
+        "urgency": "information",
+        "confidence": 0.0,
+        "reason": "advice_paused",
+        "numbers": {},
+        "placement_impact": 0.0,
+        "payload": {
+          "paused": true,
+          "reason": "Positive settled-board clock unavailable",
+          "missing": [
+            "board_settled_since"
+          ]
+        },
+        "anchors": {},
+        "validity": [
+          "fields",
+          "data",
+          "board",
+          "bench",
+          "inventory_complete",
+          "level",
+          "lobby",
+          "board_settled_since",
+          "recent_opponents",
+          "recent_opponent_fights",
+          "recent_opponent_fights_complete",
+          "position_locks",
+          "held_augments",
+          "held_augments_complete",
+          "comp_lock",
+          "phase",
+          "planning_phase"
+        ],
+        "valid_until": "2026-10-07T00:00:02Z",
+        "evidence_path": [
+          "advice",
+          2
+        ],
+        "options": []
+      }
+    ],
+    "plan": {
+      "status": "committed",
+      "target": "A",
+      "backup": "B",
+      "candidates": [
+        "A",
+        "B"
+      ],
+      "line": {
+        "id": "guide:A",
+        "levels": {
+          "3-1": 5
+        },
+        "rolls": {
+          "3-1": 10.0
+        },
+        "stabilize": false,
+        "floor_options": [],
+        "family_id": null
+      },
+      "pivot_from": null,
+      "pivot_to": null,
+      "rejected_target": null,
+      "player_label": "A",
+      "divergence_round": null,
+      "planning_round": "3-2",
+      "target_similarity": 0.75,
+      "pivot_round": null
+    },
+    "lines": [
+      {
+        "comp_id": "A",
+        "line_id": "guide:A",
+        "seed": "14523604136577594906",
+        "expected_placement": 1.3708828427399904,
+        "standard_error": 0.0,
+        "hit_probability": 1.0,
+        "death_probability": 0.0,
+        "confidence": 0.5,
+        "schedule": {
+          "id": "guide:A",
+          "levels": {
+            "3-1": 5
+          },
+          "rolls": {
+            "3-1": 10.0
+          },
+          "stabilize": false,
+          "floor_options": [],
+          "family_id": null
+        },
+        "evidence_path": [
+          "line_results",
+          "A",
+          0
+        ]
+      },
+      {
+        "comp_id": "A",
+        "line_id": "roll:now@50",
+        "seed": "14523604136577594906",
+        "expected_placement": 1.3708828427399904,
+        "standard_error": 0.0,
+        "hit_probability": 1.0,
+        "death_probability": 0.0,
+        "confidence": 0.5,
+        "schedule": {
+          "id": "roll:now@50",
+          "levels": {
+            "3-1": 5,
+            "3-2": 5
+          },
+          "rolls": {
+            "3-2": 50.0
+          },
+          "stabilize": false,
+          "floor_options": [],
+          "family_id": "roll:now"
+        },
+        "evidence_path": [
+          "line_results",
+          "A",
+          1
+        ]
+      },
+      {
+        "comp_id": "A",
+        "line_id": "roll:now@30",
+        "seed": "14523604136577594906",
+        "expected_placement": 1.3708828427399904,
+        "standard_error": 0.0,
+        "hit_probability": 1.0,
+        "death_probability": 0.0,
+        "confidence": 0.5,
+        "schedule": {
+          "id": "roll:now@30",
+          "levels": {
+            "3-1": 5,
+            "3-2": 5
+          },
+          "rolls": {
+            "3-2": 30.0
+          },
+          "stabilize": false,
+          "floor_options": [],
+          "family_id": "roll:now"
+        },
+        "evidence_path": [
+          "line_results",
+          "A",
+          2
+        ]
+      },
+      {
+        "comp_id": "A",
+        "line_id": "roll:now@10",
+        "seed": "14523604136577594906",
+        "expected_placement": 1.3708828427399904,
+        "standard_error": 0.0,
+        "hit_probability": 1.0,
+        "death_probability": 0.0,
+        "confidence": 0.5,
+        "schedule": {
+          "id": "roll:now@10",
+          "levels": {
+            "3-1": 5,
+            "3-2": 5
+          },
+          "rolls": {
+            "3-2": 10.0
+          },
+          "stabilize": false,
+          "floor_options": [],
+          "family_id": "roll:now"
+        },
+        "evidence_path": [
+          "line_results",
+          "A",
+          3
+        ]
+      },
+      {
+        "comp_id": "A",
+        "line_id": "roll:now@0",
+        "seed": "14523604136577594906",
+        "expected_placement": 1.3708828427399904,
+        "standard_error": 0.0,
+        "hit_probability": 1.0,
+        "death_probability": 0.0,
+        "confidence": 0.5,
+        "schedule": {
+          "id": "roll:now@0",
+          "levels": {
+            "3-1": 5,
+            "3-2": 5
+          },
+          "rolls": {
+            "3-2": 0.0
+          },
+          "stabilize": false,
+          "floor_options": [],
+          "family_id": "roll:now"
+        },
+        "evidence_path": [
+          "line_results",
+          "A",
+          4
+        ]
+      },
+      {
+        "comp_id": "A",
+        "line_id": "hold",
+        "seed": "14523604136577594906",
+        "expected_placement": 1.3708828427399904,
+        "standard_error": 0.0,
+        "hit_probability": 1.0,
+        "death_probability": 0.0,
+        "confidence": 0.5,
+        "schedule": {
+          "id": "hold",
+          "levels": {
+            "3-1": 5
+          },
+          "rolls": {},
+          "stabilize": false,
+          "floor_options": [],
+          "family_id": null
+        },
+        "evidence_path": [
+          "line_results",
+          "A",
+          5
+        ]
+      }
+    ],
+    "projection": [
+      {
+        "round_id": "3-2",
+        "gold": 39.0,
+        "level": 5.0,
+        "hit_probability": 1.0,
+        "hp": 60.0,
+        "expected_placement": 1.4988828427399905,
+        "planned_gold": 30.0
+      },
+      {
+        "round_id": "3-3",
+        "gold": 48.0,
+        "level": 5.0,
+        "hit_probability": 1.0,
+        "hp": 60.0,
+        "expected_placement": 1.4898828427399904,
+        "planned_gold": 39.0
+      },
+      {
+        "round_id": "3-4",
+        "gold": 58.0,
+        "level": 5.0,
+        "hit_probability": 1.0,
+        "hp": 60.0,
+        "expected_placement": 1.4798828427399904,
+        "planned_gold": 48.0
+      },
+      {
+        "round_id": "3-5",
+        "gold": 68.125,
+        "level": 5.0,
+        "hit_probability": 1.0,
+        "hp": 60.0,
+        "expected_placement": 1.2077154688812044,
+        "planned_gold": 57.125
+      },
+      {
+        "round_id": "3-6",
+        "gold": 79.0,
+        "level": 5.0,
+        "hit_probability": 1.0,
+        "hp": 60.0,
+        "expected_placement": 1.1594058440442352,
+        "planned_gold": 68.0
+      },
+      {
+        "round_id": "3-7",
+        "gold": 90.0,
+        "level": 5.0,
+        "hit_probability": 1.0,
+        "hp": 60.0,
+        "expected_placement": 1.148405844044235,
+        "planned_gold": 79.0
+      },
+      {
+        "round_id": "4-1",
+        "gold": 101.0,
+        "level": 5.0,
+        "hit_probability": 1.0,
+        "hp": 60.0,
+        "expected_placement": 1.4368828427399905,
+        "planned_gold": 90.0
+      },
+      {
+        "round_id": "4-2",
+        "gold": 112.0,
+        "level": 5.0,
+        "hit_probability": 1.0,
+        "hp": 60.0,
+        "expected_placement": 1.4258828427399903,
+        "planned_gold": 101.0
+      },
+      {
+        "round_id": "4-3",
+        "gold": 123.0,
+        "level": 5.0,
+        "hit_probability": 1.0,
+        "hp": 60.0,
+        "expected_placement": 1.4148828427399904,
+        "planned_gold": 112.0
+      },
+      {
+        "round_id": "4-4",
+        "gold": 134.0,
+        "level": 6.0,
+        "hit_probability": 1.0,
+        "hp": 60.0,
+        "expected_placement": 1.4038828427399905,
+        "planned_gold": 123.0
+      },
+      {
+        "round_id": "4-5",
+        "gold": 145.0,
+        "level": 6.0,
+        "hit_probability": 1.0,
+        "hp": 60.0,
+        "expected_placement": 1.3928828427399904,
+        "planned_gold": 134.0
+      },
+      {
+        "round_id": "4-6",
+        "gold": 156.0,
+        "level": 6.0,
+        "hit_probability": 1.0,
+        "hp": 60.0,
+        "expected_placement": 1.3818828427399905,
+        "planned_gold": 145.0
+      },
+      {
+        "round_id": "4-7",
+        "gold": 167.0,
+        "level": 6.0,
+        "hit_probability": 1.0,
+        "hp": 60.0,
+        "expected_placement": 1.3708828427399904,
+        "planned_gold": 156.0
+      }
+    ],
+    "recommended_board": {
+      "units": [
+        {
+          "unit_id": "a",
+          "stars": 2,
+          "items": [],
+          "position": null
+        },
+        {
+          "unit_id": "c",
+          "stars": 1,
+          "items": [],
+          "position": null
+        }
+      ],
+      "bench": [],
+      "trait_counts": null
+    },
+    "fits": [
+      {
+        "comp_id": "A",
+        "score": 1.3708828427399904,
+        "confidence": 0.5,
+        "evidence_path": [
+          "comp_fits",
+          "A"
+        ]
+      },
+      {
+        "comp_id": "B",
+        "score": 1.954,
+        "confidence": 0.5,
+        "evidence_path": [
+          "comp_fits",
+          "B"
+        ]
+      }
+    ],
+    "evidence_id": "sha256:9aa93ac22029e7780e84e042b18878b46092d9f95fc24834c4c757ba07793272",
+    "opponents": [],
+    "roll_tracker": null,
+    "confidence_medium_min": 0.5,
+    "entity_names": {},
+    "warnings": [],
+    "roster_valid_until": "2026-10-07T00:00:02Z",
+    "ownership_valid_until": "2026-10-07T00:00:02Z"
+  },
+  "pin": null,
+  "invalidated": {},
+  "observed_phase": "planning",
+  "roster_qualified": null,
+  "ownership_qualified": null
+}

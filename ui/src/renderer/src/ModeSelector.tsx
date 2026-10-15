@@ -19,7 +19,7 @@ export function SessionModeSelector({
       }}
     >
       {state.mode === null ? <option value="">Unknown mode</option> : null}
-      {(state.availableModes ?? []).map((mode) => (
+      {(state.availableModes ?? []).filter(mode=>typeof __LIVE_ENABLED__==='undefined'||__LIVE_ENABLED__||mode!=='live').map((mode) => (
         <option key={mode} value={mode} disabled={!canSelectMode(state, mode)}>
           {MODE_LABELS[mode]}
         </option>
