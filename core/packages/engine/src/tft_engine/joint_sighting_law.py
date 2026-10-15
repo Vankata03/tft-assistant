@@ -79,6 +79,10 @@ class JointSightingLaw:
                 raise DataError(f'Joint law requires {name}')
         if not self.hypotheses or not all(isinstance(item, JointHypothesis) for item in self.hypotheses) or not any(item.weight > 0 for item in self.hypotheses):
             raise DataError('Joint law requires positive declared support mass')
+        log_weights = [item.log_weight if item.log_weight is not None else log(item.weight)
+            for item in self.hypotheses if item.weight > 0]
+        if not isfinite(max(log_weights) - min(log_weights)):
+            raise DataError('Joint support log-weight range cannot be represented finitely')
 
 
 @dataclass(frozen=True)

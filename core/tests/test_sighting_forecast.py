@@ -123,6 +123,42 @@ def test_persistence_retains_positive_subnormal_mass_as_finite_log_score(tmp_pat
         frozen_json(law)['hypotheses'][0]['weight'] = 0
 
 
+def test_shared_law_rejects_a_log_mass_range_that_cannot_have_finite_scores(tmp_path):
+    from tft_data import DataError
+    from tft_engine.joint_sighting_law import JointHypothesis, JointSightingLaw, predict_joint_sighting
+
+    data = support_data(tmp_path)
+    with pytest.raises(DataError, match='log.*range'):
+        law = JointSightingLaw(data.snapshot_id, 'rival', '3-2', 1, 'synthetic',
+            'Unrepresentable finite log-mass range', (
+                JointHypothesis(Board((Unit('unit'),)), 1, log_weight=-1e308),
+                JointHypothesis(Board((Unit('ice-unit'),)), 1, log_weight=1e308)))
+        predict_joint_sighting(TraitSighting('rival', '3-2', 1, {'fire':1}), data, law)
+
+
+@pytest.mark.parametrize('fire_log,ice_log,expected', [
+    (-8e307, 8e307, -1.6e308), (-1e308, 0, -1e308), (1e308, 1e308, -.6931471805599453)])
+def test_shared_law_preserves_representable_extreme_log_scores_and_finite_json(
+        tmp_path, fire_log, ice_log, expected):
+    from math import isfinite
+    from tft_engine.joint_sighting_law import JointHypothesis, JointSightingLaw, predict_joint_sighting
+    from tft_review.contracts import frozen_json
+
+    data = support_data(tmp_path)
+    law = JointSightingLaw(data.snapshot_id, 'rival', '3-2', 1, 'synthetic',
+        'Representable extreme log-mass range', (
+            JointHypothesis(Board((Unit('unit'),)), 1, log_weight=fire_log),
+            JointHypothesis(Board((Unit('ice-unit'),)), 1, log_weight=ice_log)))
+    predicted = predict_joint_sighting(TraitSighting('rival', '3-2', 1, {'fire':1}), data, law)
+    impossible = predict_joint_sighting(TraitSighting('rival', '3-2', 1, {'fire':2}), data, law)
+    assert isfinite(predicted.log_probability)
+    assert predicted.log_probability == pytest.approx(expected)
+    assert frozen_json(predicted)['log_probability'] == predicted.log_probability
+    assert frozen_json(law)['hypotheses'][0]['log_weight'] == fire_log
+    assert impossible.probability == 0 and impossible.log_probability is None
+    assert frozen_json(impossible)['log_probability'] is None
+
+
 @pytest.mark.parametrize('invalid', ['unqualified_source', 'different_patch', 'missing_cohort',
     'different_update', 'missing_context', 'bool_weight'])
 def test_unqualified_or_malformed_support_never_silently_becomes_a_uniform_law(tmp_path, invalid):
@@ -282,6 +318,51 @@ def test_harness_excludes_target_inside_a_committed_capture_gap(tmp_path):
     sessions, store, _, _ = support_logs(tmp_path, intermediate=(('capture_gap', {
         'start':(NOW+timedelta(seconds=2.21)).isoformat(),
         'end':(NOW+timedelta(seconds=2.35)).isoformat(),'reason':'fixture_gap'}, 2.25),))
+    report = EvaluationHarness(sessions,store,repository=ROOT).evaluate()
+    metric = report.metrics['next_sighting_log_loss']
+    assert metric['eligible_rows'] == 0
+    assert metric['excluded']['capture_gap'] == 1
+
+
+def test_harness_scores_post_recovery_sightings_after_a_real_unknown_start_gap(tmp_path):
+    from datetime import timedelta
+    from math import log
+    from tests.test_replay_contracts import NOW, ROOT, log_snapshot
+    from tft_core.storage import SessionStore
+    from tft_harness import EvaluationHarness
+
+    _, store, data, _ = support_logs(tmp_path)
+    sessions = SessionStore(tmp_path/'recovered-logs', tmp_path/'recovered-config', live_installed=True)
+    path = sessions.log_path('901')
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b'{"v":1,"seq":0')
+    sessions.start_game('901', patch=data.patch, data_snapshot_id=data.snapshot_id,
+        timestamp=(NOW+timedelta(seconds=2)).isoformat())
+    sessions.append_event('sighting', {'opponent_id':'rival','round_id':'3-1','level':1,
+        'traits':{'fire':1},'hidden_traits':0}, timestamp=(NOW+timedelta(seconds=2.1)).isoformat())
+    raw = log_snapshot(data, at=NOW+timedelta(seconds=2.2))
+    sessions.append_event('snapshot', raw, timestamp=raw['captured_at'])
+    sessions.append_event('sighting', {'opponent_id':'rival','round_id':'3-2','level':1,
+        'traits':{'fire':1},'hidden_traits':0}, timestamp=(NOW+timedelta(seconds=2.3)).isoformat())
+    sessions.end_game(placement=4, timestamp=(NOW+timedelta(seconds=3)).isoformat())
+    gap = sessions.read_events('901')[1]
+    assert gap['payload']['reason'] == 'incomplete_first_event'
+    assert gap['payload']['start'] is None
+    report = EvaluationHarness(sessions,store,repository=ROOT).evaluate()
+    metric = report.metrics['next_sighting_log_loss']
+    assert metric['eligible_rows'] == 1
+    assert metric['value'] == pytest.approx(-log(.4))
+    assert metric['excluded'] == {'no_causal_previous_sighting':1}
+
+
+def test_harness_excludes_a_target_before_an_unknown_start_gap_ends(tmp_path):
+    from datetime import timedelta
+    from tests.test_replay_contracts import NOW, ROOT
+    from tft_harness import EvaluationHarness
+
+    sessions, store, _, _ = support_logs(tmp_path, intermediate=(('capture_gap', {
+        'start':None, 'end':(NOW+timedelta(seconds=2.35)).isoformat(),
+        'reason':'incomplete_first_event'}, 2.25),))
     report = EvaluationHarness(sessions,store,repository=ROOT).evaluate()
     metric = report.metrics['next_sighting_log_loss']
     assert metric['eligible_rows'] == 0

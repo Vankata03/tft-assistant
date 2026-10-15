@@ -182,8 +182,9 @@ class EvaluationHarness:
                     raise DataError('capture_gap')
                 if any(row['kind'] == 'capture_gap' and row['seq'] < event['seq']
                     and datetime.fromisoformat(row['timestamp']) <= at
-                    and datetime.fromisoformat(row['payload']['start']) <= at
-                    < datetime.fromisoformat(row['payload']['end'])
+                    and at < datetime.fromisoformat(row['payload']['end'])
+                    and (row['payload']['start'] is None
+                        or datetime.fromisoformat(row['payload']['start']) <= at)
                     for row in batch.observations):
                     raise DataError('capture_gap')
                 previous = None
