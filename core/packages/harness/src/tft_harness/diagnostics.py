@@ -27,12 +27,20 @@ _OPERATION_FIELDS = frozenset(('operation', 'unit_id', 'unit_index', 'item_id', 
     'target_level', 'target_round', 'bench', 'units', 'stars', 'items', 'position', 'cell',
     'from', 'to', 'overflow_sells', 'equip', 'recipient', 'line', 'transfers',
     'holder', 'holder_index', 'from_index', 'item_ids', 'consume_tool'))
+# The selected plan is operational; candidate rankings, similarity and historical
+# player/divergence metadata describe evidence rather than the recommendation.
+_GAME_PLAN_FIELDS = frozenset(('status', 'target', 'backup', 'pivot_from', 'pivot_to', 'line'))
 
 
 def _targets(value):
     if isinstance(value, Mapping):
-        return {key: json_value(item) if key in ('levels', 'rolls') else _targets(item)
+        result = {key: json_value(item) if key in ('levels', 'rolls') else _targets(item)
             for key, item in value.items() if key in _OPERATION_FIELDS}
+        plan = value.get('game_plan')
+        if isinstance(plan, Mapping):
+            result['game_plan'] = {key: _targets(item) if key == 'line' else json_value(item)
+                for key, item in plan.items() if key in _GAME_PLAN_FIELDS}
+        return result
     if isinstance(value, (tuple, list)):
         return [_targets(item) for item in value]
     return value
