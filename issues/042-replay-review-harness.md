@@ -139,3 +139,12 @@ The isolated `implement/harness-diagnostics` slice adds `EvaluationHarness.advic
 The missing public method failed before implementation. A second public regression reproduced ignored unscored action changes and passed after using the real Advice action field. Seven new diagnostics cases and related harness/fitting/review-policy checks passed 32 cases in 18.68 seconds, process exit 0. An initial test-write command used a redundant `core/` prefix from the core working directory and ran no tests; corrected before the actual red/green proof. The first expected count omitted the existing shared plan advice and was corrected to four paired sub-engine decisions across two captures.
 
 This partial slice remains isolated for independent review. Flip reports, other report-only diagnostics, latest-committed tunable workflow, remaining fitting/prediction metrics and full42 acceptance remain unfinished. No production or Windows/live qualification is claimed.
+
+
+### 2026-10-15 — Advice-difference review corrections
+
+Different GPT-6.1 Sol review held `43d5744`: stable option IDs hid changed shop operations and positioning targets; candidate freshness tunables could change replay seeds; and unscored examples omitted their action labels. Root reproduced all three through public logged-game harness tests before correcting them.
+
+The comparator now includes action and built-in operation/target payload fields while ignoring numerical scores and forecast evidence. Round-keyed level/roll schedules retain their keys; a public regression caught and corrected an initial over-filtering of those keys. Examples include bounded action/target summaries and fall back to action text when no option ID exists. A candidate whose replay seeds differ from the accepted contexts is rejected explicitly, rather than presenting a confounded comparison. This is a bounded partial consumer: comparison of seed-changing overlays needs a future original-seed replay API, and the latest-committed-file CLI reference, flip diagnostics and custom operation vocabularies remain unfinished.
+
+Twelve diagnostics cases plus related harness/fitting/review-policy checks passed 37 tests in 17.93 seconds, process exit 0. Scoped F821 and whitespace checks passed. Historical data pins remain unchanged; locked games retain aggregate-only output. This corrected slice still requires different review and merger integration; full42 and external qualification remain open.

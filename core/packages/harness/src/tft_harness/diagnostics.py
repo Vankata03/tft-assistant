@@ -1,8 +1,10 @@
 """Offline advice comparisons aligned to original logged decision points."""
 from collections import Counter
+from collections.abc import Mapping
+import json
 
 from tft_review import ReplayProducer
-from tft_review.contracts import frozen_json
+from tft_review.contracts import frozen_json, json_value
 
 from .overlay import TunableOverlay
 
@@ -17,9 +19,34 @@ def _decisions(batch):
     return indexed
 
 
+# Recommendation identity excludes forecasts, confidence, costs and rollout evidence.
+# Nested physical board/action fields retain operation targets and execution order.
+_OPERATION_FIELDS = frozenset(('operation', 'unit_id', 'unit_index', 'item_id', 'augment_id',
+    'wisp_id', 'slot', 'slots', 'buys', 'sell', 'hold', 'swap_in', 'swap_out', 'board',
+    'steps', 'layout', 'ranking', 'line_id', 'comp_id', 'levels', 'rolls', 'gold_floor',
+    'target_level', 'target_round', 'bench', 'units', 'stars', 'items', 'position', 'cell',
+    'from', 'to', 'overflow_sells', 'equip', 'recipient'))
+
+
+def _targets(value):
+    if isinstance(value, Mapping):
+        return {key: json_value(item) if key in ('levels', 'rolls') else _targets(item)
+            for key, item in value.items() if key in _OPERATION_FIELDS}
+    if isinstance(value, (tuple, list)):
+        return [_targets(item) for item in value]
+    return value
+
+
 def _choice(row):
-    return (row.advice.get('option_id'), row.advice.get('paused_reason'),
-        row.advice.get('action') if not row.advice.get('option_id') else None)
+    payload = row.advice.get('payload', {})
+    return (row.advice.get('option_id'), row.advice.get('action'),
+        bool(payload.get('paused')), payload.get('reason') if payload.get('paused') else None,
+        _targets(payload))
+
+
+def _summary(row):
+    return json.dumps({'action': row.advice.get('action'),
+        'targets': _targets(row.advice.get('payload', {}))}, sort_keys=True, ensure_ascii=False)[:512]
 
 
 def advice_diff(harness, candidate, game_ids=None, *, limit=20):
@@ -35,7 +62,11 @@ def advice_diff(harness, candidate, game_ids=None, *, limit=20):
     for game in harness.sessions.list_games():
         if selected is not None and game['game_id'] not in selected:
             continue
-        old, new = _decisions(accepted.produce(game['game_id'])), _decisions(proposed.produce(game['game_id']))
+        original_batch, candidate_batch = accepted.produce(game['game_id']), proposed.produce(game['game_id'])
+        original_seeds = {context.log_seq: context.seed for context in original_batch.contexts}
+        if original_seeds != {context.log_seq: context.seed for context in candidate_batch.contexts}:
+            raise ValueError('Candidate cannot preserve original replay seeds; advice diff unavailable')
+        old, new = _decisions(original_batch), _decisions(candidate_batch)
         for key in old.keys() | new.keys():
             if key not in old or key not in new:
                 exclusions['unpaired_decision'] += 1
@@ -50,8 +81,10 @@ def advice_diff(harness, candidate, game_ids=None, *, limit=20):
             difference = None if before.expected_placement is None or after.expected_placement is None else (
                 after.expected_placement-before.expected_placement)
             examples.append({'game_id': game['game_id'], 'log_seq': key[0], 'decision': key[1],
-                'occurrence': key[2], 'accepted_choice': before.advice.get('option_id'),
-                'candidate_choice': after.advice.get('option_id'),
+                'occurrence': key[2], 'accepted_choice': str(before.advice.get('option_id') or before.advice.get('action') or '')[:256],
+                'accepted_recommendation': _summary(before),
+                'candidate_choice': str(after.advice.get('option_id') or after.advice.get('action') or '')[:256],
+                'candidate_recommendation': _summary(after),
                 'expected_placement_difference': difference})
     examples.sort(key=lambda row: (row['expected_placement_difference'] is None,
         -abs(row['expected_placement_difference'] or 0), int(row['game_id']), row['log_seq'],

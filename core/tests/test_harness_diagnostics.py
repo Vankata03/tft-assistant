@@ -71,3 +71,66 @@ def test_harness_advice_diff_rejects_unbounded_or_nonintegral_examples(tmp_path,
     sessions, store, _, _ = logged_game(tmp_path)
     with pytest.raises(ValueError, match='limit'):
         EvaluationHarness(sessions, store, repository=ROOT).advice_diff({'unit_weight': 2}, limit=limit)
+
+
+def stable_id_choices(context):
+    changed = context.data.tunables['unit_weight'].value > 1
+    return (Advice('shop', 'Buy highlighted units' if changed else 'Hold shop', 'information', .9,
+        'synthetic', option_id='shop', payload={'buys': [{'slot': 0, 'unit_id': 'unit'}] if changed else []}),
+        Advice('positioning', 'Move to target layout', 'information', .9, 'synthetic',
+            option_id='positioning:layout', payload={'layout': [{'unit_id': 'unit', 'cell': 1 if changed else 0}]}))
+
+
+def test_harness_advice_diff_compares_operations_and_targets_with_stable_option_ids(tmp_path):
+    sessions, store, _, _ = logged_game(tmp_path, mode='baseline')
+    report = EvaluationHarness(sessions, store, repository=ROOT,
+        hooks=(DomainHook('shop', (), advice=stable_id_choices),)).advice_diff({'unit_weight': 2})
+    assert report['changed_decisions'] == 2
+    assert {row['decision'] for row in report['largest_changes']} == {'shop', 'positioning'}
+
+
+def test_harness_advice_diff_examples_name_unscored_actions(tmp_path):
+    sessions, store, _, _ = logged_game(tmp_path, mode='baseline')
+    report = EvaluationHarness(sessions, store, repository=ROOT,
+        hooks=(DomainHook('reference', (), advice=information_choices),)).advice_diff({'unit_weight': 2})
+    change = report['largest_changes'][0]
+    assert change['accepted_choice'] == 'Low'
+    assert change['candidate_choice'] == 'High'
+
+
+def test_harness_advice_diff_refuses_candidate_that_changes_original_seed(tmp_path):
+    sessions, store, data, _ = logged_game(tmp_path, finish=False, mode='baseline')
+    at = NOW+timedelta(seconds=1)
+    raw = log_snapshot(data, at=at, snapshot_id='old-gold')
+    raw['fields']['gold']['read_at'] = NOW.isoformat()
+    sessions.append_event('snapshot', raw, timestamp=at.isoformat())
+    sessions.end_game(timestamp=(at+timedelta(seconds=1)).isoformat())
+    with pytest.raises(ValueError, match='original replay seeds'):
+        EvaluationHarness(sessions, store, repository=ROOT).advice_diff(
+            {'field_max_age_seconds': {'default': .5, 'shop_roll_down': .5}})
+
+
+def evidence_only_choices(context):
+    value = context.data.tunables['unit_weight'].value
+    return (Advice('positioning', 'Move to target layout', 'information', .9, 'synthetic',
+        option_id='positioning:layout', numbers={'predicted_power': value},
+        payload={'layout': [{'unit_id': 'unit', 'cell': 0}], 'threat_shares': {'aoe': value}}),)
+
+
+def test_harness_advice_diff_ignores_new_scores_for_unchanged_operation(tmp_path):
+    sessions, store, _, _ = logged_game(tmp_path, mode='baseline')
+    report = EvaluationHarness(sessions, store, repository=ROOT,
+        hooks=(DomainHook('positioning', (), advice=evidence_only_choices),)).advice_diff({'unit_weight': 2})
+    assert report['changed_decisions'] == 0
+
+
+def schedule_choices(context):
+    return (Advice('econ', 'Level on schedule', 'information', .9, 'synthetic',
+        option_id='scheduled-line', payload={'levels': {'3-2': 6 if context.data.tunables['unit_weight'].value > 1 else 5}}),)
+
+
+def test_harness_advice_diff_retains_round_keyed_schedule_targets(tmp_path):
+    sessions, store, _, _ = logged_game(tmp_path, mode='baseline')
+    report = EvaluationHarness(sessions, store, repository=ROOT,
+        hooks=(DomainHook('econ', (), advice=schedule_choices),)).advice_diff({'unit_weight': 2})
+    assert report['changed_decisions'] == 1
