@@ -1,4 +1,4 @@
-import type { BaselineState } from './messages'
+import type { BaselineState, LiveState, SurfaceGeometryState, OverlayBounds,LiveSurfaceAnchor,ReviewReady } from './messages'
 // What the shell knows, shared by the main process, the tray and the windows.
 import type { SessionMode } from './protocol'
 
@@ -9,6 +9,8 @@ export interface GameflowState {
   clientRunning: boolean
   phase: string | null
 }
+
+declare global {const __LIVE_ENABLED__:boolean}
 
 export interface ShellState {
   core: CoreStatus
@@ -21,6 +23,11 @@ export interface ShellState {
   /** Latest actionable error reported by the core. */
   error?: string | null
   baseline?: BaselineState | null
+  live?: LiveState | null
+  reviewReady?:ReviewReady|null
+  reviewRequest?:{game_id:string;serial:number}|null
+  surfaceGeometry?: SurfaceGeometryState | null
+  overlayGeometry?: {bounds:OverlayBounds|null;anchors:readonly LiveSurfaceAnchor[];reason:string|null;displayId:number|null} | null
 }
 
 export const INITIAL_STATE: ShellState = {
