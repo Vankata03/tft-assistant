@@ -132,6 +132,39 @@ At source `e9b35869080673713e64971173a26b425e37f752`, the frozen training-group 
 - Independent relevant 163-case and physically Live-absent 162-case checks remain recorded above. Full ticket 42, complete-review resource acceptance, qualified production data, Windows/live-game behavior and historical native causality remain open.
 
 
+### 2026-10-14 — Advice-difference report implementation
+
+The isolated `implement/harness-diagnostics` slice adds `EvaluationHarness.advice_diff(candidate, game_ids=None, limit=20)`. It replays accepted historical pins and an immutable candidate overlay at the original log points and seeds, pairs domain occurrences, counts changed selected options and unscored actions, and ranks unlocked examples by absolute expected-placement difference. Missing pairs are excluded explicitly. Locked games contribute aggregate counts only; bounded immutable output contains no private examples. The reference is the historical immutable tunables, not yet the specification's latest-committed-file CLI workflow.
+
+The missing public method failed before implementation. A second public regression reproduced ignored unscored action changes and passed after using the real Advice action field. Seven new diagnostics cases and related harness/fitting/review-policy checks passed 32 cases in 18.68 seconds, process exit 0. An initial test-write command used a redundant `core/` prefix from the core working directory and ran no tests; corrected before the actual red/green proof. The first expected count omitted the existing shared plan advice and was corrected to four paired sub-engine decisions across two captures.
+
+This partial slice remains isolated for independent review. Flip reports, other report-only diagnostics, latest-committed tunable workflow, remaining fitting/prediction metrics and full42 acceptance remain unfinished. No production or Windows/live qualification is claimed.
+
+
+### 2026-10-15 — Advice-difference review corrections
+
+Different GPT-6.1 Sol review held `43d5744`: stable option IDs hid changed shop operations and positioning targets; candidate freshness tunables could change replay seeds; and unscored examples omitted their action labels. Root reproduced all three through public logged-game harness tests before correcting them.
+
+The comparator now includes action and built-in operation/target payload fields while ignoring numerical scores and forecast evidence. Round-keyed level/roll schedules retain their keys; a public regression caught and corrected an initial over-filtering of those keys. Examples include bounded action/target summaries and fall back to action text when no option ID exists. A candidate whose replay seeds differ from the accepted contexts is rejected explicitly, rather than presenting a confounded comparison. This is a bounded partial consumer: comparison of seed-changing overlays needs a future original-seed replay API, and the latest-committed-file CLI reference, flip diagnostics and custom operation vocabularies remain unfinished.
+
+Twelve diagnostics cases plus related harness/fitting/review-policy checks passed 37 tests in 17.93 seconds, process exit 0. Scoped F821 and whitespace checks passed. Historical data pins remain unchanged; locked games retain aggregate-only output. This corrected slice still requires different review and merger integration; full42 and external qualification remain open.
+
+
+### 2026-10-15 — Built-in advice target coverage
+
+Different round-two advice-diff review held `1b75ca2`: actual Engine econ advice nests its schedule under `payload.line`, and item-transfer advice uses recipient fields absent from the comparator vocabulary. Both defects were reproduced through public logs and EvaluationHarness before correction. The Line regression uses the actual Engine with a fresh DataStore and a Guide without an explicit Line; the transfer regression uses the public DomainHook with the built-in transfer payload shape.
+
+The comparator now retains nested Line schedules and transfer recipients, donor indices, item IDs and consumed tools while still excluding forecast evidence. Fourteen diagnostics cases plus related harness/fitting/review-policy tests passed 39 cases in 19.45 seconds. Imports kept both contracts; schema, frozen lock, scoped F821 and whitespace checks passed. The initial uv command was blocked by the restricted home cache; the existing worktree interpreter ran the tests, and lock checking used a temporary cache.
+
+The source remains an isolated partial consumer awaiting different review and merger integration. Original-seed changes are explicitly refused; latest-committed CLI selection, flip checks and the rest of full42 remain unfinished. No production, resource or Windows/live qualification is claimed.
+
+### 2026-10-15 — Recommended GamePlan comparison correction
+
+Different round-three GPT-6.1 Sol review held the advice-difference checkpoint because built-in econ advice can retain option `hold` and action `Hold econ` while changing its recommended comp. A new public logged-game regression uses a fresh DataStore, two external fixture Guides and a fit-only DomainHook; the actual Engine emits its ordinary econ advice. The valid red run confirmed that changing the selected comp from `guide` to `guide2` produced zero reported changes. An initial fixture omitted the required FitTerm reason and paused advice; that fixture was corrected before the actual red proof.
+
+The comparator now explicitly preserves GamePlan status, target, backup, pivot endpoints and selected Line schedules. Candidate lists, similarity values and historical player/divergence metadata remain excluded. The existing forecast-only regression now also changes GamePlan similarity and candidate evidence while retaining the same recommendation. The new regression passes, and diagnostics plus related harness, fitting, margins and review-policy checks passed 63 cases in 18.21 seconds, process exit 0. Imports kept both contracts; schema, frozen lock, scoped F821 and whitespace checks passed.
+
+This remains an isolated partial consumer awaiting different review and merger integration. Full ticket 42, original-seed-changing overlays, latest-committed CLI selection, flip diagnostics and external production/Windows/live qualification remain open.
 ### 2026-10-14 — Isolated next-sighting consumer proof; review held
 
 Root preserved the interrupted recovery and copied its one-line synthetic inference-state-cap correction into `implement/sighting-forecast-proof`, based on current integration `dea80857a4d4293dbcf5db5e61d7e2a71c7c4cfc`. The slice consumes explicitly declared, source-qualified whole-board support before target traits enter, applies the existing persistence prior, and compares the same support with persistence disabled. Missing or malformed declarations remain unavailable. The harness scores original causal log prefixes, preserves finite log probabilities for positive underflow, and keeps locked-game examples hidden while allowing aggregate metrics. This is fixture-backed software proof, not a qualified production support model.
