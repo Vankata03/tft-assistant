@@ -57,7 +57,7 @@ class EvaluationHarness:
                 continue
             against = paired_game_comparison([(row['game_id'], new[key]['loss'], row['loss'])
                 for key, row in old.items()], seed=bootstrap_seed, draws=bootstrap_draws)
-            naive_rows = [(row['game_id'], new[key]['loss'], self._loss(metric, row['naive_prediction'], row['truth']))
+            naive_rows = [(row['game_id'], new[key]['loss'], self._naive_loss(row))
                 for key, row in old.items() if row['naive_prediction'] is not None]
             naive = paired_game_comparison(naive_rows, seed=bootstrap_seed, draws=bootstrap_draws)
             comparable = against['reason'] is None and naive['reason'] is None
@@ -110,6 +110,9 @@ class EvaluationHarness:
                 'gap_share': gap_share, 'split': 'holdout' if game['game_id'] in holdout else 'train',
                 'truth_sources': ['capture_log'], 'eligible': True})
             game_rows, game_excluded = self._fight_rows(batch, data)
+            sighting_rows, sighting_excluded = self._sighting_rows(batch, data)
+            game_rows.extend(sighting_rows)
+            game_excluded.update(sighting_excluded)
             rows.extend(game_rows)
             exclusions.update(game_excluded)
             if not game['review_locked']:
@@ -123,10 +126,10 @@ class EvaluationHarness:
                 outcomes = stage_wins.get(row['stage'], [])
                 row['naive_prediction'] = sum(outcomes)/len(outcomes) if outcomes else None
         metrics = {}
-        for name in ('fight_brier', 'fight_log_loss', 'damage_mae'):
+        for name in ('fight_brier', 'fight_log_loss', 'damage_mae', 'next_sighting_log_loss'):
             selected = [row for row in rows if row['metric'] == name]
             losses = [row['loss'] for row in selected]
-            naive = [(row['game_id'], self._loss(name, row['naive_prediction'], row['truth']))
+            naive = [(row['game_id'], self._naive_loss(row))
                 for row in selected if row['naive_prediction'] is not None]
             hard_misses = sum(loss is None for loss in losses)
             naive_hard_misses = sum(loss is None for _, loss in naive)
@@ -144,16 +147,87 @@ class EvaluationHarness:
             'training_game_ids': training, 'holdout_game_ids': holdout,
             'evaluation_scope': 'all eligible rows; gates use holdout only',
             'metric_weighting': 'equal games; mean eligible rows within each game',
-            'outcome_policy': 'win/loss Bernoulli; draw is explicitly excluded'}), rows
+            'outcome_policy': 'win/loss Bernoulli; draw is explicitly excluded',
+            'sighting_naive': 'same joint support; persistence disabled'}), rows
+
+    @classmethod
+    def _naive_loss(cls, row):
+        if 'naive_loss' in row:
+            return row['naive_loss']
+        return cls._loss(row['metric'], row['naive_prediction'], row['truth'])
 
     @staticmethod
     def _loss(metric, prediction, truth):
         if metric == 'fight_brier':
             return (prediction-truth)**2
-        if metric == 'fight_log_loss':
+        if metric in ('fight_log_loss', 'next_sighting_log_loss'):
             probability = prediction if truth else 1-prediction
             return -log(probability) if probability > 0 else None
         return abs(prediction-truth)
+
+    def _sighting_rows(self, batch, data):
+        from tft_engine import TraitSighting
+        from tft_engine.opponents import infer_opponent
+        from tft_review.sighting_forecast import forecast_sighting
+        from tft_review.contracts import history_prefix
+        from tft_data.capacity import integral
+
+        rows, excluded = [], Counter()
+        metric = 'next_sighting_log_loss'
+        for event in (row for row in batch.observations if row['kind'] == 'sighting'):
+            at = datetime.fromisoformat(event['timestamp'])
+            candidates = [context for context in batch.contexts if context.log_seq < event['seq']
+                and datetime.fromisoformat(context.snapshot['captured_at']) <= at]
+            context = candidates[-1] if candidates else None
+            try:
+                if context is None:
+                    raise DataError('no_causal_previous_sighting')
+                if 'capture_gap' in context.unavailable:
+                    raise DataError('capture_gap')
+                # Gap intervals qualify capture validity retrospectively; they
+                # never become extra information in the causal inference below.
+                if any(row['kind'] == 'capture_gap'
+                    and at < datetime.fromisoformat(row['payload']['end'])
+                    and (row['payload']['start'] is None
+                        or datetime.fromisoformat(row['payload']['start']) <= at)
+                    for row in batch.observations):
+                    raise DataError('capture_gap')
+                previous = None
+                history = history_prefix(batch.observations, through_seq=event['seq']-1,
+                    captured_at=event['timestamp'])
+                for sighting in history.sightings:
+                    if sighting.opponent_id != event['payload']['opponent_id']:
+                        continue
+                    integral(sighting.level, 'prior sighting level', 1)
+                    integral(sighting.hidden_traits, 'prior hidden trait count')
+                    for count in sighting.traits.values():
+                        integral(count, 'prior visible trait count', 1)
+                    previous = infer_opponent(sighting, data, previous=previous)
+                    if previous.fallback_reason:
+                        raise DataError('previous_inference_unavailable: '+previous.fallback_reason)
+                if previous is None:
+                    raise DataError('no_causal_previous_sighting')
+                target = TraitSighting.from_dict(dict(event['payload'])|{'read_at':event['timestamp']})
+                predicted = forecast_sighting(target, data, previous=previous)
+                naive = forecast_sighting(target, data, previous=previous, persistence=False)
+                if predicted.reason or naive.reason:
+                    raise DataError(predicted.reason or naive.reason)
+                rows.append({'game_id':batch.game_id, 'log_seq':context.log_seq,
+                    'observation_seq':event['seq'], 'stage':int(target.round_id.split('-')[0]),
+                    'metric':metric, 'prediction':predicted.probability,
+                    'log_probability':predicted.log_probability, 'truth':True,
+                    'loss':-predicted.log_probability if predicted.log_probability is not None else None,
+                    'naive_prediction':naive.probability,
+                    'naive_loss':-naive.log_probability if naive.log_probability is not None else None,
+                    'naive_log_probability':naive.log_probability,
+                    'data_snapshot_id':data.snapshot_id, 'seed':context.seed,
+                    'source':predicted.source, 'prefix_through_seq':event['seq']-1,
+                    'previous_round_id':previous.round_id,
+                    'conditioning':{'round_id':target.round_id, 'level':target.level},
+                    'target':dict(event['payload'])})
+            except (DataError, KeyError, ValueError, TypeError) as error:
+                excluded[(metric,str(error))] += 1
+        return rows, excluded
 
     def _fight_rows(self, batch, data):
         rows, excluded = [], Counter()
