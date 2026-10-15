@@ -125,3 +125,14 @@ except ValueError as error:
     assert 'unfinished' in result.stdout
     assert core.run is None
     assert core.read_events('901') == original
+
+
+def test_idle_core_silent_selection_after_cli_started_run_is_honoured(tmp_path):
+    core = SessionStore(tmp_path/'logs', tmp_path/'config', live_installed=True)
+    launcher = SessionStore(tmp_path/'logs', tmp_path/'config', live_installed=True)
+    launcher.start_run(baseline_fixture(sessions=launcher), set_id='18', timestamp=NOW.isoformat())
+    # The owner picks Silent in the running core's tray before the next game.
+    core.set_mode('silent')
+    core.start_game('901', set_id='18')
+    assert core.read_events('901')[0]['payload']['mode'] == 'silent'
+    assert SessionStore(tmp_path/'logs', tmp_path/'config', live_installed=True).mode.value == 'silent'

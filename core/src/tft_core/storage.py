@@ -157,13 +157,14 @@ class SessionStore:
         self._next_seq: dict[str, int] = {}
         self._log_sizes: dict[str, int] = {}
         self.active_game_id: str | None = None
-        self._mode = self.default_mode
-        settings = self.config_root / "session.json"
-        if settings.exists():
-            self._mode = SessionMode(json.loads(settings.read_text())["mode"])
-        if not self.live_installed and self._mode is SessionMode.LIVE:
-            self._mode = SessionMode.BASELINE
+        self._mode = self._idle_selection()
         self.rebuild_index()
+
+    def _idle_selection(self) -> SessionMode:
+        """Read the durable idle selection; another process may start the run."""
+        settings = self.config_root / "session.json"
+        mode = SessionMode(json.loads(settings.read_text())["mode"]) if settings.exists() else self.default_mode
+        return SessionMode.BASELINE if not self.live_installed and mode is SessionMode.LIVE else mode
 
     @classmethod
     def default_locations(cls) -> tuple[Path, Path]:
@@ -267,12 +268,8 @@ class SessionStore:
                     output.flush()
                     os.fsync(output.fileno())
             if not events:
-                # Another process may have started the run or changed the idle
-                # selection. Reattach still restores the original game modes.
-                settings = self.config_root / "session.json"
-                self._mode = SessionMode(json.loads(settings.read_text())["mode"]) if settings.exists() else self.default_mode
-                if not self.live_installed and self._mode is SessionMode.LIVE:
-                    self._mode = SessionMode.BASELINE
+                # Reattach below restores the original game modes instead.
+                self._mode = self._idle_selection()
             self.active_game_id = game_id
             if events:
                 self._mode = SessionMode(events[0]["payload"]["mode"])
@@ -299,6 +296,8 @@ class SessionStore:
                 raise ValueError("Live advisor is not installed")
             if self.active_game_id and _MODE_RANK[mode] > _MODE_RANK[self.mode]:
                 raise ValueError("during a game the mode can only downgrade")
+            if not self.active_game_id:
+                self._mode = self._idle_selection()
             if mode == self.mode:
                 return
             if self.active_game_id:
