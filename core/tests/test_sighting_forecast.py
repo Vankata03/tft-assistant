@@ -72,6 +72,57 @@ def test_forecast_preserves_finite_log_underflow_and_distinguishes_real_zero_eve
     assert rare.reason is impossible.reason is None
 
 
+def test_persistence_keeps_finite_source_support_when_reweighted_mass_overflows(tmp_path):
+    from math import log
+    from tft_engine.opponents import InferredBoard
+    from tft_review.contracts import json_value
+    from tft_review.sighting_forecast import forecast_sighting
+
+    data = support_data(tmp_path)
+    raw = json_value(data.static['opponent_joint_support'].value)
+    for row in raw['rounds']['3-2']['1']:
+        row['weight'] = 1e308
+    data = replace(data, static=dict(data.static)|{'opponent_joint_support':
+        TaggedValue(raw, 'owner', 'Finite equal-mass synthetic support')})
+    previous = InferredBoard('rival', '3-1', 1, {'unit': 1, 'ice-unit': 0}, 1, 1)
+    target = TraitSighting('rival', '3-2', 1, {'fire': 1})
+    predicted = forecast_sighting(target, data, previous=previous)
+    naive = forecast_sighting(target, data, previous=previous, persistence=False)
+    assert predicted.reason is naive.reason is None
+    # Doubling fire mass against unchanged ice mass gives 2:1 odds.
+    assert predicted.probability == pytest.approx(2/3)
+    assert predicted.log_probability == pytest.approx(log(2/3))
+    assert naive.probability == .5
+
+
+def test_persistence_retains_positive_subnormal_mass_as_finite_log_score(tmp_path):
+    from math import isfinite
+    from tft_engine.opponents import InferredBoard
+    from tft_review.contracts import frozen_json, json_value
+    from tft_review.sighting_forecast import forecast_sighting, sighting_law
+    from tft_engine.joint_sighting_law import predict_joint_sighting
+
+    data = support_data(tmp_path)
+    raw = json_value(data.static['opponent_joint_support'].value)
+    raw['rounds']['3-2']['1'][0]['weight'] = 5e-324
+    raw['rounds']['3-2']['1'][1]['weight'] = 1
+    data = replace(data, static=dict(data.static)|{'opponent_joint_support':
+        TaggedValue(raw, 'owner', 'Positive subnormal synthetic support')},
+        tunables=dict(data.tunables)|{'sighting_persistence_weight':
+            TaggedValue(.5, 'owner', 'Synthetic halved persistence', '1')})
+    previous = InferredBoard('rival', '3-1', 1, {'unit': 1, 'ice-unit': 0}, 1, 1)
+    target = TraitSighting('rival', '3-2', 1, {'fire': 1})
+    predicted = forecast_sighting(target, data, previous=previous)
+    law = sighting_law(data, opponent_id='rival', round_id='3-2', level=1, previous=previous)
+    assert predicted.reason is None
+    assert predicted.log_probability == pytest.approx(-745.1332191019411)
+    assert isfinite(predicted.log_probability)
+    assert predict_joint_sighting(target, data, law) == predicted
+    assert frozen_json(law)['hypotheses'][0]['log_weight'] == pytest.approx(-745.1332191019411)
+    with pytest.raises(TypeError):
+        frozen_json(law)['hypotheses'][0]['weight'] = 0
+
+
 @pytest.mark.parametrize('invalid', ['unqualified_source', 'different_patch', 'missing_cohort',
     'different_update', 'missing_context', 'bool_weight'])
 def test_unqualified_or_malformed_support_never_silently_becomes_a_uniform_law(tmp_path, invalid):
@@ -106,7 +157,7 @@ class PublicSupportFeed:
         return {'rows': []}
 
 
-def support_logs(tmp_path):
+def support_logs(tmp_path, *, intermediate=(), mode='silent'):
     import json
     import tomllib
     import tomli_w
@@ -144,12 +195,15 @@ def support_logs(tmp_path):
     assert refreshed.error is None
     data = refreshed.snapshot
     sessions = SessionStore(tmp_path/'logs',tmp_path/'config',live_installed=True)
+    sessions.set_mode(mode)
     sessions.start_game('901',patch=data.patch,data_snapshot_id=data.snapshot_id,
         timestamp=(NOW+timedelta(seconds=2)).isoformat())
     sessions.append_event('sighting', {'opponent_id':'rival','round_id':'3-1','level':1,
         'traits':{'fire':1},'hidden_traits':0},timestamp=(NOW+timedelta(seconds=2.1)).isoformat())
     raw = log_snapshot(data, at=NOW+timedelta(seconds=2.2))
     sessions.append_event('snapshot', raw, timestamp=raw['captured_at'])
+    for kind, payload, seconds in intermediate:
+        sessions.append_event(kind, payload, timestamp=(NOW+timedelta(seconds=seconds)).isoformat())
     target = sessions.append_event('sighting', {'opponent_id':'rival','round_id':'3-2','level':1,
         'traits':{'fire':1},'hidden_traits':0},timestamp=(NOW+timedelta(seconds=2.3)).isoformat())
     sessions.end_game(placement=4,timestamp=(NOW+timedelta(seconds=3)).isoformat())
@@ -171,3 +225,64 @@ def test_actual_harness_scores_next_sighting_against_same_support_without_persis
     assert report.examples == () # A locked Silent game has aggregates only.
     assert report.provenance['sighting_naive'] == 'same joint support; persistence disabled'
     assert store.get(data.snapshot_id).snapshot_id == data.snapshot_id
+
+
+def test_harness_conditions_each_sighting_on_earlier_log_events_after_last_snapshot(tmp_path):
+    from tests.test_replay_contracts import ROOT
+    from tft_harness import EvaluationHarness
+    from tft_review import ReplayProducer
+
+    sessions, store, data, target = support_logs(tmp_path, mode='live', intermediate=((
+        'sighting', {'opponent_id':'rival','round_id':'3-2','level':1,
+            'traits':{'ice':1},'hidden_traits':0}, 2.25),))
+    batch = ReplayProducer(sessions,store,repository=ROOT).produce('901')
+    report = EvaluationHarness(sessions,store,repository=ROOT).evaluate()
+    rows = [row for row in report.examples if row['metric'] == 'next_sighting_log_loss']
+    # Ice is first forecast with fire persistence (.6); then fire with ice persistence (1/7).
+    assert [row['prediction'] for row in rows] == pytest.approx([.6, 1/7])
+    assert report.metrics['next_sighting_log_loss']['value'] == pytest.approx(1.228367886410652)
+    assert rows[-1]['previous_round_id'] == '3-2'
+    assert rows[-1]['prefix_through_seq'] == target['seq']-1
+    assert rows[-1]['seed'] == batch.contexts[0].seed
+    assert rows[-1]['data_snapshot_id'] == data.snapshot_id
+
+
+def test_harness_discards_pre_gap_inference_between_snapshot_and_target(tmp_path):
+    from datetime import timedelta
+    from tests.test_replay_contracts import NOW, ROOT
+    from tft_harness import EvaluationHarness
+
+    sessions, store, _, _ = support_logs(tmp_path, intermediate=(('capture_gap', {
+        'start':(NOW+timedelta(seconds=2.21)).isoformat(),
+        'end':(NOW+timedelta(seconds=2.24)).isoformat(),'reason':'fixture_gap'}, 2.24),))
+    report = EvaluationHarness(sessions,store,repository=ROOT).evaluate()
+    metric = report.metrics['next_sighting_log_loss']
+    assert metric['eligible_rows'] == 0
+    assert metric['excluded']['no_causal_previous_sighting'] == 2
+
+
+@pytest.mark.parametrize('prior_at,expected', [(2.3, 1/7), (2.4, .4)])
+def test_harness_respects_both_commit_order_and_target_timestamp(tmp_path, prior_at, expected):
+    from tests.test_replay_contracts import ROOT
+    from tft_harness import EvaluationHarness
+
+    sessions, store, _, target = support_logs(tmp_path, mode='live', intermediate=((
+        'sighting', {'opponent_id':'rival','round_id':'3-2','level':1,
+            'traits':{'ice':1},'hidden_traits':0}, prior_at),))
+    report = EvaluationHarness(sessions,store,repository=ROOT).evaluate()
+    row = next(row for row in report.examples if row['observation_seq'] == target['seq'])
+    assert row['prediction'] == pytest.approx(expected)
+
+
+def test_harness_excludes_target_inside_a_committed_capture_gap(tmp_path):
+    from datetime import timedelta
+    from tests.test_replay_contracts import NOW, ROOT
+    from tft_harness import EvaluationHarness
+
+    sessions, store, _, _ = support_logs(tmp_path, intermediate=(('capture_gap', {
+        'start':(NOW+timedelta(seconds=2.21)).isoformat(),
+        'end':(NOW+timedelta(seconds=2.35)).isoformat(),'reason':'fixture_gap'}, 2.25),))
+    report = EvaluationHarness(sessions,store,repository=ROOT).evaluate()
+    metric = report.metrics['next_sighting_log_loss']
+    assert metric['eligible_rows'] == 0
+    assert metric['excluded']['capture_gap'] == 1

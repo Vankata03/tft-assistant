@@ -41,7 +41,8 @@ def sighting_law(data, *, opponent_id, round_id, level, previous=None, persisten
         board = Board.from_dict(json_value(row['board']))
         hypothesis = JointHypothesis(board, row['weight'],
             CapacityEvidence(**json_value(row.get('capacity', {}))), row.get('forms'))
-        weight = hypothesis.weight
+        log_weight = (log(hypothesis.weight)
+            if previous is not None and persistence and hypothesis.weight > 0 else None)
         if previous is not None and persistence:
             identities = set()
             for unit in board.units:
@@ -51,9 +52,11 @@ def sighting_law(data, *, opponent_id, round_id, level, previous=None, persisten
                 if identity in identities:
                     continue
                 identities.add(identity)
-                weight *= unit_prior_rate(unit.unit_id, round_id, data, previous) / unit_prior_rate(
-                    unit.unit_id, round_id, data)
-        hypotheses.append(JointHypothesis(board, weight, hypothesis.capacity, hypothesis.forms))
+                if log_weight is not None:
+                    log_weight += log(unit_prior_rate(unit.unit_id, round_id, data, previous)) - log(
+                        unit_prior_rate(unit.unit_id, round_id, data))
+        hypotheses.append(JointHypothesis(board, hypothesis.weight, hypothesis.capacity,
+            hypothesis.forms, log_weight=log_weight))
     return JointSightingLaw(data.snapshot_id, opponent_id, round_id, level, state.name,
         declaration.citation, tuple(hypotheses))
 

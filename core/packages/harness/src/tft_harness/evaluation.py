@@ -165,6 +165,7 @@ class EvaluationHarness:
         from tft_engine import TraitSighting
         from tft_engine.opponents import infer_opponent
         from tft_review.sighting_forecast import forecast_sighting
+        from tft_review.contracts import history_prefix
         from tft_data.capacity import integral
 
         rows, excluded = [], Counter()
@@ -179,8 +180,16 @@ class EvaluationHarness:
                     raise DataError('no_causal_previous_sighting')
                 if 'capture_gap' in context.unavailable:
                     raise DataError('capture_gap')
+                if any(row['kind'] == 'capture_gap' and row['seq'] < event['seq']
+                    and datetime.fromisoformat(row['timestamp']) <= at
+                    and datetime.fromisoformat(row['payload']['start']) <= at
+                    < datetime.fromisoformat(row['payload']['end'])
+                    for row in batch.observations):
+                    raise DataError('capture_gap')
                 previous = None
-                for sighting in batch.history_for(context).sightings:
+                history = history_prefix(batch.observations, through_seq=event['seq']-1,
+                    captured_at=event['timestamp'])
+                for sighting in history.sightings:
                     if sighting.opponent_id != event['payload']['opponent_id']:
                         continue
                     integral(sighting.level, 'prior sighting level', 1)
@@ -206,7 +215,7 @@ class EvaluationHarness:
                     'naive_loss':-naive.log_probability if naive.log_probability is not None else None,
                     'naive_log_probability':naive.log_probability,
                     'data_snapshot_id':data.snapshot_id, 'seed':context.seed,
-                    'source':predicted.source, 'prefix_through_seq':context.prefix_through_seq,
+                    'source':predicted.source, 'prefix_through_seq':event['seq']-1,
                     'previous_round_id':previous.round_id,
                     'conditioning':{'round_id':target.round_id, 'level':target.level},
                     'target':dict(event['payload'])})

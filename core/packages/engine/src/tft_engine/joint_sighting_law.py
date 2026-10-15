@@ -1,6 +1,6 @@
 """Trait-event likelihood from an explicitly declared whole-board joint law."""
 from dataclasses import dataclass
-from math import fsum, isfinite, log
+from math import exp, fsum, isfinite, log
 from collections.abc import Mapping
 
 from tft_data.models import DataError, DataSnapshot, TaggedValue, freeze
@@ -13,11 +13,16 @@ from .trait_forms import unit_trait_variants
 
 @dataclass(frozen=True)
 class JointHypothesis:
-    """A complete weighted board outcome, including declared active forms/items."""
+    """A complete weighted board outcome, including declared active forms/items.
+
+    Weight is the finite declared mass. An optional finite log_weight overrides
+    its effective mass after reweighting without rounding positive mass to zero.
+    """
     board: Board
     weight: float
     capacity: CapacityEvidence = CapacityEvidence()
     forms: tuple[Mapping[str, int], ...] | None = None
+    log_weight: float | None = None
 
     def __post_init__(self):
         if not isinstance(self.board, Board) or not isinstance(self.capacity, CapacityEvidence):
@@ -41,6 +46,10 @@ class JointHypothesis:
                     raise DataError('Joint unit position must be between 0 and 27')
         if isinstance(self.weight, bool) or not isinstance(self.weight, (int, float)) or not isfinite(self.weight) or self.weight < 0:
             raise DataError('Joint support requires finite nonnegative weights')
+        if self.log_weight is not None and (isinstance(self.log_weight, bool)
+            or not isinstance(self.log_weight, (int, float)) or not isfinite(self.log_weight)
+            or self.weight <= 0):
+            raise DataError('Joint log support requires finite mass for a positive weight')
         if self.forms is not None:
             object.__setattr__(self, 'forms', tuple(freeze(form) for form in self.forms))
 
@@ -136,9 +145,13 @@ def predict_joint_sighting(sighting: TraitSighting, data: DataSnapshot,
     for trait, number in sighting.traits.items():
         integral(number, 'observed visible trait count', 1)
         _breakpoint(trait, data)
-    scale = max(hypothesis.weight for hypothesis in law.hypotheses)
+    log_weights = [hypothesis.log_weight if hypothesis.log_weight is not None else
+        log(hypothesis.weight) if hypothesis.weight > 0 else None
+        for hypothesis in law.hypotheses]
+    scale = max(weight for weight in log_weights if weight is not None)
     matching = []
-    for hypothesis in law.hypotheses:
+    matching_weights = []
+    for hypothesis, log_weight in zip(law.hypotheses, log_weights):
         counts = {}
         counted = {}
         for unit in hypothesis.board.units + hypothesis.board.bench:
@@ -179,10 +192,16 @@ def predict_joint_sighting(sighting: TraitSighting, data: DataSnapshot,
         hidden = all(number < _breakpoint(trait, data)
             for trait, number in outside.items())
         if (sighting.team_slot_budget is None or sighting.team_slot_budget == state.maximum_slots) and all(counts.get(trait, 0) == number for trait, number in sighting.traits.items()) and len(outside) == sighting.hidden_traits and hidden:
-            matching.append(hypothesis.weight)
-    normalizer = fsum(hypothesis.weight / scale for hypothesis in law.hypotheses)
-    probability = fsum(weight / scale for weight in matching) / normalizer
-    event_scale = max(matching, default=0)
-    log_probability = min(0.0, (log(event_scale) - log(scale))
-        + (log(fsum(weight / event_scale for weight in matching)) - log(normalizer))) if event_scale > 0 else None
+            if log_weight is not None:
+                matching.append(log_weight)
+                matching_weights.append(hypothesis.weight)
+    normalizer = fsum(exp(weight - scale) for weight in log_weights if weight is not None)
+    probability = fsum(exp(weight - scale) for weight in matching) / normalizer
+    if all(hypothesis.log_weight is None for hypothesis in law.hypotheses):
+        raw_scale = max(hypothesis.weight for hypothesis in law.hypotheses)
+        probability = fsum(weight / raw_scale for weight in matching_weights) / fsum(
+            hypothesis.weight / raw_scale for hypothesis in law.hypotheses)
+    event_scale = max(matching) if matching else None
+    log_probability = min(0.0, (event_scale - scale)
+        + (log(fsum(exp(weight - event_scale) for weight in matching)) - log(normalizer))) if event_scale is not None else None
     return JointSightingPrediction(probability, None, law.source, log_probability)
