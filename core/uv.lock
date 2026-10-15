@@ -1223,6 +1223,7 @@ source = { editable = "." }
 default-groups = ["dev", "live"]
 dependencies = [
     { name = "pillow" },
+    { name = "psutil" },
     { name = "pydantic" },
     { name = "tft-capture" },
     { name = "tft-data" },
@@ -1248,6 +1249,7 @@ train = [
 [package.metadata]
 requires-dist = [
     { name = "pillow", specifier = ">=12" },
+    { name = "psutil", specifier = ">=7" },
     { name = "pydantic", specifier = ">=2.12" },
     { name = "tft-capture", editable = "packages/capture" },
     { name = "tft-data", editable = "packages/data" },

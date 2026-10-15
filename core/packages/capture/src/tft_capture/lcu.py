@@ -14,6 +14,7 @@ import json
 import logging
 import inspect
 import ssl
+import threading
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
@@ -281,7 +282,7 @@ class GameflowWatcher:
     async def run(self) -> None:
         while True:
             try:
-                credentials = await asyncio.to_thread(self._discover)
+                credentials = await self._discover_owned()
                 if credentials is None:
                     await self._publish(NOT_RUNNING)
                 else:
@@ -298,6 +299,38 @@ class GameflowWatcher:
                 log.exception("%s", message)
                 await self._publish(GameflowUpdate(False, None, error=message))
             await asyncio.sleep(self._discovery_interval)
+
+    async def _discover_owned(self) -> LcuCredentials | None:
+        """Run discovery on an owned daemon thread.
+
+        OS process enumeration can block. The default executor would make
+        interpreter exit wait for it after the shell closes stdin; a daemon
+        thread is abandoned instead and its late result is discarded.
+        """
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future = loop.create_future()
+
+        def settle(result, error) -> None:
+            if future.done():
+                return
+            if error is not None:
+                future.set_exception(error)
+            else:
+                future.set_result(result)
+
+        def discover() -> None:
+            result, error = None, None
+            try:
+                result = self._discover()
+            except Exception as failure:
+                error = failure
+            try:
+                loop.call_soon_threadsafe(settle, result, error)
+            except RuntimeError:
+                pass  # The loop closed while discovery was blocked.
+
+        threading.Thread(target=discover, name="lcu-discovery", daemon=True).start()
+        return await future
 
     async def _publish_phase(self, lcu: Lcu, phase: str | None) -> None:
         # Older phase-only adapters remain usable; production resolves the LCU id.
