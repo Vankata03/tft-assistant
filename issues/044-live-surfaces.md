@@ -135,3 +135,11 @@ Verification at the merged source on macOS:
 The first focused core run passed 35 tests and failed 22 solely because the filesystem sandbox denied binding localhost sockets. With authorized local-socket access, all 57 passed before integration and again at the merged source. An initial uv invocation could not write its default external cache; the lock check subsequently passed using a temporary cache. Neither restriction required a source change.
 
 This accepts the bounded software UI slice only. Ticket 44 stays open. Actual Electron main-process and IPC execution, Windows geometry and overlay exclusion/input, OneCore voice, measured latency/message/resource budgets, current production data and live-game behavior remain unqualified. The producer omissions and core observations recorded above remain open, as do full ticket 55 and native teardown causality. All existing issue history, `.DS_Store`, author drafts and stashes were preserved. No owner assets, client, credentials, matches, Vault access or push were used for this review.
+
+
+### 2026-10-15 — Full-root UI checkpoint verification
+
+- Independently accepted source `5128b7616e33ca4078099201965099f5ee321016` was merged as `e1d91614df1c2698ef9e26a5321b9f125e5b3614`, with different-reviewer evidence `44020ef105f73f78cdf730d978037e4ffaca2649`. The integrated UI includes the original readable review/Live surfaces and all reviewed renderer/native-input corrections.
+- At evidence source `44020ef`, root Python verification passed 648 tests without skips in 88.42 seconds, process exit 0, using the existing training environment, cached pinned reader assets and portable PowerShell. Two existing Torch export warnings remain.
+- Root clean npm installation, all 93 UI tests, typecheck, generated types and Electron build passed. npm reported zero vulnerabilities and three existing uncovered dependency install-script warnings. Import contracts kept both boundaries; schemas, frozen lock and whitespace passed. Independent public/default build and positive/negative interaction checks remain recorded above.
+- This verifies the explicitly partial integration checkpoint, not actual Electron main/IPC execution, Windows input/display/exclusion/voice, current production data, useful live advice or full44/55/resource qualification. Held runtime and sighting/harness corrections are not included.
