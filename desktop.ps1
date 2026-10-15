@@ -49,7 +49,7 @@ if (-not (Test-Path $launcher)) { throw "Repository launcher not found: $launche
 New-Item -ItemType Directory -Path $PreferencesRoot -Force | Out-Null
 function Quote-PowerShell([string]$value) { return "'" + $value.Replace("'", "''") + "'" }
 function Quote-Vbs([string]$value) { return '"' + $value.Replace('"', '""') + '"' }
-$command = '& ' + (Quote-PowerShell $launcher) + ' *> ' + (Quote-PowerShell $logFile)
+$command = '& ' + (Quote-PowerShell $launcher) + ' *> ' + (Quote-PowerShell $logFile) + '; exit $LASTEXITCODE'
 $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
 $hiddenCommand = '"' + $powerShell + '" -NoProfile -EncodedCommand ' + $encoded
 # WScript has no console. Run waits for the repository launcher and preserves its
