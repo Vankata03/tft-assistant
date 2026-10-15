@@ -23,6 +23,14 @@ Implement all referenced requirements. Verify through the approved public seams 
 
 ## Comments
 
+### 2026-10-15 — Native macOS clean-settings shell smoke
+
+The built shell at integration `3aef544` ran with the pinned Electron 44.5.1 runtime and isolated temporary configuration, data, user-data and log directories. No owner assets, credentials or matches were used. The initial binary download failed under restricted networking; the authorized retry succeeded. The first direct launch inherited the host's `ELECTRON_RUN_AS_NODE` flag and failed before application startup; the corrected launch removed that host flag.
+
+The actual Electron process then started its real Python core, authenticated its WebSocket connection, reported no League client and defaulted to Silent. The supported second-instance path opened the native status window. Native accessibility and visual inspection verified the rendered window, review open/close navigation and empty logged-game view. Selecting Live through the native selector traversed the actual IPC/core path and rendered `Live advisor waiting for fresh capture` with the missing-settings error. No recommendation was fabricated. Quit completed with core exit 0 and `alive_workers: 0`. A macOS `sandbox_extension_issue_file` warning for Electron Helper was emitted; this smoke does not establish its cause or absence on other setups.
+
+The smoke reproduced a product-state defect: with `client_running=False`, no game phase and missing capture settings, Silent mode still renders `Silent game · logging`. The review-attribution implementer owns a narrow regression and truthful idle/unavailable status correction; it is not included in this checkpoint. Native logs remain under `/private/tmp/tft-native-smoke-20261015/`. These are macOS startup, navigation, mode and idle-shutdown observations, not Windows/game capture, overlay interaction, useful Live advice or full ticket-44 acceptance.
+
 ### 2026-10-11 — Replay attribution prerequisite
 
 Ticket 42 preflight found that current `SurfaceShown`/`ui_show` events contain only surface, content ID and mode. A Baseline content ID is a render revision; it does not identify an advice decision or its options. Persist a versioned delivered-advice record and map each actual surface acknowledgement to its stable decision/option IDs. Followed/ignored status and follow rate must use confirmed display events, never Engine generation alone. Record delivery and display times separately for latency and stale/too-late analysis; keep Silent and mode-boundary enforcement intact.
