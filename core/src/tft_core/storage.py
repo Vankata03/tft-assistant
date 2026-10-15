@@ -266,6 +266,13 @@ class SessionStore:
                     output.truncate(committed_size)
                     output.flush()
                     os.fsync(output.fileno())
+            if not events:
+                # Another process may have started the run or changed the idle
+                # selection. Reattach still restores the original game modes.
+                settings = self.config_root / "session.json"
+                self._mode = SessionMode(json.loads(settings.read_text())["mode"]) if settings.exists() else self.default_mode
+                if not self.live_installed and self._mode is SessionMode.LIVE:
+                    self._mode = SessionMode.BASELINE
             self.active_game_id = game_id
             if events:
                 self._mode = SessionMode(events[0]["payload"]["mode"])
@@ -383,8 +390,13 @@ class SessionStore:
         with self._lock:
             if self.run:
                 raise ValueError("Live-mode run already started")
-            if self.active_game_id:
-                raise ValueError("cannot start a run during a game")
+            # A CLI/worker has its own in-memory active_game_id. Inspect the
+            # authoritative logs while holding the shared lifecycle lock.
+            if self.active_game_id or any(
+                not any(event["kind"] == "game_end" for event in self.read_events(path.parent.name))
+                for path in self.logs.glob("*/events.jsonl")
+            ):
+                raise ValueError("cannot start a run during a game; reconcile unfinished capture first")
             if not self.live_installed:
                 raise ValueError("Live advisor is not installed")
             from tft_harness.baseline import validate_baseline
