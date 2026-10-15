@@ -235,3 +235,34 @@ def test_harness_advice_diff_detects_builtin_game_plan_target_with_unchanged_hol
     assert change['accepted_choice'] == change['candidate_choice'] == 'hold'
     assert '"target": "guide"' in change['accepted_recommendation']
     assert '"target": "guide2"' in change['candidate_recommendation']
+
+
+def pinned_warning_choices(context):
+    changed = context.data.tunables['unit_weight'].value > 1
+    return (Advice('econ', 'Hold econ', 'information', .9, 'synthetic', option_id='hold',
+        payload={'line_id': 'hold', 'gold_floor': None, 'pinned': True,
+            'pin_alternative': 'fast8' if changed else None, 'pin_gap': .4}),)
+
+
+def test_harness_advice_diff_detects_builtin_pinned_line_alternative_warning(tmp_path):
+    sessions, store, _, _ = logged_game(tmp_path, mode='baseline')
+    report = EvaluationHarness(sessions, store, repository=ROOT,
+        hooks=(DomainHook('econ', (), advice=pinned_warning_choices),)).advice_diff({'unit_weight': 2})
+    assert report['changed_decisions'] == 1
+    assert 'fast8' in report['largest_changes'][0]['candidate_recommendation']
+
+
+def threat_adjustment_choices(context):
+    changed = context.data.tunables['unit_weight'].value > 1
+    return (Advice('positioning', 'Move to target layout', 'information', .9, 'synthetic',
+        option_id='positioning:layout', payload={'operation': 'layout',
+            'layout': [{'unit_id': 'unit', 'unit_index': 0, 'cell': 0}],
+            'adjustments': {'backline_access': False, 'aoe': changed}, 'threat_shares': {'aoe': .5}}),)
+
+
+def test_harness_advice_diff_detects_builtin_threat_adjustment_with_unchanged_layout(tmp_path):
+    sessions, store, _, _ = logged_game(tmp_path, mode='baseline')
+    report = EvaluationHarness(sessions, store, repository=ROOT,
+        hooks=(DomainHook('positioning', (), advice=threat_adjustment_choices),)).advice_diff({'unit_weight': 2})
+    assert report['changed_decisions'] == 1
+    assert '"aoe": true' in report['largest_changes'][0]['candidate_recommendation']

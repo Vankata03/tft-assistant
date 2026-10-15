@@ -26,7 +26,10 @@ _OPERATION_FIELDS = frozenset(('operation', 'unit_id', 'unit_index', 'item_id', 
     'steps', 'layout', 'ranking', 'line_id', 'comp_id', 'levels', 'rolls', 'gold_floor',
     'target_level', 'target_round', 'bench', 'units', 'stars', 'items', 'position', 'cell',
     'from', 'to', 'overflow_sells', 'equip', 'recipient', 'line', 'transfers',
-    'holder', 'holder_index', 'from_index', 'item_ids', 'consume_tool'))
+    'holder', 'holder_index', 'from_index', 'item_ids', 'consume_tool', 'pin_alternative',
+    'adjustments'))
+# Values of these fields are kept whole: round-keyed schedules and threat-adjustment flags.
+_WHOLE_FIELDS = frozenset(('levels', 'rolls', 'adjustments'))
 # The selected plan is operational; candidate rankings, similarity and historical
 # player/divergence metadata describe evidence rather than the recommendation.
 _GAME_PLAN_FIELDS = frozenset(('status', 'target', 'backup', 'pivot_from', 'pivot_to', 'line'))
@@ -34,7 +37,7 @@ _GAME_PLAN_FIELDS = frozenset(('status', 'target', 'backup', 'pivot_from', 'pivo
 
 def _targets(value):
     if isinstance(value, Mapping):
-        result = {key: json_value(item) if key in ('levels', 'rolls') else _targets(item)
+        result = {key: json_value(item) if key in _WHOLE_FIELDS else _targets(item)
             for key, item in value.items() if key in _OPERATION_FIELDS}
         plan = value.get('game_plan')
         if isinstance(plan, Mapping):
