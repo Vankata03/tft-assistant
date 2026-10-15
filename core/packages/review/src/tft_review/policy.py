@@ -4,6 +4,7 @@ from dataclasses import replace
 from math import isfinite, sqrt
 from statistics import stdev
 
+from .attribution import DisplayLog, follow_rate, shown_status
 from .identity import digest
 from .report import ReviewReport
 from .sections import sections, surface_sections
@@ -40,6 +41,19 @@ def observed_option(record, batch):
     option, event = candidates[0]
     return dict(option) | {'observed_log_seq': event['seq'],
         'observed_at': event['timestamp'], 'evidence': event['payload']['evidence']}, None
+
+
+def decision_segment(batch, record):
+    """Snapshots and time interval until the next replayed point of the same decision."""
+    later = [other.log_seq for other in batch.records
+        if other.decision == record.decision and other.log_seq > record.log_seq]
+    stop = min(later, default=None)
+    contexts = [context for context in batch.contexts if context.log_seq >= record.log_seq
+        and (stop is None or context.log_seq < stop)]
+    start = datetime.fromisoformat(contexts[0].timestamp)
+    end = next((datetime.fromisoformat(context.timestamp) for context in batch.contexts
+        if context.log_seq == stop), None)
+    return {context.snapshot['snapshot_id'] for context in contexts}, (start, end)
 
 
 def mode_at(batch, seq):
@@ -105,8 +119,10 @@ class ReviewPolicy:
 
     def build(self, batch, *, data=None):
         timeline, moments, category_costs, attributed, policies = [], [], {}, [], {}
+        display = DisplayLog(batch.observations)
         for record in batch.records:
             context = next(context for context in batch.contexts if context.log_seq == record.log_seq)
+            segment, window = decision_segment(batch, record)
             selected = next((option for option in record.options
                 if option['option_id'] == record.advice['option_id']), None)
             player, reason = observed_option(record, batch)
@@ -124,8 +140,9 @@ class ReviewPolicy:
                 if expected is not None and actual is not None:
                     cost = expected-actual
             uncertainty = paired_uncertainty(selected, player, context)
-            shown = {'status': 'no_advice_in_baseline_mode'} if mode_at(batch, record.log_seq) == 'baseline' else {
-                'status': 'unavailable', 'reason': 'display_attribution_unavailable'}
+            close_call = cost is not None and max(0, -cost) < max(self.min_cost, uncertainty or 0)
+            shown = shown_status(display, record, mode=mode_at(batch, record.log_seq), window=window,
+                segment_snapshots=segment, player=player, cost=cost, close_call=close_call)
             unavailable = {} if uncertainty is not None else {'paired_uncertainty': 'paired_rollouts_unavailable'}
             if reason:
                 unavailable['player_choice'] = reason
@@ -135,7 +152,7 @@ class ReviewPolicy:
                 'engine_decision_id': record.decision_id, 'log_seq': record.log_seq,
                 'round_id': context.snapshot['round_id'], 'category': record.decision,
                 'player_choice': player, 'engine_choice': selected, 'cost': cost,
-                'paired_uncertainty': uncertainty, 'close_call': cost is not None and max(0, -cost) < max(self.min_cost, uncertainty or 0),
+                'paired_uncertainty': uncertainty, 'close_call': close_call,
                 'differed': player is not None and selected is not None and player['option_id'] != selected['option_id'],
                 'shown': shown, 'reason': record.advice['reason'], 'unavailable': unavailable,
                 'evidence_path': ['evidence', 'replay', 'records', batch.records.index(record)]}
@@ -158,7 +175,7 @@ class ReviewPolicy:
         summary = {'placement': {'value': placement, 'reason': None if placement is not None else 'final_placement_unavailable'},
             'category_costs': {kind: {'value': value, 'reason': None, 'label': 'estimated_signed_cost'}
                 for kind, value in category_costs.items()},
-            'follow_rate': {'value': None, 'reason': 'no_acknowledged_eligible_advice', 'eligible': 0},
+            'follow_rate': follow_rate([row['shown'] for row in timeline]),
             'top5': (harmful+differed)[:5]}
         detail = sections(batch, data, policies=policies)
         return ReviewReport(batch.game_id, summary, tuple(timeline), tuple(moments),
