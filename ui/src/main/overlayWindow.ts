@@ -18,9 +18,17 @@ export class CoachOverlay {
     const projection=projectOverlayGeometry(state.surfaceGeometry,screen,Date.now(),process.platform)
     const content=state.mode==='live'?state.live?.content:state.mode==='baseline'?state.baseline?.content:null
     const inGame=['InProgress','Reconnect','PreEndOfGame'].includes(state.gameflow?.phase??'')
-    const hasReview=Boolean(!inGame&&state.reviewReady&&projection.anchors.some(row=>row.kind==='review'))
+    const hasReview=Boolean(!inGame&&state.reviewReady&&['baseline','live'].includes(state.reviewReady.mode)&&projection.anchors.some(row=>row.kind==='review'))
     if(state.core!=='running'||(!inGame&&!hasReview)||!this.enabled||(!content&&!hasReview)||!projection.bounds){this.interactiveAllowed=false;this.window?.setIgnoreMouseEvents(true,{forward:true});this.window?.hide();return}
-    this.interactiveAllowed=hasReview||(state.mode==='live'&&projection.anchors.some(row=>row.kind==='line'||row.kind==='level'))
+    const live=state.mode==='live'&&state.live?.mode==='live'?state.live:null
+    const phase=live?.observed_phase??live?.content?.phase
+    const lineWidget=Boolean(live?.content&&['planning','roll_down'].includes(phase??'')&&
+      projection.anchors.some(row=>(row.kind==='line'||row.kind==='level')&&row.index===0)&&
+      live.content.advice.some(row=>{
+        const invalid=live.invalidated?.[row.decision_id]
+        return row.domain==='econ'&&(!invalid||invalid.includes('unread')||invalid.includes('stale'))
+      }))
+    this.interactiveAllowed=hasReview||lineWidget
     if(!this.interactiveAllowed)this.window?.setIgnoreMouseEvents(true,{forward:true})
     if (!this.window) {
       this.window = new BrowserWindow({

@@ -30,7 +30,7 @@ import {CoachOverlay} from '../src/main/overlayWindow'
 const originalPlatform=Object.getOwnPropertyDescriptor(process,'platform')!
 afterEach(()=>{Object.defineProperty(process,'platform',originalPlatform);vi.useRealTimers();native.windows.length=0})
 
-it.each(['silent','geometry','disconnect','toggle'])('restores click-through after hiding an interactive overlay: %s',(cause)=>{
+it.each(['silent','geometry','disconnect','toggle','combat','invalidated','missing_econ'])('restores click-through after hiding an interactive overlay: %s',(cause)=>{
  vi.useFakeTimers();vi.setSystemTime(new Date('2026-10-15T08:00:00Z'))
  Object.defineProperty(process,'platform',{value:'win32',configurable:true})
  const at=new Date().toISOString()
@@ -49,8 +49,13 @@ it.each(['silent','geometry','disconnect','toggle'])('restores click-through aft
   if(cause==='silent')overlay.update({...state,mode:'silent',surfaceGeometry:{...geometry,mode:'silent'}})
   else if(cause==='geometry')overlay.update({...state,surfaceGeometry:{...geometry,geometry:null}})
   else if(cause==='disconnect')overlay.update({...state,core:'restarting'})
+  else if(cause==='combat')overlay.update({...state,live:{...fixture,observed_phase:'combat',content:{...fixture.content,phase:'combat'}} as unknown as ShellState['live']})
+  else if(cause==='invalidated')overlay.update({...state,live:{...fixture,invalidated:{[fixture.content.advice.find(row=>row.domain==='econ')!.decision_id]:'ownership_changed'}} as unknown as ShellState['live']})
+  else if(cause==='missing_econ')overlay.update({...state,live:{...fixture,content:{...fixture.content,advice:fixture.content.advice.filter(row=>row.domain!=='econ')}} as unknown as ShellState['live']})
   else overlay.toggle()
-  expect(window.visible).toBe(false)
+  expect(window.visible).toBe(['combat','invalidated','missing_econ'].includes(cause))
+  expect(window.ignoreMouseEvents).toBe(true)
+  overlay.setInteractive(window.webContents as never,true)
   expect(window.ignoreMouseEvents).toBe(true)
   if(cause==='toggle')overlay.toggle()
   else overlay.update(state)
