@@ -192,7 +192,9 @@ class SessionStore:
 
     @property
     def mode(self) -> SessionMode:
-        return self._mode
+        # Idle selection is durable and may be changed by another process
+        # (for example `tft-harness start-run`); a game's mode is in memory.
+        return self._idle_selection() if self.active_game_id is None else self._mode
 
     def log_path(self, game_id: str | int) -> Path:
         return self.logs / _game_id(game_id) / "events.jsonl"

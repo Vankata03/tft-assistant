@@ -136,3 +136,33 @@ def test_idle_core_silent_selection_after_cli_started_run_is_honoured(tmp_path):
     core.start_game('901', set_id='18')
     assert core.read_events('901')[0]['payload']['mode'] == 'silent'
     assert SessionStore(tmp_path/'logs', tmp_path/'config', live_installed=True).mode.value == 'silent'
+
+
+def test_idle_running_core_shows_live_after_cli_started_run(tmp_path):
+    import asyncio
+    import json
+    from websockets.asyncio.client import connect
+    from tft_capture.lcu import GameflowUpdate
+    from tft_core.messages import Hello, dump
+    from tft_core.server import CoreServer
+
+    async def receive(ws):
+        return json.loads(await asyncio.wait_for(ws.recv(), 2))
+
+    async def scenario():
+        core = SessionStore(tmp_path/'logs', tmp_path/'config', live_installed=True)
+        server = CoreServer('launch-token', sessions=core)
+        async with server.listen() as listening:
+            async with connect(f"ws://127.0.0.1:{listening.sockets[0].getsockname()[1]}") as ws:
+                await ws.send(dump(Hello(token='launch-token')))
+                await receive(ws)
+                assert (await receive(ws))['mode'] == 'silent'
+                launcher = SessionStore(tmp_path/'logs', tmp_path/'config', live_installed=True)
+                launcher.start_run(baseline_fixture(sessions=launcher), set_id='18', timestamp=NOW.isoformat())
+                # The idle tray must not keep advertising Silent for the next game.
+                assert core.mode.value == 'live'
+                server.publish_gameflow(GameflowUpdate(True, 'Lobby'))
+                assert (await receive(ws))['mode'] == 'live'
+                assert (await receive(ws))['type'] == 'gameflow'
+
+    asyncio.run(scenario())
