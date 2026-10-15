@@ -7,17 +7,21 @@ import type { ShellState } from '../shared/state'
 export class CoachOverlay {
   private window: BrowserWindow | null = null
   private enabled = true
+  private interactiveAllowed = false
   private state: ShellState | null = null
   private timer:ReturnType<typeof setInterval>|null=null
 
   update(state: ShellState): void {
+    if(this.state?.mode!==state.mode)this.window?.setIgnoreMouseEvents(true,{forward:true})
     this.state = state
     if(!this.timer)this.timer=setInterval(()=>{if(this.state)this.update(this.state)},250)
     const projection=projectOverlayGeometry(state.surfaceGeometry,screen,Date.now(),process.platform)
     const content=state.mode==='live'?state.live?.content:state.mode==='baseline'?state.baseline?.content:null
     const inGame=['InProgress','Reconnect','PreEndOfGame'].includes(state.gameflow?.phase??'')
     const hasReview=Boolean(!inGame&&state.reviewReady&&projection.anchors.some(row=>row.kind==='review'))
-    if(state.core!=='running'||(!inGame&&!hasReview)||!this.enabled||(!content&&!hasReview)||!projection.bounds){this.window?.hide();return}
+    if(state.core!=='running'||(!inGame&&!hasReview)||!this.enabled||(!content&&!hasReview)||!projection.bounds){this.interactiveAllowed=false;this.window?.setIgnoreMouseEvents(true,{forward:true});this.window?.hide();return}
+    this.interactiveAllowed=hasReview||(state.mode==='live'&&projection.anchors.some(row=>row.kind==='line'||row.kind==='level'))
+    if(!this.interactiveAllowed)this.window?.setIgnoreMouseEvents(true,{forward:true})
     if (!this.window) {
       this.window = new BrowserWindow({
         show: false,
@@ -57,7 +61,7 @@ export class CoachOverlay {
   owns(sender:WebContents):boolean{return sender===this.window?.webContents}
 
   setInteractive(sender:WebContents,interactive:boolean):void {
-    if(sender!==this.window?.webContents||!this.window?.isVisible())return
+    if(sender!==this.window?.webContents||!this.window?.isVisible()||(interactive&&!this.interactiveAllowed))return
     this.window.setIgnoreMouseEvents(!interactive,{forward:true})
   }
 
@@ -69,6 +73,7 @@ export class CoachOverlay {
     if(this.timer)clearInterval(this.timer)
     this.timer=null
     this.state=null
+    this.interactiveAllowed=false
     this.window?.close()
     this.window = null
   }

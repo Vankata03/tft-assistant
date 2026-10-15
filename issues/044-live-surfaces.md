@@ -103,3 +103,12 @@ T3 browser QA on the actual mounted App at synthetic Live EndOfGame confirmed th
 - At source `251502a152cca2900abc7a9002e1d2e1564aa086`, the frozen training-group root suite passed 648 tests without skips in 90.03 seconds, process exit 0. Cached pinned reader assets and portable PowerShell supplied the existing external test prerequisites. Two existing Torch ONNX-export deprecation warnings remain.
 - Root `npm ci`, all 37 UI tests, generated-type check, typecheck and Electron build passed. npm reported zero vulnerabilities and three uncovered dependency install-script warnings; build execution succeeded. Imports kept both contracts, and schemas, frozen lock and whitespace checks passed.
 - This verifies the independently integrated recovered core and interface baseline. The separate full UI draft and ticket-55 Engine/job/desktop recovery are not included. Full ticket 44/55, complete runtime and resource acceptance, qualified production inputs, Windows/live-game behavior and historical native causality remain open.
+
+
+### 2026-10-15 — Native overlay click-through correction
+
+Different round-two review held reconciled UI `d371749` because an interactive Line widget could leave the native transparent window accepting mouse input after hide/show. The external BrowserWindow reproduction showed input enabled after Silent and on the following Baseline surface; no source was merged.
+
+The isolated `implement/live-ui-native-input` continuation resets native mouse ignoring before every hide and mode change. Current widget eligibility controls whether interactive IPC requests can enable input; ordinary in-game Baseline surfaces reject them. Four public CoachOverlay-to-external-BrowserWindow cases exercise Silent downgrade, missing geometry, disconnect and toggle, then show the overlay again and downgrade directly to Baseline. The first case failed before the correction and all four pass afterward. These fixtures replace only the external Electron/screen/OS boundary.
+
+Full UI verification passed 90 tests across 22 files, plus typecheck, generated-type check, Electron build and whitespace. This source includes the five earlier UI corrections and remains held for different review/integration. Actual Windows overlay input, display exclusion and Electron execution remain separately unqualified; full44/55 stays open.
