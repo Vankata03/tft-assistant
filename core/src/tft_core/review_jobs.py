@@ -12,9 +12,11 @@ from pathlib import Path
 import subprocess
 import sys
 from datetime import UTC, datetime
+from time import time
 
 from tft_core.engine_runtime import LatestEngineWorker
 from tft_core.review_lease import OwnedReviewChildren, JobMutex, atomic_record
+from tft_core.outcomes import OutcomeCollector
 
 
 def _write(path, value):
@@ -22,7 +24,8 @@ def _write(path, value):
 
 class ReviewJobs:
     def __init__(self, sessions, data_store, service, repository, *, ready=None,
-                 hard_timeout=600, latency_budget=30, error=None):
+                 hard_timeout=600, latency_budget=30, error=None, outcome_collector=None,
+                 outcome_retry_seconds=30):
         self.sessions, self.data_store, self.service = sessions, data_store, service
         self.repository = Path(repository)
         self.root = sessions.root / 'review-jobs'
@@ -33,6 +36,8 @@ class ReviewJobs:
         self.ready, self.hard_timeout = ready, hard_timeout
         self.latency_budget = latency_budget
         self.error = error
+        self.outcomes = outcome_collector or OutcomeCollector(sessions)
+        self.outcome_retry_seconds = outcome_retry_seconds
         self.status = 'Review worker waiting for a finalized game'
         self._wake = asyncio.Event()
         self._closed = False
@@ -91,6 +96,7 @@ class ReviewJobs:
                 self._future.set_result(identity)
 
     def _identify(self, game_id):
+        self.outcomes.collect(game_id)
         identity = self.service.job_identity(game_id)
         end = next(event for event in reversed(self.sessions.read_events(game_id))
                    if event['kind'] == 'game_end')
@@ -104,7 +110,10 @@ class ReviewJobs:
     async def _run(self):
         await self._recover()
         while not self._closed:
-            await self._wake.wait()
+            try:
+                await asyncio.wait_for(self._wake.wait(), self.outcome_retry_seconds)
+            except TimeoutError:
+                pass
             self._wake.clear()
             # Persisted requests form the durable backlog. No list/task/callback
             # is allocated for every completed game; only one request is selected.
@@ -112,7 +121,7 @@ class ReviewJobs:
                 selected = None
                 for path in self.requests.glob('*.json'):
                     request = json.loads(path.read_text())
-                    if request['state'] == 'queued':
+                    if request['state'] == 'queued' and request.get('outcome_retry_at', 0) <= time():
                         selected = (path, request)
                         break
                 if selected is None:
@@ -127,7 +136,26 @@ class ReviewJobs:
                     request['reason'] = self.status
                     if self.error:
                         self.error('review_unavailable', self.status)
+                # Preserve an on-demand request accepted while this job ran.
+                latest = json.loads(path.read_text())
+                if latest.get('request_nonce') != request.get('request_nonce'):
+                    continue
                 request['state'] = 'handled'
+                outcome = self.outcomes.status(request['game_id'])
+                if outcome is not None:
+                    request['outcome_state'] = outcome['state']
+                    request.pop('outcome_reason', None)
+                    request['outcome_attempts'] = request.get('outcome_attempts', 0) + 1
+                    if outcome['state'] == 'pending' and request['outcome_attempts'] < 10:
+                        request.update(state='queued', regenerate=False,
+                            outcome_retry_at=time() + self.outcome_retry_seconds)
+                    if outcome['state'] != 'confirmed':
+                        reason = outcome['reason']
+                        if outcome['state'] == 'pending' and request['state'] == 'handled':
+                            reason = 'Outcome retry limit reached; check owner match API and regenerate review to retry'
+                        request['outcome_reason'] = reason
+                        if self.error and outcome.get('configured'):
+                            self.error('outcome_unavailable', reason)
                 _write(path, request)
 
     async def _recover(self):

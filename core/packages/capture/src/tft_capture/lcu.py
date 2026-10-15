@@ -49,6 +49,7 @@ class GameflowUpdate:
     game_id: str | None = None
     game_mode: str | None = None
     error: str | None = None
+    queue_id: int | None = None
 
 
 NOT_RUNNING = GameflowUpdate(client_running=False, phase=None)
@@ -189,13 +190,16 @@ class LcuConnection:
         return (await self.get_game_identity())[0]
 
     async def get_game_identity(self) -> tuple[str | None, str | None]:
+        return (await self.get_game_metadata())[:2]
+
+    async def get_game_metadata(self) -> tuple[str | None, str | None, int | None]:
         """Read explicit session identity; queue numbers never establish a mode."""
         try:
             response = await self._http.get("/lol-gameflow/v1/session")
         except httpx.HTTPError as error:
             raise LcuUnavailable(type(error).__name__) from error
         if response.status_code in (404, 204):
-            return None, None
+            return None, None, None
         if response.status_code != 200:
             raise LcuUnavailable(f"HTTP {response.status_code}")
         try:
@@ -209,8 +213,9 @@ class LcuConnection:
                 )
                 if mode is not None
             ]
+            queues = [queue for queue in (data.get('queue', {}).get('id'), data.get('queueId')) if queue is not None]
         except (ValueError, AttributeError):
-            return None, None
+            return None, None, None
         value = str(value)
         game_id = value if value.isdigit() and int(value) > 0 else None
         mode = (
@@ -219,7 +224,8 @@ class LcuConnection:
             and all(isinstance(mode, str) and mode == modes[0] for mode in modes)
             else None
         )
-        return game_id, mode
+        queue = queues[0] if queues and all(type(queue) is int and queue > 0 and queue == queues[0] for queue in queues) else None
+        return game_id, mode, queue
 
     async def subscribe_phase(self) -> AsyncIterator[str | None]:
         basic = base64.b64encode(f"riot:{self._credentials.token}".encode()).decode()
@@ -335,7 +341,7 @@ class GameflowWatcher:
     async def _publish_phase(self, lcu: Lcu, phase: str | None) -> None:
         # Older phase-only adapters remain usable; production resolves the LCU id.
         get_game_id = getattr(lcu, "get_game_id", None)
-        game_id, game_mode = None, None
+        game_id, game_mode, queue_id = None, None, None
         if phase in {
             "InProgress",
             "Reconnect",
@@ -344,11 +350,14 @@ class GameflowWatcher:
             "WaitingForStats",
         }:
             get_identity = getattr(lcu, "get_game_identity", None)
-            if get_identity:
+            get_metadata = getattr(lcu, 'get_game_metadata', None)
+            if get_metadata:
+                game_id, game_mode, queue_id = await get_metadata()
+            elif get_identity:
                 game_id, game_mode = await get_identity()
             elif get_game_id:
                 game_id = await get_game_id()
-        await self._publish(GameflowUpdate(True, phase, game_id, game_mode))
+        await self._publish(GameflowUpdate(True, phase, game_id, game_mode, queue_id=queue_id))
 
     async def _follow(self, lcu: Lcu) -> None:
         """Follow one client until it stops answering (raises LcuUnavailable)."""

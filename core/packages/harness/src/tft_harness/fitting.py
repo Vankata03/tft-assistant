@@ -41,7 +41,7 @@ def fit(harness, parameter_grid, *, metric, bootstrap_seed, bootstrap_draws, max
         raise ValueError('A refit cannot run during an active game')
     games = harness.sessions.list_games()
     if harness.sessions.run:
-        run_games = [game for game in games if game['run_number'] is not None]
+        run_games = [game for game in games if game['pinned']]
         if any(not game['finished'] or game['placement'] is None for game in run_games) or len(run_games)%10:
             raise ValueError('During the run family 1 refits require a completed ten-game block boundary')
     training, holdout = chronological_split([game for game in games if game['finished']])

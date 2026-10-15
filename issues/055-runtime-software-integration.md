@@ -89,3 +89,10 @@ This corrected exact source still needs different review and serialized integrat
 ### 2026-10-15 — Start-run command integrated
 
 The one-shot `tft-harness start-run` workflow from ticket 42 was merged into `implement/mvp` as `39da8ac`, including correction `3ec5abc`, so an idle running core now reports the durable Live default to the tray after a CLI-started run. `SessionStore.start_run` rejects unfinished logs from any process. The full root suite passed 727 tests without skips, process exit 0. Ticket 42 records the evidence. The command was not run against the owner's account, and nothing schedules it. Ticket 55 remains open for Live numbering and block verification on real runs, Windows/Electron execution, current data and native-cause qualification.
+
+
+### 2026-10-15 — Queue and post-game outcome software (slice A)
+
+- Capture now carries explicit LCU queue identity into the original log and index; only validated queue `1100` games enter the current-set Live run. Reconnects preserve the original value. Confirmed late Riot match facts live in private outcome artifacts, update placement, preserve log bytes and silent-review locks, and reject identity or finalized-placement conflicts.
+- The review supervisor collects owner-scoped post-game truth on its existing identity worker and persists unavailable/pending status. Delayed matches and API failures receive ten bounded durable attempts; review evaluation remains usable when outcome truth is unavailable. Private source configuration, exact verification evidence and remaining integration boundaries are recorded in ticket 42's slice A comment.
+- Verification: 151 broad fixture-only software checks passed; the expanded outcome suite passed 18; a separate environment without the Live package passed 38 related checks. Import/schema/frozen-lock/scoped-lint/whitespace gates passed. No owner API, real EUNE join, optional EOG schema, Windows, Electron or live-game qualification is claimed. Full ticket 55 remains open.
