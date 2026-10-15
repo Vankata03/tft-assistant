@@ -265,6 +265,11 @@ const fixture = {
     liveRefresh=setInterval(()=>{if(state.mode==='live'&&state.core==='running'&&state.live?.content){const fresh=liveState();state={...state,live:{...fresh,pin:state.live.pin,content:{...fresh.content!,phase:state.live.content.phase,roll_tracker:state.live.content.roll_tracker},observed_phase:state.live.observed_phase}};publish()}},250)
     publish()
   },
+  liveReview(){
+    fixture.live();fixture.freeze()
+    state={...state,gameflow:{clientRunning:true,phase:'EndOfGame'}}
+    publish()
+  },
   freeze(){if(liveRefresh)clearInterval(liveRefresh);liveRefresh=null},
   roll(){
     if(state.live?.content){state={...state,live:{...state.live,observed_phase:'roll_down',content:{...state.live.content,phase:'roll_down',roll_tracker:{available:false,reason:'No confirmed purchase ledger in this recorded renderer fixture'}}}};publish()}

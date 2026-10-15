@@ -2,7 +2,7 @@ import {useEffect,useState} from 'react'
 import type {EvidencePage,LiveState} from '../shared/messages'
 
 type Path=readonly(string|number)[]
-export function EvidenceDrawer({view,path,onClose}:{view:LiveState;path:Path;onClose:()=>void}):React.JSX.Element{
+function DrawerContents({view,path,onClose}:{view:LiveState;path:Path;onClose:()=>void}):React.JSX.Element{
  const [location,setLocation]=useState<Path>(path)
  const [cursor,setCursor]=useState(0)
  const [response,setResponse]=useState<EvidencePage|null>(null)
@@ -25,4 +25,8 @@ export function EvidenceDrawer({view,path,onClose}:{view:LiveState;path:Path;onC
    <div className="page-controls"><button disabled={cursor===0} onClick={()=>setCursor(Math.max(0,cursor-32))}>Previous page</button><button disabled={page.next_cursor===null||page.next_cursor===undefined} onClick={()=>setCursor(page.next_cursor!)}>Next page</button></div>
   </>}
  </section>
+}
+
+export function EvidenceDrawer(props:{view:LiveState;path:Path;onClose:()=>void}):React.JSX.Element{
+ return <DrawerContents key={JSON.stringify([props.view.content?.game_id,props.view.revision,props.path])} {...props}/>
 }

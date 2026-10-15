@@ -72,22 +72,16 @@ export function App(): React.JSX.Element|null {
   }, [cue?.id])
 
   if(isOverlay)return <>{state.mode==='live'&&LiveShell?<Suspense fallback={null}><LiveShell state={state} surface="overlay"/></Suspense>:<BaselineOverlay state={state}/>}<ReviewReadyNotice state={state} overlay/></>
-  if(!isOverlay&&!isVoice&&reviewReplacesCockpit)return <><header className="app-header"><h1>TFT Assistant</h1><span className="connection">{describeCore(state.core)}</span><span>{state.baseline?.status??'Finished-game review'}</span></header><ReviewReadyNotice state={state}/><ReviewPanel state={state} onOpenChange={setReviewOpen}/></>
-  if(state.mode==='live'&&LiveShell)return <><Suspense fallback={isVoice||isOverlay?null:<p role="status">Loading Live surfaces…</p>}><LiveShell state={state} surface={isVoice?'voice':isOverlay?'overlay':'cockpit'}/></Suspense>{!isVoice&&!isOverlay?<><ReviewReadyNotice state={state}/><ReviewPanel state={state} onOpenChange={setReviewOpen}/></>:null}</>
-  if(isVoice)return null
-  return (
-    <>
-      <Cockpit
-        state={state}
-        onMode={(mode) => window.coach?.setMode(mode)}
-        onSelectGuide={(id) => window.coach?.selectGuide(id)}
-      />
-      <ReviewReadyNotice state={state}/><ReviewPanel state={state} onOpenChange={setReviewOpen}/>
-      {voiceUnavailable && state.mode === 'baseline' ? (
-        <p className="status-banner" role="status">
-          Stage voice unavailable · install a local English voice.
-        </p>
-      ) : null}
-    </>
-  )
+  if(isVoice)return state.mode==='live'&&LiveShell?<Suspense fallback={null}><LiveShell state={state} surface="voice"/></Suspense>:null
+  const cockpit=reviewReplacesCockpit
+    ? <header className="app-header"><h1>TFT Assistant</h1><span className="connection">{describeCore(state.core)}</span><span>{state.baseline?.status??'Finished-game review'}</span></header>
+    : state.mode==='live'&&LiveShell
+      ? <Suspense fallback={<p role="status">Loading Live surfaces…</p>}><LiveShell state={state} surface="cockpit"/></Suspense>
+      : <Cockpit state={state} onMode={(mode)=>window.coach?.setMode(mode)} onSelectGuide={(id)=>window.coach?.selectGuide(id)}/>
+  return <>
+    {cockpit}
+    <ReviewReadyNotice state={state}/>
+    <ReviewPanel state={state} onOpenChange={setReviewOpen}/>
+    {voiceUnavailable&&state.mode==='baseline'?<p className="status-banner" role="status">Stage voice unavailable · install a local English voice.</p>:null}
+  </>
 }
