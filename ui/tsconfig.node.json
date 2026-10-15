@@ -22,7 +22,8 @@
     "src/preload/**/*",
     "src/shared/**/*",
     "test/**/*",
-    "vite.fixture.config.ts"
+    "vite.fixture.config.ts",
+    "src/live/voiceRules.ts"
   ],
   "exclude": [
     "test/**/*.test.tsx",

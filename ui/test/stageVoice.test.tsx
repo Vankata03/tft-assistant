@@ -5,8 +5,9 @@ it('stage voice plays once, survives ordinary capture updates and cancels on sup
   const spoken: string[] = []
   let cancellations = 0
   const player = new StageVoicePlayer({
-    speak(text) {
+    speak(text, started) {
       spoken.push(text)
+      started()
       return true
     },
     cancel() {
@@ -21,5 +22,25 @@ it('stage voice plays once, survives ordinary capture updates and cancels on sup
   expect(cancellations).toBe(0)
   player.cancel()
   expect(cancellations).toBe(1)
+  expect(player.play(cue)).toBe(false)
+})
+
+it('voice acknowledgement waits for actual start and cancelled queues stay unshown', () => {
+  let start: (() => void) | undefined
+  const acknowledged: string[] = []
+  const player = new StageVoicePlayer({
+    speak(_text, started) { start = started; return true },
+    cancel() {},
+  })
+  const cue = {id:'fixture:augment:pick', text:'Take the fixture augment'}
+  expect(player.play(cue, () => acknowledged.push(cue.id))).toBe(true)
+  expect(acknowledged).toEqual([])
+  const oldStart = start
+  player.cancel()
+  oldStart?.()
+  expect(acknowledged).toEqual([])
+  expect(player.play(cue, () => acknowledged.push(cue.id))).toBe(true)
+  start?.()
+  expect(acknowledged).toEqual([cue.id])
   expect(player.play(cue)).toBe(false)
 })
