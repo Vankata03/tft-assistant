@@ -186,7 +186,10 @@ class RuntimeSettings:
                     raw[key] = (path.parent / raw[key]).resolve()
             return cls(**raw)
         except (OSError, ValueError, TypeError) as error:
-            raise ValueError(f"Capture settings unavailable: {path}: {error}") from None
+            raise ValueError(
+                f"Capture settings unavailable: {path}: {error}; "
+                "see docs/agents/runtime-boundary.md for local settings and reviewed capture inputs"
+            ) from None
 
 
 class NativeDevices:
@@ -594,6 +597,7 @@ class CaptureRuntime:
         settings_error=None,
         devices=None,
         shutdown_seconds=SHUTDOWN_SECONDS,
+        warnings=(),
     ):
         self.server, self.sessions, self.data_store = server, sessions, data_store
         self.settings, self.devices = settings, devices or NativeDevices()
@@ -601,6 +605,7 @@ class CaptureRuntime:
             settings_error or "Capture waiting for a positively identified TFT game"
         )
         self.shutdown_seconds = shutdown_seconds
+        self.warnings = tuple(warnings)
         self.latest_snapshot = None
         self.completed_game = None
         self.worker = None
@@ -613,6 +618,7 @@ class CaptureRuntime:
         self._incoming = None
         self._incoming_scheduled = False
         self._worker_generation = 0
+        self._publication_generation = 0
         self._resume_task = None
         self._last_update = None
         self._last_positive_at = None
@@ -677,6 +683,11 @@ class CaptureRuntime:
             ):
                 self._resume_task = asyncio.create_task(self.update(self._last_update))
 
+    @property
+    def publication_generation(self):
+        """Capture attachment identity used to reject delayed Engine results."""
+        return self._publication_generation
+
     def _publish(self):
         snapshot = self.latest_snapshot
         capturing = (
@@ -703,7 +714,7 @@ class CaptureRuntime:
             ):
                 faced.append({"name": row["opponent_id"], "result": row["result"]})
         status = self.status
-        for warning in (*self._refresh_warnings, self._client_error):
+        for warning in (*self.warnings, *self._refresh_warnings, self._client_error):
             if warning and warning not in status:
                 status += "; " + warning
         self.server.observe_live_capture(
@@ -722,6 +733,7 @@ class CaptureRuntime:
     def _failure(self, message, *, generation):
         if generation != self._worker_generation:
             return
+        self._publication_generation += 1
         self.status = message
         self.latest_snapshot = None
         self._clear_handoff()
@@ -968,6 +980,7 @@ class CaptureRuntime:
         self.pinned_data = data
         self._worker_generation += 1
         generation = self._worker_generation
+        self._publication_generation += 1
         self.worker = _CaptureWorker(
             self.settings,
             data,
@@ -994,7 +1007,11 @@ class CaptureRuntime:
             return True
         # The event-loop signal is nonblocking. Native source close and pipeline
         # finalization happen exactly once on their owning capture thread.
+        self._publication_generation += 1
         worker.stop()
+        self.latest_snapshot = None
+        self._clear_handoff()
+        self._publish()
         deadline = asyncio.get_running_loop().time() + self.shutdown_seconds
         while worker.thread.is_alive() and asyncio.get_running_loop().time() < deadline:
             await asyncio.sleep(0.01)
