@@ -193,7 +193,7 @@ class PublicSupportFeed:
         return {'rows': []}
 
 
-def support_logs(tmp_path, *, intermediate=(), mode='silent'):
+def support_logs(tmp_path, *, intermediate=(), trailing=(), mode='silent'):
     import json
     import tomllib
     import tomli_w
@@ -242,6 +242,8 @@ def support_logs(tmp_path, *, intermediate=(), mode='silent'):
         sessions.append_event(kind, payload, timestamp=(NOW+timedelta(seconds=seconds)).isoformat())
     target = sessions.append_event('sighting', {'opponent_id':'rival','round_id':'3-2','level':1,
         'traits':{'fire':1},'hidden_traits':0},timestamp=(NOW+timedelta(seconds=2.3)).isoformat())
+    for kind, payload, seconds in trailing:
+        sessions.append_event(kind, payload, timestamp=(NOW+timedelta(seconds=seconds)).isoformat())
     sessions.end_game(placement=4,timestamp=(NOW+timedelta(seconds=3)).isoformat())
     return sessions,store,data,target
 
@@ -367,3 +369,25 @@ def test_harness_excludes_a_target_before_an_unknown_start_gap_ends(tmp_path):
     metric = report.metrics['next_sighting_log_loss']
     assert metric['eligible_rows'] == 0
     assert metric['excluded']['capture_gap'] == 1
+
+
+@pytest.mark.parametrize('commit_before_target', [True, False])
+def test_harness_excludes_delayed_targets_inside_retrospectively_recorded_gaps(tmp_path, commit_before_target):
+    from datetime import timedelta
+    from tests.test_replay_contracts import NOW, ROOT
+    from tft_harness import EvaluationHarness
+
+    gap = ('capture_gap', {'start': (NOW+timedelta(seconds=2.21)).isoformat(),
+        'end': (NOW+timedelta(seconds=2.35)).isoformat(), 'reason': 'core_restart'}, 2.4)
+    timing = {'intermediate': (gap,)} if commit_before_target else {'trailing': (gap,)}
+    sessions,store,data,target = support_logs(tmp_path, mode='live', **timing)
+    original = sessions.read_events('901')
+    recorded_gap = next(row for row in original if row['kind'] == 'capture_gap')
+    assert recorded_gap['timestamp'] > target['timestamp']
+    assert (recorded_gap['seq'] < target['seq']) is commit_before_target
+    report = EvaluationHarness(sessions,store,repository=ROOT).evaluate()
+    metric = report.metrics['next_sighting_log_loss']
+    assert metric['eligible_rows'] == 0
+    assert metric['excluded']['capture_gap'] == 1
+    assert sessions.read_events('901') == original
+    assert store.get(data.snapshot_id) == data

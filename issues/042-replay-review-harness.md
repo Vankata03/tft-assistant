@@ -161,3 +161,12 @@ The shared joint-law API accepted individually finite effective log masses `-1e3
 Six new public cases bring the consumer suite to 22 cases. Relevant joint-law/sighting/harness/fitting/replay checks passed 105 in 20.17 seconds, process 0. The corrected frozen training-group suite, with cached pinned reader models and portable PowerShell, passed 670 without skips in 95.65 seconds, process 0; two existing Torch export warnings remain. Actual Live-uninstalled and physically Live-absent related checks passed 145 in 28.97 seconds, process 0, with import absence asserted before execution. Live/train were restored. Source remained unchanged throughout these runs. Imports kept 2; schema, frozen lock, scoped Ruff F/E9 and whitespace checks passed.
 
 Current root integration `dea80857a4d4293dbcf5db5e61d7e2a71c7c4cfc` remains included. This exact correction still requires different review and integration. No root merge, push, Vault access or edits to other drafts were performed. Production support, Windows/live-game behavior, full-game resources and full ticket 42 remain unqualified.
+
+
+### 2026-10-15 — Retrospective sighting target validity
+
+Different round-three review held `f8341fd`: a delayed sighting inside a committed capture-gap interval was scored when the gap event timestamp followed the sighting timestamp. The corrected validity pass uses all recorded gap intervals, matching retrospective snapshot validity, while inference still reads only the target's earlier timestamp-qualified prefix. Gap metadata is not introduced as later causal information.
+
+Two public SessionStore/Harness regressions fail before the correction and pass afterward, covering a gap committed before or after its target while its recording timestamp follows the original read time. They assert that original logs and immutable data pins stay unchanged. All 24 consumer cases pass; the related joint-law, sighting, harness, fitting, margins, review-policy and replay suite passed 141 tests in 21.02 seconds, process exit 0. Replay's temporary Git-worktree fixtures required authorized sandbox escalation. The first test-write command used a redundant core path and ran no selected tests; corrected before the actual two-case red/green proof.
+
+The prior corrected full 670 and Live-absent 145 runs predate this narrow validity correction; they are not claimed as new full verification. This remains partial software awaiting exact different review/integration. Full42, qualified production inputs, resources and Windows/live qualification stay open.

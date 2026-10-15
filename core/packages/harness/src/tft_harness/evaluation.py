@@ -180,8 +180,9 @@ class EvaluationHarness:
                     raise DataError('no_causal_previous_sighting')
                 if 'capture_gap' in context.unavailable:
                     raise DataError('capture_gap')
-                if any(row['kind'] == 'capture_gap' and row['seq'] < event['seq']
-                    and datetime.fromisoformat(row['timestamp']) <= at
+                # Gap intervals qualify capture validity retrospectively; they
+                # never become extra information in the causal inference below.
+                if any(row['kind'] == 'capture_gap'
                     and at < datetime.fromisoformat(row['payload']['end'])
                     and (row['payload']['start'] is None
                         or datetime.fromisoformat(row['payload']['start']) <= at)
