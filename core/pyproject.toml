@@ -20,6 +20,7 @@ tft-core = "tft_core.app:main"
 tft-schemas = "tft_core.schemas:main"
 tft-capture = "tft_core.capture_cli:main"
 tft-review-worker = "tft_core.review_worker:main"
+tft-harness = "tft_core.harness_cli:main"
 
 [dependency-groups]
 dev = [

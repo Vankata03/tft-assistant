@@ -157,13 +157,14 @@ class SessionStore:
         self._next_seq: dict[str, int] = {}
         self._log_sizes: dict[str, int] = {}
         self.active_game_id: str | None = None
-        self._mode = self.default_mode
-        settings = self.config_root / "session.json"
-        if settings.exists():
-            self._mode = SessionMode(json.loads(settings.read_text())["mode"])
-        if not self.live_installed and self._mode is SessionMode.LIVE:
-            self._mode = SessionMode.BASELINE
+        self._mode = self._idle_selection()
         self.rebuild_index()
+
+    def _idle_selection(self) -> SessionMode:
+        """Read the durable idle selection; another process may start the run."""
+        settings = self.config_root / "session.json"
+        mode = SessionMode(json.loads(settings.read_text())["mode"]) if settings.exists() else self.default_mode
+        return SessionMode.BASELINE if not self.live_installed and mode is SessionMode.LIVE else mode
 
     @classmethod
     def default_locations(cls) -> tuple[Path, Path]:
@@ -191,7 +192,9 @@ class SessionStore:
 
     @property
     def mode(self) -> SessionMode:
-        return self._mode
+        # Idle selection is durable and may be changed by another process
+        # (for example `tft-harness start-run`); a game's mode is in memory.
+        return self._idle_selection() if self.active_game_id is None else self._mode
 
     def log_path(self, game_id: str | int) -> Path:
         return self.logs / _game_id(game_id) / "events.jsonl"
@@ -266,6 +269,9 @@ class SessionStore:
                     output.truncate(committed_size)
                     output.flush()
                     os.fsync(output.fileno())
+            if not events:
+                # Reattach below restores the original game modes instead.
+                self._mode = self._idle_selection()
             self.active_game_id = game_id
             if events:
                 self._mode = SessionMode(events[0]["payload"]["mode"])
@@ -292,6 +298,8 @@ class SessionStore:
                 raise ValueError("Live advisor is not installed")
             if self.active_game_id and _MODE_RANK[mode] > _MODE_RANK[self.mode]:
                 raise ValueError("during a game the mode can only downgrade")
+            if not self.active_game_id:
+                self._mode = self._idle_selection()
             if mode == self.mode:
                 return
             if self.active_game_id:
@@ -383,8 +391,13 @@ class SessionStore:
         with self._lock:
             if self.run:
                 raise ValueError("Live-mode run already started")
-            if self.active_game_id:
-                raise ValueError("cannot start a run during a game")
+            # A CLI/worker has its own in-memory active_game_id. Inspect the
+            # authoritative logs while holding the shared lifecycle lock.
+            if self.active_game_id or any(
+                not any(event["kind"] == "game_end" for event in self.read_events(path.parent.name))
+                for path in self.logs.glob("*/events.jsonl")
+            ):
+                raise ValueError("cannot start a run during a game; reconcile unfinished capture first")
             if not self.live_installed:
                 raise ValueError("Live advisor is not installed")
             from tft_harness.baseline import validate_baseline
