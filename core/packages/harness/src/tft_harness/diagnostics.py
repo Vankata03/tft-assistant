@@ -25,7 +25,8 @@ _OPERATION_FIELDS = frozenset(('operation', 'unit_id', 'unit_index', 'item_id', 
     'wisp_id', 'slot', 'slots', 'buys', 'sell', 'hold', 'swap_in', 'swap_out', 'board',
     'steps', 'layout', 'ranking', 'line_id', 'comp_id', 'levels', 'rolls', 'gold_floor',
     'target_level', 'target_round', 'bench', 'units', 'stars', 'items', 'position', 'cell',
-    'from', 'to', 'overflow_sells', 'equip', 'recipient'))
+    'from', 'to', 'overflow_sells', 'equip', 'recipient', 'line', 'transfers',
+    'holder', 'holder_index', 'from_index', 'item_ids', 'consume_tool'))
 
 
 def _targets(value):

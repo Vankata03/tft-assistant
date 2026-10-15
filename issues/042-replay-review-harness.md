@@ -148,3 +148,12 @@ Different GPT-6.1 Sol review held `43d5744`: stable option IDs hid changed shop 
 The comparator now includes action and built-in operation/target payload fields while ignoring numerical scores and forecast evidence. Round-keyed level/roll schedules retain their keys; a public regression caught and corrected an initial over-filtering of those keys. Examples include bounded action/target summaries and fall back to action text when no option ID exists. A candidate whose replay seeds differ from the accepted contexts is rejected explicitly, rather than presenting a confounded comparison. This is a bounded partial consumer: comparison of seed-changing overlays needs a future original-seed replay API, and the latest-committed-file CLI reference, flip diagnostics and custom operation vocabularies remain unfinished.
 
 Twelve diagnostics cases plus related harness/fitting/review-policy checks passed 37 tests in 17.93 seconds, process exit 0. Scoped F821 and whitespace checks passed. Historical data pins remain unchanged; locked games retain aggregate-only output. This corrected slice still requires different review and merger integration; full42 and external qualification remain open.
+
+
+### 2026-10-15 — Built-in advice target coverage
+
+Different round-two advice-diff review held `1b75ca2`: actual Engine econ advice nests its schedule under `payload.line`, and item-transfer advice uses recipient fields absent from the comparator vocabulary. Both defects were reproduced through public logs and EvaluationHarness before correction. The Line regression uses the actual Engine with a fresh DataStore and a Guide without an explicit Line; the transfer regression uses the public DomainHook with the built-in transfer payload shape.
+
+The comparator now retains nested Line schedules and transfer recipients, donor indices, item IDs and consumed tools while still excluding forecast evidence. Fourteen diagnostics cases plus related harness/fitting/review-policy tests passed 39 cases in 19.45 seconds. Imports kept both contracts; schema, frozen lock, scoped F821 and whitespace checks passed. The initial uv command was blocked by the restricted home cache; the existing worktree interpreter ran the tests, and lock checking used a temporary cache.
+
+The source remains an isolated partial consumer awaiting different review and merger integration. Original-seed changes are explicitly refused; latest-committed CLI selection, flip checks and the rest of full42 remain unfinished. No production, resource or Windows/live qualification is claimed.

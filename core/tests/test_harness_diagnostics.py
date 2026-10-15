@@ -134,3 +134,53 @@ def test_harness_advice_diff_retains_round_keyed_schedule_targets(tmp_path):
     report = EvaluationHarness(sessions, store, repository=ROOT,
         hooks=(DomainHook('econ', (), advice=schedule_choices),)).advice_diff({'unit_weight': 2})
     assert report['changed_decisions'] == 1
+
+
+def test_harness_advice_diff_detects_changed_builtin_nested_line_schedule(tmp_path):
+    import tomllib
+    import tomli_w
+    from tests.test_replay_contracts import historical_data, GuideFeed
+    from tft_core.storage import SessionStore
+    from tft_data import DataStore
+
+    class NoLineFeed(GuideFeed):
+        def fetch(self):
+            rows = super().fetch()
+            rows['guides'][0].pop('line')
+            return rows
+
+    historical_data(tmp_path)
+    path = tmp_path/'patch'/'tunables.toml'
+    config = tomllib.loads(path.read_text())
+    config['fields']['default_lines_by_carry_cost']['value'] = {'1': {'line': [{'round': '4-1', 'level': 1}]}}
+    path.write_text(tomli_w.dumps(config))
+    store = DataStore(tmp_path/'fresh-data')
+    refreshed = store.refresh(tmp_path/'patch', now=NOW, sources=(NoLineFeed(),))
+    assert refreshed.error is None
+    data = refreshed.snapshot
+    assert not data.guides['guide'].line
+    sessions = SessionStore(tmp_path/'logs',tmp_path/'config',live_installed=True)
+    sessions.set_mode('baseline')
+    sessions.start_game('901',patch=data.patch,data_snapshot_id=data.snapshot_id,timestamp=NOW.isoformat())
+    sessions.append_event('snapshot',log_snapshot(data),timestamp=NOW.isoformat())
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=1)).isoformat())
+    report = EvaluationHarness(sessions,store,repository=ROOT).advice_diff(
+        {'default_lines_by_carry_cost': {'1': {'line': [{'round': '4-1', 'level': 2}]}}})
+    assert report['changed_decisions'] == 1
+    assert report['largest_changes'][0]['decision'] == 'econ'
+
+
+def transfer_choices(context):
+    changed = context.data.tunables['unit_weight'].value > 1
+    return (Advice('item','Sell and transfer items','information',.9,'synthetic',
+        option_id='item:sell_and_transfer:donor:0',payload={'from':'donor','from_index':0,
+            'item_ids':['sword'],'transfers':[{'item_id':'sword','holder':'carry-b' if changed else 'carry-a','holder_index':2 if changed else 1}]}),)
+
+
+def test_harness_advice_diff_detects_builtin_transfer_recipient_changes(tmp_path):
+    sessions,store,_,_ = logged_game(tmp_path,mode='baseline')
+    report = EvaluationHarness(sessions,store,repository=ROOT,
+        hooks=(DomainHook('item',(),advice=transfer_choices),)).advice_diff({'unit_weight':2})
+    assert report['changed_decisions'] == 1
+    assert 'carry-a' in report['largest_changes'][0]['accepted_recommendation']
+    assert 'carry-b' in report['largest_changes'][0]['candidate_recommendation']
