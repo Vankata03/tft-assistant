@@ -175,8 +175,8 @@ def test_actual_app_publishes_source_gated_live_state_and_enforces_downgrade(tmp
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("superseded", [True, False], ids=["new-pin", "disk-failure"])
-def test_actual_app_preserves_accepted_pin_when_publication_fails(tmp_path, monkeypatch, superseded):
+@pytest.mark.parametrize("failure", ["new-pin", "disk-failure", "history-read"])
+def test_actual_app_preserves_accepted_pin_when_engine_work_fails(tmp_path, monkeypatch, failure):
     import hashlib
     import os
     import threading
@@ -186,6 +186,9 @@ def test_actual_app_preserves_accepted_pin_when_publication_fails(tmp_path, monk
     from tft_capture.ocr import TextLine
     from tft_capture.windows import CapturedFrame
     from tests.test_replay_contracts import historical_data
+    from pathlib import Path
+
+    superseded = failure == "new-pin"
 
     # Explicitly synthetic external HUD artwork and OCR. Real capture recognizes
     # all empty unit slots; real data refresh supplies the scored Guide/Lines.
@@ -251,6 +254,17 @@ def test_actual_app_preserves_accepted_pin_when_publication_fails(tmp_path, monk
     entered, release, flushed = threading.Event(), threading.Event(), threading.Event()
     original = os.fsync
     hold = False
+    fail_read = False
+    read_failed = threading.Event()
+    original_read = Path.read_bytes
+
+    def read_bytes(path):
+        nonlocal fail_read
+        if fail_read and threading.current_thread().name == "engine-latest" and path.name == "events.jsonl":
+            fail_read = False
+            read_failed.set()
+            raise OSError("Synthetic historical log read failure")
+        return original_read(path)
 
     def flush(fd):
         nonlocal hold
@@ -278,9 +292,10 @@ def test_actual_app_preserves_accepted_pin_when_publication_fails(tmp_path, monk
                 devices.frames.release()
 
     async def scenario():
-        nonlocal hold
+        nonlocal hold, fail_read
         client, devices = ScriptedClient(), PlanningDevices()
         monkeypatch.setattr(os, "fsync", flush)
+        monkeypatch.setattr(Path, "read_bytes", read_bytes)
         async with core(tmp_path, client, devices=devices, prepare=prepare) as (ws, sessions, _, _), release_capture(devices):
             await receive_until(ws, lambda m: m["type"] == "gameflow" and m["phase"] == "Lobby")
             await ws.send(json.dumps({"v": 1, "type": "set_session_mode", "mode": "live"}))
@@ -294,28 +309,42 @@ def test_actual_app_preserves_accepted_pin_when_publication_fails(tmp_path, monk
             if not superseded:
                 await ws.send(json.dumps(pin))
                 pinned, _ = await receive_until(ws, lambda m: m["type"] == "live_state" and bool(m.get("pin")))
-            hold = True
-            devices.frames.release()
-            async with asyncio.timeout(2):
-                while not entered.is_set():
-                    await asyncio.sleep(.002)
-            if superseded:
-                await ws.send(json.dumps(pin))
-                pinned, _ = await receive_until(ws, lambda m: m["type"] == "live_state" and bool(m.get("pin")))
-            assert pinned["pin"]["line_id"] == line["line_id"]
-            release.set()
-            async with asyncio.timeout(2):
-                while not flushed.is_set():
-                    await asyncio.sleep(.002)
-            if superseded:
-                await asyncio.sleep(.05)
+            if failure == "history-read":
+                fail_read = True
+                devices.frames.release()
+                # Either the erroneous cleared state or the corrected visible
+                # error confirms that the owning loop consumed the failed read.
+                notice, _ = await receive_until(ws, lambda m:
+                    (m["type"] == "error" and m["code"] == "engine_evaluation_unavailable")
+                    or (m["type"] == "live_state" and "Synthetic historical log read failure" in m["status"]))
+                assert read_failed.is_set()
             else:
-                error, _ = await receive_until(ws, lambda m: m["type"] == "error" and m["code"] == "engine_publication_unavailable")
-                assert "Synthetic disk flush failure" in error["message"]
+                hold = True
+                devices.frames.release()
+                async with asyncio.timeout(2):
+                    while not entered.is_set():
+                        await asyncio.sleep(.002)
+                if superseded:
+                    await ws.send(json.dumps(pin))
+                    pinned, _ = await receive_until(ws, lambda m: m["type"] == "live_state" and bool(m.get("pin")))
+                assert pinned["pin"]["line_id"] == line["line_id"]
+                release.set()
+                async with asyncio.timeout(2):
+                    while not flushed.is_set():
+                        await asyncio.sleep(.002)
+                if superseded:
+                    await asyncio.sleep(.05)
+                else:
+                    error, _ = await receive_until(ws, lambda m: m["type"] == "error" and m["code"] == "engine_publication_unavailable")
+                    assert "Synthetic disk flush failure" in error["message"]
             await ws.send(json.dumps({"v": 1, "type": "request_live_state"}))
             after, _ = await receive_until(ws, lambda m: m["type"] == "live_state")
             assert after["pin"] == pinned["pin"]
             assert after["revision"] == first["revision"]
+            assert after["content"] == first["content"]
+            if failure == "history-read":
+                assert notice["code"] == "engine_evaluation_unavailable"
+                assert "Synthetic historical log read failure" in notice["message"]
             assert not any(e["kind"] == "session_controls_reset" for e in sessions.read_events("123"))
 
     asyncio.run(scenario())

@@ -172,8 +172,7 @@ class EngineRuntime:
             return
         if error:
             self.status = f'Engine evaluation unavailable: {error}'
-            self.server.live.clear(self.status)
-            self.server.publish_live_status()
+            self.server.publish_runtime_error('engine_evaluation_unavailable', self.status)
             return
         if delivery is None:
             return

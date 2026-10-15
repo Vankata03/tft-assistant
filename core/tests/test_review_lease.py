@@ -160,6 +160,23 @@ asyncio.run(run())
         assert 'live core' in still_owned[0]['reason']
         assert owner.poll() is None
         assert child.is_running()
+        lease_path = child_dir / f"{lease['job_id']}.json"
+        try:
+            for changed_field in ('created_at', 'command', 'launch_nonce', 'owner_nonce'):
+                changed = json.loads(json.dumps(lease))
+                if changed_field == 'created_at':
+                    changed['created_at'] += 1
+                elif changed_field == 'command':
+                    changed['command'][-1] = 'unrecognized-worker-argument'
+                else:
+                    changed[changed_field] = ('0' if changed[changed_field][0] != '0' else '1') + changed[changed_field][1:]
+                lease_path.write_text(json.dumps(changed))
+                refused = asyncio.run(observer.reconcile())
+                assert refused[0]['state'] == 'blocked', changed_field
+                assert child.is_running(), changed_field
+                assert owner.poll() is None, changed_field
+        finally:
+            lease_path.write_text(json.dumps(lease))
         owner.kill()  # A Popen-owned test parent, not a PID taken from a file.
         owner.wait(timeout=5)
         pointer.unlink()

@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import sys
 
 import psutil
 
@@ -31,6 +32,15 @@ def atomic_record(path, value):
 
 def process_identity(process):
     return {'pid': process.pid, 'created_at': process.create_time(), 'command': process.cmdline()}
+
+
+def _canonical_command(command):
+    executable = Path(command[0]).resolve(strict=True)
+    if executable.samefile(sys.executable):
+        # macOS framework Python launches through bin/python, then execs the
+        # app binary. Resolve this interpreter's launcher using its OS identity.
+        executable = Path(psutil.Process().exe()).resolve(strict=True)
+    return [str(executable), *command[1:]]
 
 
 class JobMutex:
@@ -110,7 +120,8 @@ class OwnedReviewChildren:
         if not path.exists():
             return
         record = json.loads(path.read_text())
-        if record.get('owner_nonce') != self.owner_nonce or record.get('command') != command:
+        if (record.get('owner_nonce') != self.owner_nonce
+                or _canonical_command(record['command']) != _canonical_command(command)):
             raise ValueError('Reaped child lease does not match this core launch')
         record.update(state='reaped', wait_status=exit_code, reaped_at=datetime.now(UTC).isoformat())
         atomic_record(path, record)

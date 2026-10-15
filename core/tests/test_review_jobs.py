@@ -142,3 +142,106 @@ def test_shutdown_after_stored_review_preserves_completion_and_prevents_revaluat
         assert resumed.jobs() == completed
 
     asyncio.run(scenario())
+
+
+def test_readiness_failure_preserves_completed_review_and_deduplicates_after_restart(tmp_path, monkeypatch):
+    import json
+    import threading
+    from pathlib import Path
+    from websockets.asyncio.client import connect
+    from tft_core.messages import Hello, dump
+    from tft_core.review_jobs import ReviewJobs
+    from tft_core.server import CoreServer
+    from tft_review import ReviewService
+
+    original_read = Path.read_bytes
+    failed = threading.Event()
+
+    def read_bytes(path):
+        if (not failed.is_set() and path.name == 'events.jsonl'
+                and threading.current_thread().name.startswith('tft-io-')):
+            failed.set()
+            raise OSError('Synthetic readiness log read failure')
+        return original_read(path)
+
+    async def scenario():
+        sessions, store, _, _ = logged_game(tmp_path, mode='baseline')
+        service = ReviewService(sessions, store, repository=ROOT)
+        server = CoreServer('fixture-token', sessions=sessions, review_service=service)
+        monkeypatch.setattr(Path, 'read_bytes', read_bytes)
+        async with server.listen() as listening:
+            async with connect(f'ws://127.0.0.1:{listening.sockets[0].getsockname()[1]}') as ws:
+                await ws.send(dump(Hello(token='fixture-token')))
+                await ws.recv()
+                await ws.recv()
+                jobs = ReviewJobs(sessions, store, service, ROOT,
+                                  ready=server.publish_review_ready, error=server.publish_runtime_error)
+                jobs.start()
+                try:
+                    jobs.enqueue('901')
+                    async with asyncio.timeout(4):
+                        while True:
+                            records = jobs.jobs()
+                            if records and (records[0].get('delivery_state') == 'failed'
+                                            or records[0]['state'] == 'failed'):
+                                break
+                            await asyncio.sleep(.005)
+                    assert failed.is_set()
+                    completed, = jobs.jobs()
+                    assert completed['state'] == 'completed'
+                    assert completed['receipt']['status'] == 'review_ready'
+                    assert service.summary('901')['report_id'] == completed['receipt']['report_id']
+                    assert completed['delivery_state'] == 'failed'
+                    assert 'Synthetic readiness log read failure' in completed['delivery_reason']
+                    error = json.loads(await asyncio.wait_for(ws.recv(), 2))
+                    assert error['type'] == 'error'
+                    assert error['code'] == 'review_delivery_failed'
+                    assert 'Synthetic readiness log read failure' in error['message']
+                    await ws.send(json.dumps({'v': 1, 'type': 'request_review', 'request_id': 'stored',
+                                              'game_id': '901', 'operation': 'summary'}))
+                    response = json.loads(await asyncio.wait_for(ws.recv(), 2))
+                    assert response['type'] == 'review_response'
+                    assert response['value']['report_id'] == completed['receipt']['report_id']
+                finally:
+                    assert await jobs.shutdown()
+                restored = ReviewJobs(sessions, store, service, ROOT, ready=server.publish_review_ready)
+                assert restored.jobs() == [completed]
+                restored.start()
+                try:
+                    restored.enqueue('901')
+                    await asyncio.sleep(.2)
+                    assert restored.jobs() == [completed]
+                finally:
+                    assert await restored.shutdown()
+
+    asyncio.run(scenario())
+
+
+def test_real_review_child_completion_cleans_up_without_ownership_errors(tmp_path):
+    from tft_core.review_jobs import ReviewJobs
+    from tft_review import ReviewService
+
+    async def scenario():
+        sessions, store, _, _ = logged_game(tmp_path)
+        service = ReviewService(sessions, store, repository=ROOT)
+        announced = asyncio.Event()
+        errors = []
+
+        async def ready(game_id):
+            assert game_id == '901'
+            announced.set()
+
+        jobs = ReviewJobs(sessions, store, service, ROOT, ready=ready,
+                          error=lambda code, message: errors.append((code, message)))
+        jobs.start()
+        try:
+            jobs.enqueue('901')
+            await asyncio.wait_for(announced.wait(), 4)
+        finally:
+            assert await jobs.shutdown()
+        completed, = jobs.jobs()
+        assert completed['state'] == 'completed'
+        assert completed['receipt']['status'] == 'review_ready'
+        assert errors == []
+
+    asyncio.run(scenario())

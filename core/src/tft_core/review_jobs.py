@@ -224,11 +224,18 @@ class ReviewJobs:
             _write(path, record)
             raise
         except Exception as error:
-            record.update(state='failed', reason=f'{type(error).__name__}: {error}')
+            reason = f'{type(error).__name__}: {error}'
+            if record.get('state') in {'completed', 'unavailable'}:
+                record.update(delivery_state='failed', delivery_reason=reason)
+                self.status = f'Review completion delivery failed: {reason}'
+                code = 'review_delivery_failed'
+            else:
+                record.update(state='failed', reason=reason)
+                self.status = f'Review failed: {reason}'
+                code = 'review_failed'
             _write(path, record)
-            self.status = f'Review failed: {record["reason"]}'
             if self.error:
-                self.error('review_failed', self.status)
+                self.error(code, self.status)
         finally:
             try:
                 stopped = await self._stop_child()
