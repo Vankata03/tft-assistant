@@ -389,5 +389,7 @@ def test_harness_excludes_delayed_targets_inside_retrospectively_recorded_gaps(t
     metric = report.metrics['next_sighting_log_loss']
     assert metric['eligible_rows'] == 0
     assert metric['excluded']['capture_gap'] == 1
-    assert sessions.read_events('901') == original
+    after = sessions.read_events('901')
+    assert after[:len(original)] == original
+    assert all(row['kind'] == 'replay_cache' for row in after[len(original):])
     assert store.get(data.snapshot_id) == data

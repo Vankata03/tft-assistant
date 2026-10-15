@@ -170,3 +170,10 @@ Different round-three review held `f8341fd`: a delayed sighting inside a committ
 Two public SessionStore/Harness regressions fail before the correction and pass afterward, covering a gap committed before or after its target while its recording timestamp follows the original read time. They assert that original logs and immutable data pins stay unchanged. All 24 consumer cases pass; the related joint-law, sighting, harness, fitting, margins, review-policy and replay suite passed 141 tests in 21.02 seconds, process exit 0. Replay's temporary Git-worktree fixtures required authorized sandbox escalation. The first test-write command used a redundant core path and ran no selected tests; corrected before the actual two-case red/green proof.
 
 The prior corrected full 670 and Live-absent 145 runs predate this narrow validity correction; they are not claimed as new full verification. This remains partial software awaiting exact different review/integration. Full42, qualified production inputs, resources and Windows/live qualification stay open.
+
+
+### 2026-10-15 — Clean-cache assertion correction
+
+Different round-four review found no production-code blocker in the cumulative sighting slice, but held `f733d8c` because its two new immutability assertions rejected legitimate appended replay-cache events in a clean committed checkout. The parent had run the consumer tests while dirty, then failed to inspect the pending post-commit result before handoff. Independent clean verification reported 126 passed and those two assertion failures; interval and causality edge probes passed.
+
+The tests now require the original event prefix to remain exactly unchanged and permit only appended replay-cache events. They continue to verify the original immutable data pin. This changes no production code. All 24 consumer cases pass after correction; exact committed verification is required before accepting this handoff. Full42 and external qualification remain open.
