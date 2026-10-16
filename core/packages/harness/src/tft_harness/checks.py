@@ -1,0 +1,201 @@
+"""Hand-set diagnostics are observational reports, never fitted objectives/gates."""
+from collections import Counter, defaultdict
+from datetime import datetime
+from dataclasses import replace
+
+from tft_data import DataError
+from tft_engine.classifier import classify
+from tft_engine.planning import owned_board, read, required
+from tft_review.contracts import frozen_json
+
+from .diagnostics import aggregate, combine_aggregates
+from .metrics import final_unit_ids, infer_from_history, opponent_final_joins, unit_key
+
+
+def confidence_checks(rows):
+    grouped = defaultdict(lambda: defaultdict(list))
+    for row in rows:
+        if row.get('confidence_band'):
+            grouped[row['metric']][row['confidence_band']].append((row['game_id'], row['loss']))
+    metrics = {}
+    for metric, bands in grouped.items():
+        samples = {band: aggregate(bands[band]) for band in ('low', 'medium', 'high')}
+        values = [samples[band]['value'] for band in ('low', 'medium', 'high')]
+        available = all(value is not None for value in values)
+        # The spec requires accuracy to improve band over band; flat is not better.
+        metrics[metric] = {'bands': samples, 'ordering': {
+            'status': ('pass' if values[0] > values[1] > values[2] else 'fail') if available else 'unavailable',
+            'reason': None if available else 'missing_band_or_nonfinite_loss'}}
+    available = bool(metrics) and all(row['ordering']['status'] != 'unavailable' for row in metrics.values())
+    return {'by_metric': metrics, 'ordering': {'status': (
+        'fail' if any(row['ordering']['status'] == 'fail' for row in metrics.values()) else 'pass') if available else 'unavailable',
+        'reason': None if available else 'qualified_low_medium_high_bands_required'},
+        'accuracy': 'equal-game mean loss within metric; lower loss is more accurate'}
+
+
+def combine_checks(reports, rows):
+    result = {'status': 'report_only', 'confidence_bands': confidence_checks(rows)}
+    for name in ('classifier', 'board_reader_identity'):
+        exclusions = Counter()
+        for _, report in reports:
+            exclusions.update(report[name]['excluded'])
+        result[name] = combine_aggregates((game, report[name]) for game, report in reports)|{'excluded': dict(exclusions)}
+    identity = result['board_reader_identity']
+    buckets = {bucket for _, report in reports for bucket in report['board_reader_identity']['by_reader_confidence']}
+    identity['by_reader_confidence'] = {bucket: {'reader_right_share': combine_aggregates(
+        (game, report['board_reader_identity']['by_reader_confidence'][bucket]) for game, report in reports
+        if bucket in report['board_reader_identity']['by_reader_confidence'])} for bucket in sorted(buckets)}
+    identity['value_meaning'] = 'share of resolved disagreements where the reader, not purchase tracking, was right'
+    identity['truth_source'] = 'riot_match_owner_final_board'
+    stages = {stage for _, report in reports for stage in report['classifier']['by_stage']}
+    result['classifier']['by_stage'] = {stage: combine_aggregates(
+        (game, report['classifier']['by_stage'][stage]) for game, report in reports
+        if stage in report['classifier']['by_stage']) for stage in stages}
+    result['classifier']['by_player'] = {kind: combine_aggregates((game, report['classifier']['by_player'][kind])
+        for game, report in reports) for kind in ('owner', 'opponent')}
+    result['classifier']['truth_sources'] = tuple(sorted({source for _, report in reports
+        for source in report['classifier']['truth_sources']}))
+    return result
+
+
+def observational_checks(games, rows):
+    classifier, classifier_excluded = [], Counter()
+    stages, sources, players = defaultdict(list), set(), defaultdict(list)
+    reader, reader_excluded, buckets = [], Counter(), defaultdict(list)
+    for game in games:
+        batch, data = game['batch'], game['data']
+        # These checks require qualified terminal identity, not an arbitrary
+        # last captured board. Outcome adapters own that qualification.
+        outcome = game.get('outcome')
+        terminal = own_terminal_board(batch, data)
+        if terminal is not None:
+            final_label = classify(terminal, data, limit=1)
+            final_label = final_label[0].label if final_label else None
+            seen = {}
+            for context in batch.contexts:
+                snapshot = batch.snapshot_for(context)
+                if read(snapshot, data, 'phase') == 'end' or required(snapshot, data, ('board', 'bench')):
+                    continue
+                seen[snapshot.round_id.split('-')[0]] = snapshot
+            for stage, snapshot in seen.items():
+                labels = classify(owned_board(snapshot, data), data, limit=1)
+                if labels and final_label is not None:
+                    sample = (batch.game_id, int(labels[0].label == final_label))
+                    classifier.append(sample)
+                    stages[stage].append(sample)
+                    players['owner'].append(sample)
+                    sources.add('own_terminal_capture')
+                else:
+                    classifier_excluded['classifier_vocabulary_unavailable'] += 1
+        elif not outcome:
+            classifier_excluded['terminal_boards_unavailable'] += 1
+        if outcome:
+            joins, reasons = opponent_final_joins(batch, data, outcome)
+            classifier_excluded.update({'opponent:'+reason: count for reason, count in reasons.items()})
+            for opponent, join in joins.items():
+                final = {unit: 1. for unit in final_unit_ids(outcome, data, join['participant']['participant_id'])
+                    if unit in data.entities}
+                final_label = classify(final, data, limit=1)
+                # One label per stage: the newest causal sighting in that stage.
+                by_stage = {}
+                for event in batch.observations:
+                    if (event['kind'] == 'sighting' and event['payload']['opponent_id'] == opponent
+                        and event['seq'] <= join['sighting']['seq']):
+                        by_stage[str(event['payload']['round_id']).split('-')[0]] = event
+                for stage, sighting in by_stage.items():
+                    try:
+                        inferred = infer_from_history(batch, data, opponent, sighting)
+                    except (DataError, KeyError, TypeError, ValueError):
+                        classifier_excluded['opponent:opponent_inference_unavailable'] += 1
+                        continue
+                    labels = classify(inferred.probabilities, data, limit=1)
+                    if not labels or not final_label:
+                        classifier_excluded['classifier_vocabulary_unavailable'] += 1
+                        continue
+                    sample = (batch.game_id, int(labels[0].label == final_label[0].label))
+                    classifier.append(sample)
+                    stages[stage].append(sample)
+                    players['opponent'].append(sample)
+                    sources.add('riot_match_opponent_final_board')
+        disagreements = [row for event in batch.observations
+            if event['kind'] in ('reader_disagreement', 'reader_tracker_disagreement', 'board_read_disagreement')
+            for row in event['payload'].get('disagreements', (event['payload'],))]
+        if not disagreements:
+            reader_excluded['no_reader_disagreement_observations'] += 1
+        elif not outcome:
+            reader_excluded['qualified_terminal_identity_unavailable'] += len(disagreements)
+        else:
+            final = final_unit_ids(outcome, data)
+            for row in disagreements:
+                reader_id, tracking_id = (row.get(name) for name in ('reader_unit_id', 'tracking_unit_id'))
+                confidence = row.get('reader_confidence')
+                if type(confidence) not in (int, float) or not 0 <= confidence <= 1:
+                    reader_excluded['reader_confidence_unavailable'] += 1
+                    continue
+                proved = {name: unit_key(value, data) in final for name, value in
+                    (('reader', reader_id), ('tracking', tracking_id)) if value}
+                # Only a final board holding exactly one claimant proves a source right.
+                if sum(proved.values()) != 1:
+                    reader_excluded['final_board_does_not_resolve'] += 1
+                    continue
+                sample = (batch.game_id, int(proved.get('reader', False)))
+                reader.append(sample)
+                buckets[confidence_bucket(confidence)].append(sample)
+    return {'status': 'report_only', 'classifier': aggregate(classifier)|{'excluded': dict(classifier_excluded),
+        'by_stage': {stage: aggregate(values) for stage, values in stages.items()}, 'truth_sources': tuple(sorted(sources)),
+        'by_player': {kind: aggregate(players[kind]) for kind in ('owner', 'opponent')}},
+        'board_reader_identity': aggregate(reader)|{'excluded': dict(reader_excluded),
+            'by_reader_confidence': {bucket: aggregate(values) for bucket, values in sorted(buckets.items())}},
+        'confidence_bands': confidence_checks(rows)}
+
+
+def confidence_bucket(value):
+    lower = min(9, int(value*10))
+    return f'[{lower/10},{(lower+1)/10}{"]" if lower == 9 else ")"}'
+
+
+def own_terminal_board(batch, data):
+    """An explicit fresh end-phase capture is final; an arbitrary last board is not."""
+    ends = [event for event in batch.observations if event['kind'] == 'game_end']
+    if not ends:
+        return None
+    end = ends[-1]
+    candidates = [context for context in batch.contexts if context.log_seq < end['seq']
+        and 'capture_gap' not in context.unavailable
+        and datetime.fromisoformat(context.snapshot['captured_at']) <= datetime.fromisoformat(end['timestamp'])]
+    if not candidates:
+        return None
+    snapshot = batch.snapshot_for(candidates[-1])
+    if read(snapshot, data, 'phase') != 'end':
+        return None
+    snapshot = replace(snapshot, captured_at=datetime.fromisoformat(end['timestamp']))
+    if required(snapshot, data, ('board', 'bench', 'inventory_complete')):
+        return None
+    return owned_board(snapshot, data)
+
+
+def hand_set_checks(harness, game_ids=None, *, limit=20):
+    report, _ = harness._evaluate(game_ids, harness.data_store)
+    games = harness._games(game_ids)
+    maximum_gold, maximum_caps, maximum_guides = 50, defaultdict(int), 1
+    for game in games:
+        data = harness.data_store.get(game['data_snapshot_id'])
+        maximum_guides = max(maximum_guides, len(data.guides))
+        for name in ('line_candidate_cap', 'challengers_simulated', 'slam_candidate_cap', 'open_candidate_count'):
+            maximum_caps[name] = max(maximum_caps[name], int(data.tunables[name].value))
+        for event in harness.sessions.read_events(game['game_id']):
+            if event['kind'] == 'snapshot':
+                gold = event['payload']['fields'].get('gold', {}).get('value')
+                if type(gold) in (int, float):
+                    maximum_gold = max(maximum_gold, int(gold))
+    parameters = {'gold_floors': list(range(0, maximum_gold//10*10+1, 10)),
+        'all_in_rounds_left': 1_000_000, 'stabilize_rounds_left': 1_000_000,
+        'line_candidate_cap': max(10000, maximum_caps['line_candidate_cap']+1),
+        'challengers_simulated': max(maximum_guides, maximum_caps['challengers_simulated']+1),
+        'open_candidate_count': max(maximum_guides, maximum_caps['open_candidate_count']+1),
+        'slam_candidate_cap': max(10000, maximum_caps['slam_candidate_cap']+1)}
+    widened = dict(harness.advice_diff(parameters, game_ids, limit=limit))
+    widened['parameters'] = parameters
+    widened['budget'] = 'offline widened replay; no 100 ms budget; reported caps are explicit'
+    widened['changed_share'] = widened['game_weighted_changed_share']
+    return frozen_json(dict(report.metrics['hand_set_checks'])|{'widened_candidates': widened})
