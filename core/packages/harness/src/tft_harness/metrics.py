@@ -10,7 +10,8 @@ from tft_engine.planning import read, required
 # Report-only diagnostics never become fitted gates merely by adding a metric.
 FITTED_METRICS = ('fight_brier', 'fight_log_loss', 'damage_mae',
     'next_sighting_log_loss', 'expected_placement_mae', 'hit_log_loss')
-REPORT_METRICS = ('line_gold_mae', 'line_level_mae', 'line_hp_mae')
+LINE_METRICS = ('line_gold_mae', 'line_level_mae', 'line_hp_mae')
+REPORT_METRICS = LINE_METRICS+('opponent_board_brier',)
 
 
 def number(value):
@@ -131,7 +132,7 @@ def line_rows(batch, data):
             selected = selected_line(context)
             projection, target, state = horizon_observation(batch, context, selected, data)
         except (DataError, KeyError, ValueError, TypeError, IndexError) as error:
-            excluded.update((metric, str(error)) for metric in REPORT_METRICS)
+            excluded.update((metric, str(error)) for metric in LINE_METRICS)
             continue
         # This is an observed residual, not a counterfactual accuracy claim.
         # A delivered recommendation alone cannot prove an entire future policy.
@@ -246,4 +247,119 @@ def hit_rows(batch, data):
             rows.append(row)
         except (DataError, KeyError, ValueError, TypeError, IndexError) as error:
             excluded[('hit_log_loss', str(error))] += 1
+    return rows, excluded
+
+
+def unit_key(unit_id, data):
+    from tft_engine.shop_math import canonical_id
+    return canonical_id(unit_id, data) if unit_id in data.entities else unit_id
+
+
+def final_unit_ids(outcome, data, participant_id=None):
+    """Canonical unit identities on one participant's validated final match board."""
+    participant_id = outcome['owner_id'] if participant_id is None else participant_id
+    row = next(row for row in outcome['participants'] if row['participant_id'] == participant_id)
+    return {unit_key(unit['character_id'], data) for unit in row['units']}
+
+
+def opponent_final_joins(batch, data, outcome):
+    """Join scouted opponents to match participants only by a uniquely observed elimination.
+
+    Match participants carry no captured display identity. A certified complete
+    lobby that loses exactly one opponent between consecutive observations
+    fixes that opponent's placement; anything else stays unjoined.
+    """
+    from datetime import datetime
+
+    lobbies = []
+    for context in batch.contexts:
+        if 'capture_gap' in context.unavailable or 'stale_field:lobby' in context.unavailable:
+            continue
+        try:
+            alive = frozenset(alive_lobby(batch.snapshot_for(context), data))
+        except (DataError, KeyError, TypeError, ValueError):
+            continue
+        lobbies.append((context, alive))
+    by_placement = {row['placement']: row for row in outcome['participants']}
+    sighted = dict.fromkeys(event['payload']['opponent_id'] for event in batch.observations
+        if event['kind'] == 'sighting')
+    joins, excluded = {}, Counter()
+    for opponent in sighted:
+        seen = [index for index, (_, alive) in enumerate(lobbies) if opponent in alive]
+        if not seen:
+            excluded['opponent_never_certified_alive'] += 1
+            continue
+        last = seen[-1]
+        if last+1 >= len(lobbies):
+            excluded['opponent_outlived_capture'] += 1
+            continue
+        (before, alive), (after, remaining) = lobbies[last], lobbies[last+1]
+        if remaining != alive-{opponent}:
+            excluded['elimination_order_not_unique'] += 1
+            continue
+        # The owner and every certified opponent were alive just before.
+        placement = len(alive)+1
+        if outcome['placement'] >= placement or placement not in by_placement:
+            excluded['elimination_join_conflicts_with_outcome'] += 1
+            continue
+        stage = before.snapshot['round_id'].split('-')[0]
+        until = datetime.fromisoformat(after.snapshot['captured_at'])
+        scouted = [event for event in batch.observations if event['kind'] == 'sighting'
+            and event['payload']['opponent_id'] == opponent and event['seq'] < after.log_seq
+            and str(event['payload'].get('round_id', '')).split('-')[0] == stage
+            and datetime.fromisoformat(event['timestamp']) <= until]
+        if not scouted:
+            excluded['not_scouted_in_last_stage_alive'] += 1
+            continue
+        joins[opponent] = {'participant': by_placement[placement], 'placement': placement,
+            'sighting': scouted[-1], 'context': before}
+    return joins, excluded
+
+
+def infer_from_history(batch, data, opponent, sighting):
+    """Chain trait inference over every causal sighting of one opponent."""
+    from tft_engine.opponents import infer_opponent
+    from tft_review.contracts import history_prefix
+
+    inferred = None
+    history = history_prefix(batch.observations, through_seq=sighting['seq'], captured_at=sighting['timestamp'])
+    for row in history.sightings:
+        if row.opponent_id == opponent:
+            inferred = infer_opponent(row, data, previous=inferred)
+            if inferred.fallback_reason:
+                raise DataError('opponent_inference_unavailable')
+    if inferred is None:
+        raise DataError('opponent_inference_unavailable')
+    return inferred
+
+
+def opponent_board_rows(batch, data, outcome):
+    """Report-only Brier score of inferred unit presence against the joined final board."""
+    metric = 'opponent_board_brier'
+    rows, excluded = [], Counter()
+    if outcome is None:
+        excluded[(metric, 'match_outcome_unavailable')] += 1
+        return rows, excluded
+    joins, reasons = opponent_final_joins(batch, data, outcome)
+    excluded.update({(metric, reason): count for reason, count in reasons.items()})
+    for opponent, join in joins.items():
+        try:
+            inferred = infer_from_history(batch, data, opponent, join['sighting'])
+        except (DataError, KeyError, ValueError, TypeError) as error:
+            excluded[(metric, str(error))] += 1
+            continue
+        predicted = Counter()
+        for unit_id, probability in inferred.probabilities.items():
+            predicted[unit_key(unit_id, data)] += probability
+        final = final_unit_ids(outcome, data, join['participant']['participant_id'])
+        universe = sorted(set(predicted) | final)
+        loss = sum((min(1., predicted[unit])-(unit in final))**2 for unit in universe)/len(universe) if universe else 0.
+        context = join['context']
+        rows.append({'game_id': batch.game_id, 'log_seq': context.log_seq,
+            'observation_seq': join['sighting']['seq'], 'stage': int(inferred.round_id.split('-')[0]),
+            'metric': metric, 'prediction': dict(predicted), 'truth': tuple(sorted(final)), 'loss': loss,
+            'naive_prediction': None, 'data_snapshot_id': data.snapshot_id, 'seed': context.seed,
+            'opponent_id': opponent, 'final_placement': join['placement'],
+            'sighting_round_id': inferred.round_id, 'join': 'unique_observed_elimination',
+            'truth_source': 'riot_match'})
     return rows, excluded

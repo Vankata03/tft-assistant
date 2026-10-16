@@ -187,18 +187,27 @@ def test_partial_games_leave_placement_calibration_but_keep_qualified_fights(tmp
     assert report.metrics['fight_brier']['eligible_rows'] == 1
 
 
-def outcome_game(tmp_path, *, placement=None, events=()):
+def outcome_game(tmp_path, *, placement=None, events=(), tunables=None):
     """A finished set-18 ranked capture whose late Riot match truth is recorded separately."""
+    import tomllib
+    import tomli_w
     from tft_core.storage import SessionStore
-    from tests.test_replay_contracts import historical_data
+    from tests.test_replay_contracts import historical_data, GuideFeed
 
     store, data = historical_data(tmp_path)
+    if tunables:
+        path = tmp_path/'patch'/'tunables.toml'
+        config = tomllib.loads(path.read_text())
+        for name, value in tunables.items():
+            config['fields'][name]['value'] = value
+        path.write_text(tomli_w.dumps(config))
+        data = store.refresh(path.parent, now=NOW+timedelta(microseconds=1), sources=(GuideFeed(),)).snapshot
     sessions = SessionStore(tmp_path/'logs', tmp_path/'config', live_installed=True)
     sessions.set_mode('baseline')
     sessions.start_game('901', set_id='18', queue_id=1100, patch=data.patch,
         data_snapshot_id=data.snapshot_id, timestamp=NOW.isoformat())
     sessions.append_event('snapshot', log_snapshot(data), timestamp=NOW.isoformat())
-    for kind, payload, at in events:
+    for kind, payload, at in (events(data) if callable(events) else events):
         sessions.append_event(kind, payload, timestamp=at.isoformat())
     sessions.end_game(placement=placement, timestamp=(NOW+timedelta(seconds=30)).isoformat())
     return sessions, store, data
@@ -215,3 +224,49 @@ def test_expected_placement_uses_match_outcome_when_the_log_has_no_placement(tmp
     row = next(row for row in report.examples if row['metric'] == 'expected_placement_mae')
     assert row['truth'] == 4 and row['truth_source'] == 'riot_match'
     assert report.manifest[0]['truth_sources'] == ('capture_log', 'riot_match')
+
+
+
+def eliminated_rival_game(tmp_path, *, simultaneous=False):
+    """Seven certified opponents; the scouted rival alone leaves the lobby next."""
+    lobby = {'rival': {'hp': 40}}|{f'other-{index}': {'hp': 60} for index in range(6)}
+    after = dict(lobby)|{'rival': {'hp': 0}}
+    if simultaneous:
+        after['other-0'] = {'hp': 0}
+    sighting = {'opponent_id': 'rival', 'round_id': '3-2', 'level': 1, 'traits': {}, 'hidden_traits': 0}
+    events = lambda data: [('sighting', sighting, NOW+timedelta(seconds=1))]+[
+        ('snapshot', log_snapshot(data, at=stamp, snapshot_id=f'lobby-{index}', lobby=players), stamp)
+        for index, (stamp, players) in enumerate(((NOW+timedelta(seconds=2), lobby), (NOW+timedelta(seconds=5), after)))]
+    return outcome_game(tmp_path, tunables={'opponent_inference_state_cap': 1000}, events=events)
+
+
+def rival_match(units):
+    from tests.test_outcomes import match_fixture
+    match = match_fixture()
+    match['info']['participants'][7]['units'] = [{'character_id': unit, 'tier': 1, 'items': []} for unit in units]
+    return match
+
+
+def test_opponent_board_scores_last_stage_inference_against_uniquely_joined_final_board(tmp_path):
+    sessions, store, _ = eliminated_rival_game(tmp_path)
+    harness = EvaluationHarness(sessions, store, repository=ROOT)
+    assert harness.evaluate().metrics['opponent_board_brier']['excluded'] == {'match_outcome_unavailable': 1}
+    sessions.record_outcome('901', rival_match(['unit', 'TFT18_Ghost']), owner_puuid='owner')
+    report = harness.evaluate()
+    metric = report.metrics['opponent_board_brier']
+    # Inference holds the fixture unit with certainty; the final board adds one unseen unit.
+    assert metric['value'] == .5 and metric['eligible_rows'] == 1
+    assert metric['status'] == 'report_only'
+    row = next(row for row in report.examples if row['metric'] == 'opponent_board_brier')
+    assert row['opponent_id'] == 'rival' and row['final_placement'] == 8
+    assert row['join'] == 'unique_observed_elimination'
+    assert 'opponent_board_brier' not in report.gates
+    json.dumps(report.to_dict(), allow_nan=False)
+
+
+def test_opponent_board_never_joins_simultaneous_eliminations(tmp_path):
+    sessions, store, _ = eliminated_rival_game(tmp_path, simultaneous=True)
+    sessions.record_outcome('901', rival_match(['unit']), owner_puuid='owner')
+    metric = EvaluationHarness(sessions, store, repository=ROOT).evaluate().metrics['opponent_board_brier']
+    assert metric['eligible_rows'] == 0
+    assert metric['excluded'] == {'elimination_order_not_unique': 1}

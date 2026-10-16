@@ -8,6 +8,7 @@ from tft_engine.planning import owned_board, read, required
 from tft_review.contracts import frozen_json
 
 from .diagnostics import aggregate, combine_aggregates
+from .metrics import final_unit_ids, unit_key
 
 
 def confidence_checks(rows):
@@ -113,18 +114,6 @@ def observational_checks(games, rows):
         'board_reader_identity': aggregate(reader)|{'excluded': dict(reader_excluded),
             'by_reader_confidence': {bucket: aggregate(values) for bucket, values in sorted(buckets.items())}},
         'confidence_bands': confidence_checks(rows)}
-
-
-def unit_key(unit_id, data):
-    from tft_engine.shop_math import canonical_id
-    return canonical_id(unit_id, data) if unit_id in data.entities else unit_id
-
-
-def final_unit_ids(outcome, data, participant_id=None):
-    """Canonical unit identities on one participant's validated final match board."""
-    participant_id = outcome['owner_id'] if participant_id is None else participant_id
-    row = next(row for row in outcome['participants'] if row['participant_id'] == participant_id)
-    return {unit_key(unit['character_id'], data) for unit in row['units']}
 
 
 def confidence_bucket(value):

@@ -11,7 +11,7 @@ from .report import HarnessReport
 from .measurement import mean_by_game
 from .measurement import paired_game_comparison
 from .overlay import TunableOverlay
-from .metrics import FITTED_METRICS, REPORT_METRICS, placement_rows, line_rows, hit_rows
+from .metrics import FITTED_METRICS, REPORT_METRICS, placement_rows, line_rows, hit_rows, opponent_board_rows
 
 
 def chronological_split(games):
@@ -178,6 +178,9 @@ class EvaluationHarness:
             lines, line_excluded = line_rows(batch, data)
             game_rows.extend(lines)
             game_excluded.update(line_excluded)
+            boards, board_excluded = opponent_board_rows(batch, data, outcome)
+            game_rows.extend(boards)
+            game_excluded.update(board_excluded)
             hits, hit_excluded = hit_rows(batch, data)
             game_rows.extend(hits)
             game_excluded.update(hit_excluded)
