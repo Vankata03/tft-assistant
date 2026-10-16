@@ -166,7 +166,14 @@ def test_fit_cli_writes_unaccepted_toml_with_holdout_diagnostics(tmp_path, monke
         '--output', str(output), '--search', str(search), '--bootstrap-draws', '20']) == 0
     candidate = tomllib.loads(next(output.glob('*.toml')).read_text())
     assert candidate['fields']['fight_scale']['family'] == '1'
-    assert 'Fit diagnostics' in next(output.glob('*.md')).read_text()
+    report = next(output.glob('*.md')).read_text()
+    def section(title):
+        return json.loads(report.split('## '+title+'\n\n```json\n')[1].split('\n```')[0])
+    diagnostics = section('Fit diagnostics')
+    assert 'gates' not in diagnostics
+    partial = diagnostics['family1_only_gates']
+    assert partial['scope'].startswith('family-1 search candidate before margins')
+    assert partial['gates'] and set(partial['gates']) <= set(section('Gates'))
     assert (repository/'data/18.2/tunables.toml').read_bytes() == before
 
 
