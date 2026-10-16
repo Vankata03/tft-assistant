@@ -277,6 +277,52 @@ def test_opponent_board_never_joins_simultaneous_eliminations(tmp_path):
     assert metric['excluded'] == {'elimination_order_not_unique': 1}
 
 
+def test_opponent_board_never_joins_an_elimination_sharing_its_round_with_another(tmp_path):
+    """Capture order inside one round does not prove Riot's within-round placement."""
+    lobby = {'rival': {'hp': 40}}|{f'other-{index}': {'hp': 60} for index in range(6)}
+    first = dict(lobby)|{'rival': {'hp': 0}}
+    second = dict(first)|{'other-0': {'hp': 0}}
+    sighting = {'opponent_id': 'rival', 'round_id': '3-2', 'level': 1, 'traits': {}, 'hidden_traits': 0}
+    events = lambda data: [('sighting', sighting, NOW+timedelta(seconds=1))]+[
+        ('snapshot', log_snapshot(data, at=NOW+timedelta(seconds=2+index), snapshot_id=f'lobby-{index}', lobby=players),
+            NOW+timedelta(seconds=2+index)) for index, players in enumerate((lobby, first, second))]
+    sessions, store, _ = outcome_game(tmp_path, tunables={'opponent_inference_state_cap': 1000}, events=events)
+    sessions.record_outcome('901', rival_match(['unit']), owner_puuid='owner')
+    metric = EvaluationHarness(sessions, store, repository=ROOT).evaluate().metrics['opponent_board_brier']
+    assert metric['eligible_rows'] == 0
+    assert metric['excluded'] == {'same_round_elimination_order_ambiguous': 1}
+
+
+def test_opponent_board_never_joins_when_last_stage_alive_is_unobserved(tmp_path):
+    """A lobby window spanning a stage boundary leaves the last stage alive unknown."""
+    lobby = {'rival': {'hp': 40}}|{f'other-{index}': {'hp': 60} for index in range(6)}
+    after = dict(lobby)|{'rival': {'hp': 0}}
+    sighting = {'opponent_id': 'rival', 'round_id': '3-2', 'level': 1, 'traits': {}, 'hidden_traits': 0}
+
+    def events(data):
+        later = log_snapshot(data, at=NOW+timedelta(seconds=5), snapshot_id='lobby-1', lobby=after)
+        later['round_id'] = '4-3'
+        return [('sighting', sighting, NOW+timedelta(seconds=1)),
+            ('snapshot', log_snapshot(data, at=NOW+timedelta(seconds=2), snapshot_id='lobby-0', lobby=lobby),
+                NOW+timedelta(seconds=2)), ('snapshot', later, NOW+timedelta(seconds=5))]
+    sessions, store, _ = outcome_game(tmp_path, tunables={'opponent_inference_state_cap': 1000}, events=events)
+    sessions.record_outcome('901', rival_match(['unit']), owner_puuid='owner')
+    metric = EvaluationHarness(sessions, store, repository=ROOT).evaluate().metrics['opponent_board_brier']
+    assert metric['eligible_rows'] == 0
+    assert metric['excluded'] == {'last_stage_alive_ambiguous': 1}
+
+
+def test_opponent_board_never_joins_a_placement_whose_match_round_is_shared(tmp_path):
+    """Riot's own last_round, when present, also exposes a same-round elimination."""
+    sessions, store, _ = eliminated_rival_game(tmp_path)
+    match = rival_match(['unit'])
+    match['info']['participants'][6]['last_round'] = match['info']['participants'][7]['last_round']
+    sessions.record_outcome('901', match, owner_puuid='owner')
+    metric = EvaluationHarness(sessions, store, repository=ROOT).evaluate().metrics['opponent_board_brier']
+    assert metric['eligible_rows'] == 0
+    assert metric['excluded'] == {'same_round_elimination_order_ambiguous': 1}
+
+
 def test_follow_based_reports_consume_review_attribution_from_logged_display_and_pick(tmp_path):
     from tests.test_review_attribution import _decision_id, _hook, log_delivery, log_pick, log_shown
 

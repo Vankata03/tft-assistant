@@ -4,7 +4,7 @@ from math import isfinite
 
 from tft_data import DataError
 from tft_engine.lobby import alive_lobby
-from tft_engine.planning import read, required
+from tft_engine.planning import observed_phase, read, required
 
 
 # Report-only diagnostics never become fitted gates merely by adding a metric.
@@ -280,6 +280,22 @@ def opponent_final_joins(batch, data, outcome):
         except (DataError, KeyError, TypeError, ValueError):
             continue
         lobbies.append((context, alive))
+    calendar = {round_id: index for index, round_id in enumerate(data.static['round_order'].value)}
+
+    def death_rounds(index):
+        """Calendar rounds whose combat could hold a loss between two certified lobbies."""
+        (before, _), (after, _) = lobbies[index], lobbies[index+1]
+        start, end = (calendar.get(context.snapshot['round_id']) for context in (before, after))
+        if start is None or end is None or end < start:
+            return None
+        # A planning witness of a later round precedes that round's combat.
+        if end > start and observed_phase(batch.snapshot_for(after), data) in ('planning', 'roll_down'):
+            end -= 1
+        return set(range(start, end+1))
+
+    windows = {index: death_rounds(index) for index in range(len(lobbies)-1)
+        if lobbies[index][1]-lobbies[index+1][1]}
+    stage_of = {index: round_id.split('-')[0] for round_id, index in calendar.items()}
     by_placement = {row['placement']: row for row in outcome['participants']}
     sighted = dict.fromkeys(event['payload']['opponent_id'] for event in batch.observations
         if event['kind'] == 'sighting')
@@ -297,12 +313,26 @@ def opponent_final_joins(batch, data, outcome):
         if remaining != alive-{opponent}:
             excluded['elimination_order_not_unique'] += 1
             continue
+        rounds = windows[last]
+        if not rounds or len({stage_of[index] for index in rounds}) != 1:
+            excluded['last_stage_alive_ambiguous'] += 1
+            continue
+        # Capture order inside one round does not prove Riot's within-round
+        # placement, so any other loss that may share the round blocks the join.
+        if any(index != last and (other is None or other & rounds) for index, other in windows.items()):
+            excluded['same_round_elimination_order_ambiguous'] += 1
+            continue
         # The owner and every certified opponent were alive just before.
         placement = len(alive)+1
         if outcome['placement'] >= placement or placement not in by_placement:
             excluded['elimination_join_conflicts_with_outcome'] += 1
             continue
-        stage = before.snapshot['round_id'].split('-')[0]
+        final_round = by_placement[placement].get('last_round')
+        if final_round is not None and any(row.get('last_round') == final_round
+                for row in outcome['participants'] if row['placement'] not in (1, placement)):
+            excluded['same_round_elimination_order_ambiguous'] += 1
+            continue
+        stage = stage_of[min(rounds)]
         until = datetime.fromisoformat(after.snapshot['captured_at'])
         scouted = [event for event in batch.observations if event['kind'] == 'sighting'
             and event['payload']['opponent_id'] == opponent and event['seq'] < after.log_seq
