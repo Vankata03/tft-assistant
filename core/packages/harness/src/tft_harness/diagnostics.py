@@ -151,7 +151,7 @@ def report_diagnostics(rows, games, counts):
         'follow_ignore_placement': {name: aggregate(follow_placement[name]) for name in ('followed', 'ignored')},
         'follow_ignore_interpretation': 'confounded descriptive placement; no causal or fitted gate',
         'expected_placement_by_follow_rate': {name: aggregate(expected[name]) for name in ('low', 'medium', 'high')},
-        'follow_rate_bands': {'low': '[0,1/3)', 'medium': '[1/3,2/3)', 'high': '[2/3,1]'},
+        'follow_rate_bands': {'low': 'below one third', 'medium': 'one third to below two thirds', 'high': 'two thirds or more'},
         'positioning_residual': {name: aggregate(position[name]) for name in ('followed', 'ignored')},
         'owner_disagree_rate': aggregate(disagreement), 'excluded': dict(missing),
         'follow_attributed_points': attributed, 'follow_rate_games': rated,

@@ -152,7 +152,7 @@ def test_holdout_gates_pair_whole_games_and_retain_historical_pins(tmp_path):
     assert gate['sample_unit'] == 'game'
     assert gate['eligible_game_ids'] == ('909', '910')
     assert gate['bootstrap_draws'] == 200 and gate['bootstrap_seed'] == 7
-    assert gate['interval_convention'] == 'percentile95; nearest-rank2.5/97.5'
+    assert gate['interval_convention'] == 'percentile95; nearest-rank 2.5 and 97.5'
     assert gate['candidate_minus_accepted']['value'] == 0
     assert gate['candidate_minus_accepted']['lower'] == gate['candidate_minus_accepted']['upper'] == 0
     assert gate['candidate_minus_accepted']['reason'] is None

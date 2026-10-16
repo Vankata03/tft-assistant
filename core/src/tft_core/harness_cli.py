@@ -84,7 +84,7 @@ def _offline(args):
         report = harness.evaluate(candidate=updates, bootstrap_seed=args.seed,
             bootstrap_draws=args.bootstrap_draws)
         diff = dict(harness.advice_diff(updates, limit=0)) | {
-            'reference': 'latest committed accepted tunables; immutable static/source pins; original log points and seeds'}
+            'reference': 'latest committed accepted tunables; immutable static and source pins; original log points and seeds'}
         try:
             checks = harness.hand_set_checks(limit=0)
         except (DataError, ValueError, KeyError, OSError):

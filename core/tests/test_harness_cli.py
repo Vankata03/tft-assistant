@@ -274,4 +274,33 @@ def test_dirty_runtime_cli_publishes_code_identity_separate_from_accepted_data(t
     assert section('Producer code identity') == producer
     identities = section('Replay cache identities')
     assert identities and all(identity['commit'] == commit and identity['dirty'] for identity in identities)
-    assert 'static/source pins' in section('Advice diff')['reference']
+    assert 'static and source pins' in section('Advice diff')['reference']
+
+
+def test_aggregate_report_scrubs_every_path_form_but_keeps_its_own_reference_statements(tmp_path, monkeypatch):
+    from tests.test_harness import combat_logs
+    from tests.test_harness_tunables_io import committed_repository
+    from tft_core.harness_cli import main
+    from tft_harness.markdown import aggregate_only
+    omitted = 'details omitted from aggregate artifact'
+    for leaked in ('games/NA1_901/events.jsonl', 'see logs\\games\\901', 'C:\\Users\\owner\\x',
+            '/private/var/x', '~/logs/x', 'error at "/tmp/x"'):
+        assert aggregate_only({'reason': leaked}) == {'reason': omitted}
+    (tmp_path/'games').mkdir()
+    (tmp_path/'accepted').mkdir()
+    sessions, store = combat_logs(tmp_path/'games', results=('win', 'loss'))
+    repository = committed_repository(tmp_path/'accepted')
+    monkeypatch.setenv('TFT_ASSISTANT_DATA_ROOT', str(sessions.root))
+    monkeypatch.setenv('TFT_ASSISTANT_CONFIG_ROOT', str(sessions.config_root))
+    output = tmp_path/'reports'
+    assert main(['eval', '--repository', str(repository), '--snapshots', str(store.root),
+        '--output', str(output), '--bootstrap-draws', '20']) == 0
+    report = next(output.glob('*.md')).read_text()
+    def section(title):
+        return json.loads(report.split('## '+title+'\n\n```json\n')[1].split('\n```')[0])
+    assert section('Advice diff')['reference'] == (
+        'latest committed accepted tunables; immutable static and source pins; original log points and seeds')
+    widened = section('Widened candidate and hand-set checks')['widened_candidates']
+    assert widened['reference'] == ('effective replay tunables; immutable static and source pins; '
+        'original log points and seeds')
+    assert omitted not in report and 'historical immutable tunables' not in report

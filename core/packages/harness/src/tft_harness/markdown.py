@@ -2,7 +2,6 @@
 from datetime import UTC, datetime
 import json
 import os
-import re
 from pathlib import Path
 
 from tft_review.contracts import json_value
@@ -23,8 +22,10 @@ def aggregate_only(value):
     if isinstance(value, list):
         return [aggregate_only(item) for item in value]
     if isinstance(value, str):
-        # Errors can originate from filesystem or external payload validation.
-        if re.search(r"(?:^|[\s\"'=(:])(?:/|[A-Za-z]:[\\/]|~[\\/])", value):
+        # Errors can originate from filesystem or external payload validation;
+        # any separator may carry a relative path or game identity. The
+        # harness's own statements therefore avoid path separators.
+        if ('/' in value or '\\' in value) and not value.startswith(('https://', 'http://')):
             return 'details omitted from aggregate artifact'
         if 'puuid' in value.lower():
             return 'private detail omitted'
