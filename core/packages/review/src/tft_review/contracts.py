@@ -110,7 +110,7 @@ def history_prefix(observations, *, through_seq, captured_at, controls=None):
     history = controls._history_index.history(through_seq=through_seq, captured_at=captured_at)
     return replace(history, source_reference={'kind': 'replay_history_v1',
         'game_id': str(observations[0]['payload']['game_id']),
-        'prefix_through_seq': through_seq, 'captured_at': captured_at})
+        'prefix_through_seq': through_seq, 'captured_at': captured_at, 'projection': 'replay_prefix_v1'})
 
 
 def json_value(value):
@@ -287,7 +287,7 @@ class ReplayBatch:
             if (set(reference) != {'source', 'sha256'}
                 or set(source) != {'kind', 'game_id', 'prefix_through_seq', 'captured_at', 'projection', 'round_id'}
                 or source['kind'] != 'replay_history_v1' or source['game_id'] != self.game_id
-                or source['projection'] != 'engine_causal_v1'
+                or source['projection'] not in ('engine_causal_v1', 'replay_prefix_v1')
                 or type(source['prefix_through_seq']) is not int
                 or data.snapshot_id != self.identity['data_snapshot_id']):
                 raise ValueError('Invalid replay history source')
@@ -295,7 +295,9 @@ class ReplayBatch:
                 if context.prefix_through_seq == source['prefix_through_seq']
                 and context.snapshot['captured_at'] == source['captured_at']
                 and context.snapshot['round_id'] == source['round_id'])
-            history = causal_history(self.snapshot_for(context), self.history_for(context), data)
+            history = self.history_for(context)
+            if source['projection'] == 'engine_causal_v1':
+                history = causal_history(self.snapshot_for(context), history, data)
             encoded = json.dumps(history.to_dict(), sort_keys=True, separators=(',', ':'), allow_nan=False)
             if sha256(encoded.encode()).hexdigest() != reference['sha256']:
                 raise ValueError('Replay history content hash mismatch')

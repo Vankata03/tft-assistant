@@ -177,3 +177,46 @@ def test_stateful_external_hooks_keep_the_original_uncached_historical_fold(tmp_
     assert batch.identity['hooks_cacheable'] is False
     assert calls == ['original', 'original', 'decision-1', 'original', 'decision-1', 'decision-2']
     assert not any(row['kind'] == 'replay_cache' for row in sessions.read_events('901'))
+
+
+@pytest.mark.parametrize('future_round', [False, True])
+def test_error_path_history_references_preserve_exact_hook_evidence_after_round_trip(tmp_path, future_round):
+    from tests.test_session_controls import control_advice
+    from tft_engine import GameHistory
+
+    sessions, store, data, _ = logged_game(tmp_path, finish=False)
+    later = log_snapshot(data, at=NOW+timedelta(seconds=2), snapshot_id='captured-later')
+    if future_round:
+        later['round_id'] = '4-1'
+    sessions.append_event('snapshot', later, timestamp=later['captured_at'])
+    older = log_snapshot(data, at=NOW+timedelta(seconds=1), snapshot_id='captured-earlier')
+    sessions.append_event('snapshot', older, timestamp=(NOW+timedelta(seconds=2.1)).isoformat())
+    current = log_snapshot(data, at=NOW+timedelta(seconds=3),
+        snapshot_id='current-unavailable', comp_lock='unknown-comp')
+    sessions.append_event('snapshot', current, timestamp=current['captured_at'])
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=4)).isoformat())
+    original = sessions.read_events('901')
+    hooks = (DomainHook('controls', (), advice=control_advice),)
+    batch = ReplayProducer(sessions, store, repository=ROOT, hooks=hooks).produce('901')
+    context = batch.contexts[-1]
+    paused = next(advice for advice in context.evaluation['advice'] if advice['decision'] == 'econ')
+    assert paused['payload']['reason'] == 'Unknown locked comp: unknown-comp'
+    advice = next(advice for advice in context.evaluation['advice'] if advice['decision'] == 'controls')
+    expected = ['original', 'captured-later', 'captured-earlier']
+    assert [row['snapshot_id'] for row in advice['payload']['history']] == expected
+    assert sessions.read_events('901')[:len(original)] == original
+    restored = ReplayBatch.from_dict(batch.to_dict())
+    reference = advice['validity_state']['history']
+    history = restored.resolve_history(reference, data=data)
+    assert [state.snapshot_id for state in history.snapshots] == expected
+    # Standalone handled-error hooks keep the original inline log-order evidence.
+    prefix = batch.history_for(context)
+    standalone = evaluate(batch.snapshot_for(context), GameHistory(prefix.snapshots, prefix.sightings),
+        data, 'review', hooks=hooks, seed=context.seed)
+    standalone_advice = next(item for item in standalone.advice if item.decision == 'controls')
+    assert history.to_dict() == GameHistory.from_dict(standalone_advice.validity_state['history']).to_dict()
+    assert reference['source']['projection'] == 'replay_prefix_v1'
+    assert batch.contexts[0].evaluation['advice'][0]['validity_state']['history']['source']['projection'] == 'engine_causal_v1'
+    with pytest.raises(ValueError, match='content hash mismatch'):
+        restored.resolve_history(dict(reference) | {'source': dict(reference['source']) |
+            {'projection': 'engine_causal_v1'}}, data=data)

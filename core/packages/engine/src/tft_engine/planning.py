@@ -448,8 +448,7 @@ def history_evidence(context):
     if context.history.source_reference is None:
         return _encode(context.history)
     if '_history_evidence' not in context.__dict__:
-        source=dict(context.history.source_reference) | {'projection': 'engine_causal_v1',
-            'round_id': context.snapshot.round_id}
+        source=dict(context.history.source_reference) | {'round_id': context.snapshot.round_id}
         encoded=json.dumps(_encode(context.history),sort_keys=True,separators=(',',':'),allow_nan=False)
         object.__setattr__(context,'_history_evidence',freeze({'source': source,
             'sha256': sha256(encoded.encode()).hexdigest()}))
@@ -465,7 +464,9 @@ def causal_history(snapshot, history, data):
     sightings=tuple(sighting for sighting in history.sightings if (
         sighting.read_at<=snapshot.captured_at if sighting.read_at else
         round_index(sighting.round_id,data)<=round_index(snapshot.round_id,data)))
-    return replace(history,snapshots=tuple(previous),sightings=sightings)
+    source_reference=(dict(history.source_reference) | {'projection': 'engine_causal_v1'}
+        if history.source_reference is not None else None)
+    return replace(history,snapshots=tuple(previous),sightings=sightings,source_reference=source_reference)
 
 
 def core_evidence(items,context):
@@ -549,7 +550,7 @@ def evaluate(snapshot,history,data,mode,*,hooks=None,seed=None,effects=None,roll
             items=tuple(paused('Fresh positive planning evidence unavailable',missing=('phase','planning_phase'),domain=domain) for domain in ('econ','plan','transition'))+_hook_advice(hooks,context)
             return EngineEvaluation(plan,advice=rank_advice(core_evidence(items,context)),simulation_diagnostics=_simulation.workload() if _simulation else {})
         else:
-            prefix=replace(history,snapshots=tuple(previous),sightings=tuple(s for s in history.sightings if (s.read_at<=snapshot.captured_at if s.read_at else round_index(s.round_id,data)<=round_index(snapshot.round_id,data))))
+            prefix=replace(causal,snapshots=tuple(previous),sightings=tuple(s for s in history.sightings if (s.read_at<=snapshot.captured_at if s.read_at else round_index(s.round_id,data)<=round_index(snapshot.round_id,data))))
             context=_step(snapshot,prefix,data,plan,hooks,seed=seed,effects=effects,rollouts=rollouts,_simulation=_simulation)
             if entries is not None and effects is None and rollouts is None and (seed is None or seed==snapshot_seed(snapshot,data)):
                 entries.append((snapshot,prefix.sightings,context.plan))
