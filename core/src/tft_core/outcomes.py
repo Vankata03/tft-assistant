@@ -113,9 +113,12 @@ class OutcomeCollector:
     is allowed: the match must first appear on that owner's match-id endpoint.
     """
 
-    def __init__(self, sessions, *, client=None):
+    def __init__(self, sessions, *, client=None, client_factory=None):
         self.sessions = sessions
         self.client = client
+        self.client_factory = client_factory
+        self._configured_client = None
+        self._source_key = None
 
     def status(self, game_id):
         game_id = str(game_id)
@@ -147,7 +150,12 @@ class OutcomeCollector:
                     region = source.get('region', 'europe' if platform.lower() == 'eun1' else None)
                     if region is None:
                         raise ValueError('Explicit outcome routing region required')
-                    client = self.client or RiotClient(key_path=self.sessions.config_root/'riot-api-key', platform=platform, region=region)
+                    source_key = (owner, platform, region)
+                    if self.client is None and source_key != self._source_key:
+                        self._configured_client = (self.client_factory or RiotClient)(
+                            key_path=self.sessions.config_root/'riot-api-key', platform=platform, region=region)
+                        self._source_key = source_key
+                    client = self.client or self._configured_client
                     # RiotClient also validates configured routing when HTTP is injected.
                     if client.platform != platform or client.region != region:
                         raise ValueError('Outcome source and client routing conflict')

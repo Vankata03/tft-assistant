@@ -248,3 +248,29 @@ def test_refit_cannot_cross_a_detached_unfinished_ranked_game_after_the_tenth_co
     harness = EvaluationHarness(sessions, DataStore(tmp_path/'data'), repository=ROOT)
     with pytest.raises(ValueError, match='completed ten-game block'):
         harness.fit({'fight_scale': [1]})
+
+
+def test_automatic_collector_retains_server_rate_limits_across_finished_games(tmp_path):
+    import json
+    from tft_core.outcomes import OutcomeCollector
+    from tft_data.riot import HTTPResponse, RiotClient
+
+    sessions = finished_session(tmp_path)
+    sessions.start_game('902', set_id='18', queue_id=1100)
+    sessions.end_game()
+    (sessions.config_root/'riot-api-key').write_text('fixture-key')
+    (sessions.config_root/'outcome-source.json').write_text(json.dumps({
+        'owner_puuid': 'owner', 'platform': 'eun1', 'region': 'europe'}))
+    elapsed, delays = [0.0], []
+    def sleep(seconds):
+        delays.append(seconds)
+        elapsed[0] += seconds
+    def external_http(url, headers):
+        body = ['EUN1_901', 'EUN1_902'] if '/ids?' in url else match_fixture(url.rsplit('_', 1)[1])
+        return HTTPResponse(200, {'X-App-Rate-Limit': '2:120'}, body)
+    def client_factory(**options):
+        return RiotClient(**options, transport=external_http, clock=lambda: elapsed[0], sleep=sleep)
+    collector = OutcomeCollector(sessions, client_factory=client_factory)
+    assert collector.collect('901')['state'] == 'confirmed'
+    assert collector.collect('902')['state'] == 'confirmed'
+    assert any(delay > 100 for delay in delays)
