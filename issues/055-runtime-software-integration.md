@@ -112,3 +112,9 @@ The one-shot `tft-harness start-run` workflow from ticket 42 was merged into `im
 - Outcome truth and ranked run eligibility merged into `implement/mvp` as `b9504a2`. The merge includes review fix `46eac81`. An invalid private outcome artifact no longer blocks index rebuilds, core startup or capture. Outcome collection has its own 30-second watchdog, so a slow Riot API or a server cooldown cannot delay a review by the full 600-second review watchdog.
 - The full root suite passed 775 tests in 135.67 seconds, process exit 0. Both import contracts, schema freshness, the offline lock check and whitespace checks passed. Ticket 42 records the details.
 - Live numbering and ten-game blocks are verified on fixtures only, not on real runs. Retroactive renumbering after a late queue confirmation and a permanently detached run game blocking refits are known limits. Windows/Electron execution, current data and native-cause qualification remain open. Ticket 55 stays open.
+
+### 2026-10-16 — Slice B integrated after independent review
+
+- Review attribution, the review surfaces and on-demand regeneration merged into `implement/mvp` as `fb64eb7`. Regeneration runs through the core's owned review supervisor and keeps existing completed-job deduplication unless a regeneration is explicitly requested. A request from a server worker thread is no longer lost to a concurrent handled write. Locked games still reject regeneration, and no review route exposes a Riot PUUID.
+- The full root suite passed 839 tests in 158.84 seconds, process exit 0. Both import contracts, schema freshness, the offline lock check, whitespace checks and the UI tests, typecheck and build passed. Ticket 42 records the details.
+- Windows/Electron execution and live-game qualification remain open. Ticket 55 stays open.
