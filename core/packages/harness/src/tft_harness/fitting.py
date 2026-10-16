@@ -57,6 +57,8 @@ class SimplexRange:
         if type(self.size) is not int or not 2 <= self.size <= 129:
             raise ValueError('Simplex range requires 2–129 categories')
         ContinuousRange(self.low, self.high)
+        if not -350 <= self.low < self.high <= 350:
+            raise ValueError('Simplex range logits must stay within [-350,350] to preserve positive mass')
         if self.keys is not None and (not isinstance(self.keys, (tuple, list)) or len(self.keys) != self.size
                 or any(not isinstance(key, str) or not key for key in self.keys) or len(set(self.keys)) != self.size):
             raise ValueError('Simplex range keys must identify each category exactly once')
@@ -168,6 +170,25 @@ def _validate(parameters, fixed, max_candidates):
         raise ValueError('Owner-log fitting accepts family 1 only')
     if set(parameters) & set(fixed):
         raise ValueError('Fixed normalization fields cannot also be fitted')
+    strict_positive = {'fight_scale', 'win_scale_by_stage', 'survivor_scale_by_stage',
+        'sighting_half_life_rounds', 'opponent_growth_correction_by_stage'}
+    def domain(name, value):
+        if isinstance(value, SimplexRange):
+            return
+        if isinstance(value, ContinuousRange):
+            if value.low < 0 or (name in strict_positive and value.low == 0):
+                raise ValueError(f'{name} search violates its physical domain')
+        elif isinstance(value, dict):
+            for child in value.values():
+                domain(name, child)
+        elif isinstance(value, (tuple, list)):
+            for child in value:
+                domain(name, child)
+        elif isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value) \
+                or value < 0 or (name in strict_positive and value == 0):
+            raise ValueError(f'{name} search violates its physical domain')
+    for name, value in (parameters | fixed).items():
+        domain(name, value)
     ranges = [_contains_range(value) for value in parameters.values()]
     if any(ranges) and not all(ranges):
         raise ValueError('Continuous ranges cannot be mixed with grid values in one fit')
@@ -180,7 +201,7 @@ def _validate(parameters, fixed, max_candidates):
         if type(max_candidates) is not int or not 1 <= max_candidates <= 4096 or prod(map(len,parameters.values())) > max_candidates:
             raise ValueError('Declared fitting search budget exceeded')
     varied = lambda name: name in parameters and (continuous or len(parameters[name]) > 1)
-    if varied('fight_scale') and any(varied(name) for name in ('unit_weight','trait_weight','item_weight')) \
+    if any(varied(scale) for scale in ('fight_scale', 'win_scale_by_stage')) and any(varied(name) for name in ('unit_weight','trait_weight','item_weight')) \
             and not ('unit_weight' in fixed and not isinstance(fixed['unit_weight'], bool)
                 and isinstance(fixed['unit_weight'], (int, float)) and isfinite(fixed['unit_weight'])
                 and fixed['unit_weight'] > 0) \

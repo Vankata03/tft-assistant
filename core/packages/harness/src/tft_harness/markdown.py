@@ -6,8 +6,8 @@ from pathlib import Path
 from tft_review.contracts import json_value
 
 
-_OMIT = {'examples', 'manifest', 'largest_changes', 'changed_points', 'rows', 'candidate',
-    'parameters', 'target', 'conditioning', 'training_game_ids', 'holdout_game_ids',
+_OMIT = {'examples', 'manifest', 'largest_changes', 'changed_points', 'rows',
+    'target', 'conditioning', 'training_game_ids', 'holdout_game_ids',
     'eligible_game_ids', 'candidates', 'citation', 'citations'}
 
 
@@ -29,16 +29,20 @@ def aggregate_only(value):
     return value
 
 
-def write_markdown(destination, reference, report=None, *, advice_diff=None, fit=None, priors=None, margins=None):
+def write_markdown(destination, reference, report=None, *, advice_diff=None, fit=None, priors=None, margins=None, checks=None, producer=None):
     destination = Path(destination)
     destination.mkdir(parents=True, exist_ok=True)
     sections = [('Accepted reference', {'path': reference.path, 'file_commit': reference.commit,
-        'Git blob': reference.blob, 'code_commit': reference.code_commit})]
+        'Git blob': reference.blob, 'reference_checkout_head': reference.code_commit})]
+    if producer is not None:
+        sections.append(('Producer code identity', producer))
+    if checks is not None:
+        sections.append(('Widened candidate and hand-set checks', aggregate_only(checks)))
     if report is not None:
         identities = {json.dumps({key: row['replay_identity'].get(key) for key in
             ('commit', 'dirty', 'dirty_hash', 'runtime_source_hash')}, sort_keys=True)
             for row in report.manifest if 'replay_identity' in row}
-        sections.append(('Runtime code identity', [json.loads(value) for value in sorted(identities)]))
+        sections.append(('Replay cache identities', [json.loads(value) for value in sorted(identities)]))
         sections.extend([('Metrics and exclusions', aggregate_only(report.metrics)),
             ('Gates', aggregate_only(report.gates)), ('Coverage and gaps', aggregate_only(report.counts)),
             ('Calibration, report-only checks and flips', aggregate_only({name: report.metrics.get(name)

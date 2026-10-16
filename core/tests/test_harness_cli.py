@@ -197,3 +197,36 @@ def test_priors_cli_uses_qualified_public_counts_and_preserves_source(tmp_path, 
     assert fitted['source'] == 'public-statistics' and fitted['family'] == '3'
     assert candidate['harness_candidate']['provenance']['cohorts'][0]['citation'].startswith('https://tactics.tools/')
     assert str(source) not in next(output.glob('*.toml')).read_text()
+
+
+def test_cli_eval_actually_reports_widened_candidates(tmp_path, monkeypatch):
+    from tests.test_harness import combat_logs
+    from tests.test_harness_tunables_io import committed_repository
+    from tft_core.harness_cli import main
+    (tmp_path/'games').mkdir()
+    (tmp_path/'accepted').mkdir()
+    sessions,store = combat_logs(tmp_path/'games',results=('win','loss'))
+    repository = committed_repository(tmp_path/'accepted')
+    monkeypatch.setenv('TFT_ASSISTANT_DATA_ROOT',str(sessions.root))
+    monkeypatch.setenv('TFT_ASSISTANT_CONFIG_ROOT',str(sessions.config_root))
+    output=tmp_path/'reports'
+    assert main(['eval','--repository',str(repository),'--snapshots',str(store.root),
+        '--output',str(output),'--bootstrap-draws','20']) == 0
+    assert 'widened_candidates' in next(output.glob('*.md')).read_text()
+
+
+def test_report_code_identity_is_running_source_separate_from_accepted_checkout(tmp_path, monkeypatch):
+    from tests.test_harness import combat_logs
+    from tests.test_harness_tunables_io import committed_repository, git
+    from tests.test_replay_contracts import ROOT
+    from tft_core.harness_cli import main
+    (tmp_path/'games').mkdir()
+    (tmp_path/'accepted').mkdir()
+    sessions,store = combat_logs(tmp_path/'games',results=('win','loss'))
+    repository = committed_repository(tmp_path/'accepted')
+    monkeypatch.setenv('TFT_ASSISTANT_DATA_ROOT',str(sessions.root))
+    monkeypatch.setenv('TFT_ASSISTANT_CONFIG_ROOT',str(sessions.config_root))
+    output=tmp_path/'reports'
+    assert main(['eval','--repository',str(repository),'--snapshots',str(store.root),
+        '--output',str(output),'--bootstrap-draws','20']) == 0
+    assert git(ROOT,'rev-parse','HEAD') in next(output.glob('*.md')).read_text()

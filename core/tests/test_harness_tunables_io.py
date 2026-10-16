@@ -145,3 +145,12 @@ def test_committed_overlay_retains_public_provenance_and_historical_static(tmp_p
     assert replayed.static == data.static
     assert replayed.entities == data.entities
     assert replayed.statistics == data.statistics
+
+
+def test_nested_repository_reference_cannot_write_candidate_into_accepted_data(tmp_path):
+    from tft_harness.tunables_io import latest_committed_tunables, write_candidate
+    from tft_data import DataError
+    repository = committed_repository(tmp_path)
+    reference = latest_committed_tunables(repository/'data')
+    with pytest.raises(DataError, match='committed'):
+        write_candidate(reference, {'fight_scale':1.5}, repository/'data', citation='fixture')

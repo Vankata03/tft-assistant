@@ -93,3 +93,15 @@ def test_final_board_statistics_do_not_qualify_an_all_alive_round_population(tmp
         with pytest.raises(DataError, match='population'):
             build_joint_support(board_rows(), data, provider='public-fixture',
                 citation='Fixture export', qualification=qualification)
+
+
+@pytest.mark.parametrize('extra', [
+    {'forms':[{'fire':99}]}, {'capacity':{'observed_budget':2}}, {'count':10**1000},
+])
+def test_builder_validates_full_form_capacity_and_finite_mass_before_publication(tmp_path, extra):
+    from tft_harness.joint_support import build_joint_support
+    data=unsupported(tmp_path)
+    row=board_rows()[0] | {'count':600} | extra
+    with pytest.raises(DataError):
+        build_joint_support([row],data,provider='public-fixture',citation='Fixture export',
+            qualification=population(data))

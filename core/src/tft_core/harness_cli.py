@@ -36,7 +36,7 @@ def _offline(args):
     from tft_data import DataStore
     from tft_harness import EvaluationHarness
     from tft_harness.overlay import TunableOverlay
-    from tft_harness.tunables_io import latest_committed_tunables, write_candidate
+    from tft_harness.tunables_io import latest_committed_tunables, write_candidate, producer_identity
     from tft_harness.markdown import write_markdown
     from tft_harness.fitting import fit
     from tft_harness.priors import fit_priors
@@ -49,6 +49,7 @@ def _offline(args):
         output = _private_location(args.output or root/'harness')
         snapshots = _private_location(args.snapshots or root/'snapshots')
         reference = latest_committed_tunables(args.repository, path=args.accepted)
+        producer = producer_identity()
         sessions, store = SessionStore(root, config), DataStore(snapshots)
         accepted = TunableOverlay(store, {}, tagged_fields=reference.fields)
         harness = EvaluationHarness(sessions, accepted, repository=args.repository,
@@ -61,7 +62,7 @@ def _offline(args):
             if sessions.run and args.priors:
                 raise ValueError('Public priors cannot change during the Live run')
             if args.priors:
-                if args.search:
+                if args.search or args.fixed:
                     raise ValueError('Public priors do not fit owner-game search parameters')
                 if store.current is None or store.current.patch != reference.patch:
                     raise ValueError('Public-prior fitting requires a current immutable data snapshot matching accepted patch')
@@ -69,6 +70,8 @@ def _offline(args):
                 priors = fit_priors(accepted.get(store.current.snapshot_id), evidence=evidence)
                 updates = priors.fields
             else:
+                if args.prior_evidence:
+                    raise ValueError('Public prior evidence requires --priors')
                 search = _read_json(args.search) if args.search else {'fight_scale': {'low': .01, 'high': 20.0}}
                 parameters = _search_parameters(search)
                 fixed = _read_json(args.fixed) if args.fixed else {}
@@ -82,12 +85,14 @@ def _offline(args):
             bootstrap_draws=args.bootstrap_draws)
         diff = dict(harness.advice_diff(updates, limit=0)) | {
             'reference': 'latest committed accepted tunables; immutable static/source pins; original log points and seeds'}
-        write_markdown(output, reference, report, advice_diff=diff, fit=fitted, priors=priors, margins=margins)
+        try:
+            checks = harness.hand_set_checks(limit=0)
+        except (DataError, ValueError, KeyError, OSError):
+            checks = {'widened_candidates': {'status': 'unavailable', 'reason': 'missing_or_invalid_replay_source'}}
+        write_markdown(output, reference, report, advice_diff=diff, fit=fitted, priors=priors, margins=margins,
+            checks=checks, producer=producer)
         if updates:
-            identities = [{key: value for key, value in row['replay_identity'].items()
-                if key in ('commit', 'dirty', 'dirty_hash', 'runtime_source_hash') and value is not None}
-                for row in report.manifest if 'replay_identity' in row]
-            runtime = identities[0] if identities else {}
+            runtime = producer
             sources = {name: 'public-statistics' for name in updates} if priors else None
             write_candidate(reference, updates, output, citation='Offline harness candidate; qualification and gates in private report',
                 sources=sources, provenance=({'method': 'qualified public empirical Bayes and temporal holdout',

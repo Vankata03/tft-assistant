@@ -7,6 +7,10 @@ candidate file that the owner accepts by committing it to ``data/<patch>/``.
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from math import isfinite
+import hashlib
+import importlib
+import json
+import sys
 from pathlib import Path
 import subprocess
 import tomllib
@@ -52,6 +56,8 @@ def latest_committed_tunables(repository, *, path=None):
     """Return the tunables of the newest calendar patch committed at HEAD."""
     repository = Path(repository).resolve()
     try:
+        repository = Path(subprocess.run(['git', '-C', str(repository), 'rev-parse', '--show-toplevel'],
+            capture_output=True, check=True, text=True).stdout.strip())
         commit = subprocess.run(['git', '-C', str(repository), 'rev-parse', 'HEAD'],
             capture_output=True, check=True, text=True).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
@@ -90,6 +96,40 @@ def latest_committed_tunables(repository, *, path=None):
         blob = subprocess.run(["git", "-C", str(repository), "rev-parse", f"{commit}:{tunables_path}"], capture_output=True, check=True, text=True).stdout.strip()
         return CommittedTunables(repository, file_commit, commit, blob, patch, set_number, tunables_path, document, fields)
     raise DataError('No committed patch tunables at HEAD; commit data/<patch>/tunables.toml first')
+
+
+def producer_identity():
+    """Identify running producer source independently of the accepted-data checkout."""
+    package = Path(__file__).resolve().parent
+    def git(*args):
+        result = subprocess.run(['git', '-C', str(package), *args], capture_output=True, check=False)
+        return result.stdout if result.returncode == 0 else b''
+    root = git('rev-parse', '--show-toplevel').decode().strip()
+    commit = git('rev-parse', 'HEAD').decode().strip()
+    runtime, mismatches = {}, 0
+    for name in ('tft_data', 'tft_engine', 'tft_review', 'tft_harness', 'tft_core'):
+        module = sys.modules.get(name)
+        if module is None and name == 'tft_core':
+            continue
+        module = module or importlib.import_module(name)
+        source = Path(module.__file__).resolve().parent
+        prefix = 'core/src/tft_core' if name == 'tft_core' else f'core/packages/{name[4:]}/src/{name}'
+        for path in sorted(source.rglob('*.py')):
+            relative = f'{prefix}/{path.relative_to(source).as_posix()}'
+            content = path.read_bytes()
+            runtime[relative] = hashlib.sha256(content).hexdigest()
+            expected = Path(root)/relative if root else None
+            mismatches += expected is None or not expected.is_file() or expected.read_bytes() != content
+    source_hash = hashlib.sha256(json.dumps(runtime, sort_keys=True).encode()).hexdigest()
+    paths = ('core/src', 'core/packages', 'core/uv.lock', 'core/pyproject.toml')
+    status = git('status', '--porcelain=v1', '--untracked-files=all', '--', *paths)
+    diff = git('diff', 'HEAD', '--binary', '--', *paths)
+    result = {'commit': commit or 'unavailable', 'runtime_source_hash': source_hash,
+        'runtime_mismatch_count': mismatches, 'source_matches_checkout': bool(root) and not mismatches,
+        'dirty': bool(status or mismatches), 'python': '.'.join(map(str, sys.version_info[:3]))}
+    if status:
+        result['dirty_hash'] = hashlib.sha256(status+diff+source_hash.encode()).hexdigest()
+    return result
 
 
 def _finite(value):
@@ -133,8 +173,10 @@ def write_candidate(committed, updates, destination, *, citation, generated_at=N
         document['fields'][name] = {'value': plain(value), 'source': (sources or {}).get(name, 'owner'),
             'citation': citation, 'family': families[name]}
     tagged(document['fields'], 'candidate tunables', families=families)
+    producer = (provenance or {}).get('runtime_code') or producer_identity()
     document['harness_candidate'] = {'accepted_file_commit': committed.commit, 'accepted_blob': committed.blob,
-        'accepted_path': committed.path, 'code_commit': committed.code_commit, 'status': 'unaccepted',
+        'accepted_path': committed.path, 'accepted_checkout_head': committed.code_commit,
+        'code_commit': producer['commit'], 'producer': producer, 'status': 'unaccepted',
         'provenance': plain(provenance or {})}
     if not _finite(document['harness_candidate']):
         raise DataError('Candidate provenance must be finite TOML data')
@@ -144,7 +186,7 @@ def write_candidate(committed, updates, destination, *, citation, generated_at=N
     generated_at = generated_at or datetime.now(UTC)
     header = [f'# Candidate tunables for patch {committed.patch}, written by tft-harness.',
         f'# Base: {committed.path} at commit {committed.commit}; Git blob {committed.blob}.',
-        f'# Code identity: {committed.code_commit}.',
+        f'# Code identity: {producer["commit"]}; runtime source hash {producer["runtime_source_hash"]}.',
         f'# Generated {generated_at.isoformat()}. Changed: {", ".join(sorted(updates))}.',
         f'# Accept by copying this file to {committed.path} and committing it.',
         *(f'# {line}' for note in notes for line in str(note).splitlines())]

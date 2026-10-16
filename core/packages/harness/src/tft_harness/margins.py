@@ -278,8 +278,9 @@ def fit_margins(harness, parameters, *, metric='fight_log_loss', draws=8, seed=0
     else:
         current = harness.data_store.get(current.snapshot_id)
     fields, diagnostics = {}, {}
+    carried['comp_defining_margin'] = 'comp_commit_paired_guard_unavailable'
     for target, kind, sticky in (('line_margin', 'econ', False),
-            ('comp_defining_margin', 'augment', True), ('wisp_buy_margin', 'wisp', False)):
+            ('wisp_buy_margin', 'wisp', False)):
         if target not in current.tunables:
             continue
         guards = paired_guards(replayed[0], kind=kind)

@@ -17,7 +17,9 @@ from dataclasses import replace
 from tft_data import DataError, TaggedValue
 from tft_data.config import STATISTICS_MIN_SAMPLES
 from tft_data.models import plain
-from tft_engine import Board
+from tft_engine import Board, TraitSighting
+from tft_engine.joint_sighting_law import JointHypothesis, JointSightingLaw, predict_joint_sighting
+from tft_engine.capacity import CapacityEvidence
 from tft_review.identity import digest
 
 
@@ -47,7 +49,7 @@ def build_joint_support(rows, data, *, provider, citation, min_boards=STATISTICS
         round_id, level, count = row.get('round_id'), row.get('level'), row.get('count')
         if not isinstance(round_id, str) or round_id not in data.value('round_order') or type(level) is not int or not 1 <= level <= 10:
             raise DataError('Joint support rows need a round id and a positive level')
-        if type(count) is not int or count < 1:
+        if type(count) is not int or not 1 <= count <= 2**53:
             raise DataError('Joint support boards need a positive integer count')
         try:
             board = Board.from_dict(plain(row['board']))
@@ -60,9 +62,14 @@ def build_joint_support(rows, data, *, provider, citation, min_boards=STATISTICS
         for name in ('capacity', 'forms'):
             if row.get(name) is not None:
                 hypothesis[name] = plain(row[name])
-        from tft_engine.joint_sighting_law import JointHypothesis
-        from tft_engine.capacity import CapacityEvidence
-        JointHypothesis(board, count, CapacityEvidence(**hypothesis.get('capacity', {})), hypothesis.get('forms'))
+        try:
+            certified = JointHypothesis(board, count, CapacityEvidence(**hypothesis.get('capacity', {})), hypothesis.get('forms'))
+            law = JointSightingLaw(data.snapshot_id, 'qualification', round_id, level, provider, citation, (certified,))
+            # The public scorer validates every physical unit/form/capacity before
+            # matching this empty event. Its event score is discarded.
+            predict_joint_sighting(TraitSighting('qualification', round_id, level, {}), data, law)
+        except (TypeError, ValueError, OverflowError) as error:
+            raise DataError(f'Invalid qualified whole-board support: {error}') from None
         contexts.setdefault((round_id, level), []).append(hypothesis)
     rounds, kept, thin = {}, {}, {}
     for (round_id, level), hypotheses in sorted(contexts.items()):

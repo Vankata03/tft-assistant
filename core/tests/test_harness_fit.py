@@ -220,6 +220,7 @@ def test_nested_prior_maps_preserve_fixed_cells_and_replay_predictions(tmp_path)
 @pytest.mark.parametrize('arguments', [
     {'size':1}, {'low':0,'high':float('inf')}, {'start':(1.,0.,0.)},
     {'start':(.2,.2,.2)}, {'low':-.1,'high':.1,'start':(.8,.1,.1)},
+    {'low':-351,'high':1}, {'low':0,'high':351},
 ])
 def test_simplex_ranges_require_finite_identifiable_domains(arguments):
     from tft_harness.fitting import SimplexRange
@@ -270,3 +271,19 @@ def test_search_rejects_unbounded_software_budgets_and_too_many_coordinates(tmp_
         fit(harness,{'emblem_count_prior':{str(i):ContinuousRange(.1,1) for i in range(129)}})
     with pytest.raises(ValueError,match='categories'):
         SimplexRange(130)
+
+
+def test_stage_scale_joint_power_requires_normalization(tmp_path):
+    from tft_harness.fitting import fit
+    sessions, store = combat_logs(tmp_path, results=('win','loss'))
+    with pytest.raises(ValueError, match='normalization'):
+        fit(EvaluationHarness(sessions,store,repository=ROOT),
+            {'win_scale_by_stage':[{'3':.5},{'3':1}], 'trait_weight':[.5,1]}, bootstrap_draws=20)
+
+
+def test_family1_rejects_nonphysical_range_before_replay(tmp_path):
+    from tft_harness.fitting import ContinuousRange, fit
+    sessions, store = combat_logs(tmp_path, results=('win','loss'))
+    with pytest.raises(ValueError, match='domain'):
+        fit(EvaluationHarness(sessions,store,repository=ROOT),
+            {'fight_scale':ContinuousRange(-1,1)}, bootstrap_draws=20, max_evaluations=3)
