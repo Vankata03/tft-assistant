@@ -612,6 +612,143 @@ def test_shop_bundle_does_not_hide_an_additional_unscored_purchase(tmp_path):
     assert len(point['player_choice']['payload']['buys']) == 2
 
 
+def _offer(*units, empty=()):
+    """The live capture's parsed shop field: five slots, purchased slots empty."""
+    return [{'slot': slot, 'unit_id': None if slot in empty else unit,
+        'cost': None if slot in empty else 1, 'traits': []} for slot, unit in enumerate(units)]
+
+
+SHOP_UNITS = ('unit', 'unit', 'unit', 'unit', 'unit')
+
+
+def remaining_shop(context):
+    """Original snapshot advises slots 0 and 1; the later capture advises the remaining slot."""
+    from tft_engine import Advice, ScoredOption
+    if context.snapshot.snapshot_id == 'original':
+        return two_purchase_shop(context)
+    buy = {'slot': 1, 'unit_id': 'unit'}
+    return (Advice('shop', 'Buy remaining', 'act_this_phase', .9, 'fixture', option_id='shop:remaining',
+        payload={'buys': [buy]}, options=(ScoredOption('shop:1:unit', 'buy', buy),)),)
+
+
+def split_bundle_review(tmp_path, *, original=None, remaining=None, between=None, round_id=None,
+        stale=False, extra_slot=None):
+    """Shown bundle (slots 0, 1); buy slot 0; a new capture; buy slot 1.
+
+    Runtime ordering: the tracker logs each purchase before the snapshot whose
+    shop read shows that slot emptied, at that snapshot's capture time.
+    """
+    from tft_engine import DomainHook
+    from tests.test_replay_contracts import log_snapshot
+    sessions, store, data, _ = logged_game(tmp_path, finish=False, mode='live',
+        **({} if original is None else {'shop': original}))
+    hooks = (DomainHook('shop', (), advice=remaining_shop),)
+    decision = _decision_id(sessions, store, decision='shop', hooks=hooks)
+    log_delivery(sessions, decision_id=decision, option_id='shop', domain='shop',
+        payload={'buys': [{'slot': 0, 'unit_id': 'unit'}, {'slot': 1, 'unit_id': 'unit'}]})
+    log_shown(sessions, decision_id=decision, option_id='shop')
+    at = NOW+timedelta(seconds=1)
+    sessions.append_event('purchase', {'slot': 0, 'unit_id': 'unit', 'cost': 1, 'copies': 1},
+        timestamp=at.isoformat())
+    if between is not None:
+        between(sessions)
+    at = NOW+timedelta(seconds=1.1)
+    fields = {'gold': 17} | ({} if remaining is None else {'shop': remaining})
+    snapshot = log_snapshot(data, at=at, snapshot_id='remaining', **fields)
+    if round_id is not None:
+        snapshot['round_id'] = round_id
+    if stale:
+        snapshot['fields']['shop']['read_at'] = (NOW+timedelta(seconds=.5)).isoformat()
+    sessions.append_event('snapshot', snapshot, timestamp=at.isoformat())
+    sessions.append_event('purchase', {'slot': 1, 'unit_id': 'unit', 'cost': 1, 'copies': 1},
+        timestamp=(NOW+timedelta(seconds=1.2)).isoformat())
+    if extra_slot is not None:
+        sessions.append_event('purchase', {'slot': extra_slot, 'unit_id': 'unit', 'cost': 1, 'copies': 1},
+            timestamp=(NOW+timedelta(seconds=1.25)).isoformat())
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=2)).isoformat())
+    report = review(sessions, store, hooks)
+    return report, [row for row in report.timeline if row['category'] == 'shop']
+
+
+def test_shown_bundle_completed_after_a_later_capture_is_not_ignored_without_offer_identity(tmp_path):
+    """Public reproduction: no shop read proves continuity, so following stays unknown."""
+    report, (first, second) = split_bundle_review(tmp_path)
+    assert first['shown']['followed'] is None
+    assert first['shown']['status'] == 'shown'
+    assert first['player_choice'] is None
+    assert first['unavailable']['player_choice'] == 'shop_offer_continuity_unknown'
+    assert second['player_choice']['option_id'] == 'shop:remaining'
+    assert second['shown']['status'] == 'capture_gap'
+    assert report.summary['follow_rate']['eligible'] == 0
+
+
+def test_shown_bundle_completed_across_a_capture_of_the_unchanged_offer_is_followed(tmp_path):
+    report, (first, second) = split_bundle_review(tmp_path,
+        original=_offer(*SHOP_UNITS), remaining=_offer(*SHOP_UNITS, empty={0}))
+    assert first['shown']['status'] == 'followed'
+    assert first['shown']['followed'] is True
+    assert first['differed'] is False
+    assert [(row['slot'], row['unit_id']) for row in first['player_choice']['payload']['buys']] == [
+        (0, 'unit'), (1, 'unit')]
+    # Shown-ack causality still uses the first purchase as the choice onset.
+    assert first['player_choice']['observed_started_at'] == (NOW+timedelta(seconds=1)).isoformat()
+    assert first['player_choice']['observed_at'] == (NOW+timedelta(seconds=1.2)).isoformat()
+    # The remaining-decision point attributes only its own window's purchase.
+    assert second['player_choice']['option_id'] == 'shop:remaining'
+    assert [row['slot'] for row in second['player_choice']['payload']['buys']] == [1]
+    assert second['shown']['status'] == 'capture_gap'
+    assert report.summary['follow_rate'] == {'value': 1.0, 'reason': None, 'eligible': 1, 'followed': 1}
+
+
+def test_joined_bundle_does_not_hide_an_additional_unscored_purchase(tmp_path):
+    _, (first, _) = split_bundle_review(tmp_path,
+        original=_offer(*SHOP_UNITS), remaining=_offer(*SHOP_UNITS, empty={0}), extra_slot=2)
+    assert first['shown']['status'] == 'ignored'
+    assert first['shown']['followed'] is False
+    assert sorted(row['slot'] for row in first['player_choice']['payload']['buys']) == [0, 1, 2]
+
+
+def _log_roll(sessions):
+    sessions.append_event('roll', {'cost': 2, 'round_id': '3-2'},
+        timestamp=(NOW+timedelta(seconds=1.05)).isoformat())
+
+
+def _log_gap(sessions):
+    at = NOW+timedelta(seconds=1.05)
+    sessions.append_event('capture_gap', {'reason': 'window_unavailable',
+        'start': (NOW+timedelta(seconds=1.02)).isoformat(), 'end': at.isoformat()}, timestamp=at.isoformat())
+
+
+def _log_ambiguity(sessions):
+    sessions.append_event('tracking_ambiguity', {'reason': 'shop/gold transition has no unique purchase or roll',
+        'gold_delta': 3}, timestamp=(NOW+timedelta(seconds=1.05)).isoformat())
+
+
+@pytest.mark.parametrize(('change', 'followed'), [
+    ({'between': _log_roll}, False),
+    ({'round_id': '3-3'}, False),
+    ({'remaining': _offer('unit', 'unit', 'other', 'unit', 'unit', empty={0})}, False),
+    ({'remaining': _offer(*SHOP_UNITS)}, False),
+    ({'between': _log_gap}, None),
+    ({'between': _log_ambiguity}, None),
+    ({'remaining': None}, None),
+    ({'stale': True}, None),
+    ({'original': None}, None),
+], ids=['reroll', 'round_change', 'replaced_offer', 'purchase_not_seen_in_offer', 'capture_gap',
+    'tracking_ambiguity', 'later_offer_unknown', 'later_offer_stale', 'shown_offer_unknown'])
+def test_shown_bundle_is_not_joined_across_a_changed_or_unobserved_offer(tmp_path, change, followed):
+    options = {'original': _offer(*SHOP_UNITS), 'remaining': _offer(*SHOP_UNITS, empty={0})} | change
+    report, (first, *_) = split_bundle_review(tmp_path, **options)
+    assert first['shown']['followed'] is followed
+    if followed is None:
+        assert first['shown']['status'] == 'shown'
+        assert first['unavailable']['player_choice'] == 'shop_offer_continuity_unknown'
+        assert report.summary['follow_rate']['eligible'] == 0
+    else:
+        assert first['shown']['status'] == 'ignored'
+        assert [row['slot'] for row in first['player_choice']['payload']['buys']] == [0]
+
+
 @pytest.mark.parametrize(('display_when', 'earlier_valid', 'followed'), [
     ('before', False, True), ('equal', False, None), ('after', False, None), ('after', True, True),
 ])
