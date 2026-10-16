@@ -163,3 +163,45 @@ def test_stage_margins_keep_the_floor_when_draws_cannot_measure_model_error(tmp_
             rollout_citation='tape', model_citation='draws')
     with pytest.raises(ValueError, match='family 1'):
         replay_draws(harness, [{'line_margin': 1}])
+
+
+def test_default_engine_produces_real_paired_econ_rollouts(tmp_path):
+    import tomllib
+    import tomli_w
+    from tests.test_replay_contracts import historical_data, log_snapshot, NOW, ROOT
+    from tft_core.storage import SessionStore
+    from tft_harness import EvaluationHarness
+    from tft_harness.margins import paired_guards, replay_draws
+    store, data = historical_data(tmp_path)
+    path = tmp_path/'patch/tunables.toml'
+    document = tomllib.loads(path.read_text())
+    document['fields']['line_candidate_cap']['value'] = 4
+    path.write_text(tomli_w.dumps(document))
+    data = store.refresh(path.parent, now=NOW).snapshot
+    sessions = SessionStore(tmp_path/'logs', tmp_path/'config')
+    sessions.start_game('901', set_id='18', patch=data.patch, data_snapshot_id=data.snapshot_id,
+        timestamp=NOW.isoformat())
+    sessions.append_event('snapshot', log_snapshot(data), timestamp=NOW.isoformat())
+    sessions.end_game(timestamp=NOW.isoformat())
+    harness = EvaluationHarness(sessions, store, repository=ROOT)
+    guards = paired_guards(replay_draws(harness, [{}])[0], kind='econ')
+    assert guards and all(len(guard.differences) >= 2 for guard in guards)
+
+
+def test_margin_fit_produces_values_from_real_engine_tapes_and_training_refits(tmp_path):
+    from tests.test_harness_fit import staged_logs
+    from tests.test_replay_contracts import ROOT
+    from tft_harness import EvaluationHarness
+    from tft_harness.overlay import TunableOverlay
+    from tft_harness.margins import fit_margins
+    sessions, store = staged_logs(tmp_path, [[('3-2', result)] for result in
+        ('win','loss','win','win','loss')])
+    accepted = TunableOverlay(store, {'line_candidate_cap': 4}, tagged_fields={
+        'line_margin': TaggedValue(.1, 'default', 'Declared fixture starting floor', '2')})
+    result = fit_margins(EvaluationHarness(sessions, accepted, repository=ROOT),
+        {'fight_scale': [.25,1,2]}, draws=3, seed=17)
+    assert result['model']['method'] == 'training-game bootstrap refits'
+    assert result['fields']['line_margin']['3'] >= .1
+    assert result['diagnostics']['line_margin']['3']['available'] > 0
+    assert result['carried']['transition_tolerance'] == 'compatible_paired_guard_unavailable'
+    assert 'game_id' not in str(result)

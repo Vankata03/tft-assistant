@@ -22,6 +22,8 @@ from tft_data.models import plain
 class CommittedTunables:
     repository: Path
     commit: str
+    code_commit: str
+    blob: str
     patch: str
     set_number: int
     path: str
@@ -46,7 +48,7 @@ def _families(set_number):
         if set_number == 18 or name != 'wisp_buy_margin'}
 
 
-def latest_committed_tunables(repository):
+def latest_committed_tunables(repository, *, path=None):
     """Return the tunables of the newest calendar patch committed at HEAD."""
     repository = Path(repository).resolve()
     try:
@@ -60,6 +62,11 @@ def latest_committed_tunables(repository):
         boundaries = sorted((datetime.fromisoformat(str(when)), patch) for patch, when in rows.items())
     except (ValueError, TypeError) as error:
         raise DataError(f'Invalid committed patch calendar: {error}') from None
+    if path is not None:
+        selected = Path(path)
+        if selected.is_absolute() or ".." in selected.parts or len(selected.parts) != 3 or selected.parts[0] != "data" or selected.name != "tunables.toml":
+            raise DataError("Accepted tunables require an unambiguous tracked data/<patch>/tunables.toml path")
+        boundaries = [(when, patch) for when, patch in boundaries if str(selected) == f"data/{patch}/tunables.toml"]
     for _, patch in reversed(boundaries):
         tunables_path = f'data/{patch}/tunables.toml'
         tunables_text = _show(repository, f'HEAD:{tunables_path}')
@@ -76,10 +83,12 @@ def latest_committed_tunables(repository):
             raise DataError(f'Committed patch files for {patch} disagree on their patch or set')
         families = _families(set_number)
         fields = tagged(document.get('fields'), 'tunables', families=families)
-        missing = set(families)-set(fields)
+        missing = set(families)-set(fields)-{'opponent_growth_correction_by_stage'}
         if missing:
             raise DataError(f'Committed tunables miss fields: {sorted(missing)}')
-        return CommittedTunables(repository, commit, patch, set_number, tunables_path, document, fields)
+        file_commit = subprocess.run(["git", "-C", str(repository), "log", "-1", "--format=%H", commit, "--", tunables_path], capture_output=True, check=True, text=True).stdout.strip()
+        blob = subprocess.run(["git", "-C", str(repository), "rev-parse", f"{commit}:{tunables_path}"], capture_output=True, check=True, text=True).stdout.strip()
+        return CommittedTunables(repository, file_commit, commit, blob, patch, set_number, tunables_path, document, fields)
     raise DataError('No committed patch tunables at HEAD; commit data/<patch>/tunables.toml first')
 
 
@@ -97,7 +106,7 @@ def _finite(value):
     return False
 
 
-def write_candidate(committed, updates, destination, *, citation, generated_at=None, notes=()):
+def write_candidate(committed, updates, destination, *, citation, generated_at=None, notes=(), sources=None, provenance=None):
     """Write a whole candidate copy of ``committed`` with ``updates`` applied.
 
     Only fitted families (1, 2 and 3) can change. Each changed field records
@@ -121,15 +130,21 @@ def write_candidate(committed, updates, destination, *, citation, generated_at=N
     document = plain(committed.document)
     document['fields'] = dict(document['fields'])
     for name, value in sorted(updates.items()):
-        document['fields'][name] = {'value': plain(value), 'source': 'owner',
+        document['fields'][name] = {'value': plain(value), 'source': (sources or {}).get(name, 'owner'),
             'citation': citation, 'family': families[name]}
     tagged(document['fields'], 'candidate tunables', families=families)
+    document['harness_candidate'] = {'accepted_file_commit': committed.commit, 'accepted_blob': committed.blob,
+        'accepted_path': committed.path, 'code_commit': committed.code_commit, 'status': 'unaccepted',
+        'provenance': plain(provenance or {})}
+    if not _finite(document['harness_candidate']):
+        raise DataError('Candidate provenance must be finite TOML data')
     body = tomli_w.dumps(document)
     if tomllib.loads(body) != document:
         raise DataError('Candidate tunables do not round-trip through TOML')
     generated_at = generated_at or datetime.now(UTC)
     header = [f'# Candidate tunables for patch {committed.patch}, written by tft-harness.',
-        f'# Base: {committed.path} at commit {committed.commit}.',
+        f'# Base: {committed.path} at commit {committed.commit}; Git blob {committed.blob}.',
+        f'# Code identity: {committed.code_commit}.',
         f'# Generated {generated_at.isoformat()}. Changed: {", ".join(sorted(updates))}.',
         f'# Accept by copying this file to {committed.path} and committing it.',
         *(f'# {line}' for note in notes for line in str(note).splitlines())]

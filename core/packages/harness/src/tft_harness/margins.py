@@ -245,3 +245,64 @@ def stage_margins(guards, draw_guards, *, target, floor, costly_or_sticky, rollo
             'aggregation': 'root mean square of per-decision margins; sourced floor',
             'citations': (floor.citation, rollout_citation, model_citation)}
     return result
+
+
+def fit_margins(harness, parameters, *, metric='fight_log_loss', draws=8, seed=0,
+        max_evaluations=64, fixed=None):
+    """Produce family-2 candidates from actual Engine tapes and bootstrap refits.
+
+    A missing compatible guard or source floor is explicitly carried; no
+    sensitivity vector, fabricated rollout or absent model error becomes a fit.
+    """
+    from dataclasses import replace
+    from .fitting import model_uncertainty, current_set_games
+    from .evaluation import chronological_split
+    from tft_data.models import plain
+    carried = {name: 'compatible_paired_guard_unavailable' for name, family in TUNABLE_FAMILIES.items()
+        if family == '2'}
+    if harness.sessions.run:
+        return {'fields': {}, 'carried': {name: 'margins_frozen_during_live_run' for name in carried},
+            'diagnostics': {}}
+    uncertainty = model_uncertainty(harness, parameters, metric=metric, draws=draws,
+        seed=seed, max_evaluations=max_evaluations, fixed=fixed)
+    _, games = current_set_games(harness)
+    training, _ = chronological_split([game for game in games if game['finished']])
+    replayed = replay_draws(harness, [{}]+uncertainty['parameters'], training)
+    current = getattr(harness.data_store, 'current', None)
+    if current is None:
+        first = next(game for game in games if game['game_id'] in training)
+        current = harness.data_store.get(first['data_snapshot_id'])
+    else:
+        current = harness.data_store.get(current.snapshot_id)
+    fields, diagnostics = {}, {}
+    for target, kind, sticky in (('line_margin', 'econ', False),
+            ('comp_defining_margin', 'augment', True), ('wisp_buy_margin', 'wisp', False)):
+        if target not in current.tunables:
+            continue
+        guards = paired_guards(replayed[0], kind=kind)
+        if not guards:
+            continue
+        floor = current.tunables[target]
+        original = plain(floor.value)
+        stages = sorted({guard.stage for guard in guards})
+        result = {}
+        for stage in stages:
+            value = original.get(stage) if isinstance(original, dict) else original
+            if value is None or not floor.citation:
+                continue
+            result.update(stage_margins([guard for guard in guards if guard.stage == stage],
+                [paired_guards(batch, kind=kind) for batch in replayed[1:]], target=target,
+                floor=replace(floor, value=value), costly_or_sticky=sticky,
+                rollout_citation='Original logged seed; actual paired Engine rollout placements',
+                model_citation=f'Training-game bootstrap refits; draws={draws}, seed={seed}'))
+        diagnostics[target] = result
+        available = {stage: row['value'] for stage, row in result.items() if row['available']}
+        if available:
+            # All historical stages remain valid when the Engine reads a table.
+            all_stages = {str(round_id).split('-')[0] for round_id in current.value('round_order')}
+            table = dict(original) if isinstance(original, dict) else {stage: original for stage in all_stages}
+            table.update(available)
+            fields[target] = table
+            carried.pop(target, None)
+    return {'fields': fields, 'carried': carried, 'diagnostics': diagnostics,
+        'model': {key: value for key, value in uncertainty.items() if key != 'parameters'}}

@@ -116,3 +116,32 @@ def test_candidate_destination_cannot_be_the_committed_data_directory(tmp_path):
     committed = latest_committed_tunables(repository)
     with pytest.raises(DataError, match='committed'):
         write_candidate(committed, {'fight_scale': 1.5}, repository/'data'/'18.2', citation='fit')
+
+
+def test_reference_separates_file_commit_blob_and_code_and_preserves_public_tags(tmp_path):
+    from tft_harness.tunables_io import latest_committed_tunables, write_candidate
+
+    repository = committed_repository(tmp_path)
+    accepted_commit = git(repository, 'rev-parse', 'HEAD')
+    (repository/'unrelated').write_text('code identity')
+    git(repository, 'add', 'unrelated')
+    git(repository, 'commit', '-q', '-m', 'unrelated code change')
+    reference = latest_committed_tunables(repository, path='data/18.2/tunables.toml')
+    assert reference.commit == accepted_commit
+    assert reference.code_commit == git(repository, 'rev-parse', 'HEAD')
+    assert reference.blob == git(repository, 'rev-parse', 'HEAD:data/18.2/tunables.toml')
+    path = write_candidate(reference, {'unit_prior_strength': 4.0}, tmp_path/'out',
+        citation='Qualified public empirical Bayes fixture', sources={'unit_prior_strength': 'public-statistics'})
+    assert tomllib.loads(path.read_text())['fields']['unit_prior_strength']['source'] == 'public-statistics'
+
+
+def test_committed_overlay_retains_public_provenance_and_historical_static(tmp_path):
+    from tft_harness.overlay import TunableOverlay
+    store, data = historical_data(tmp_path)
+    field = TaggedValue(4.0, 'public-statistics', 'https://public.example/cohort', '3')
+    overlay = TunableOverlay(store, {}, tagged_fields={'unit_prior_strength': field})
+    replayed = overlay.get(data.snapshot_id)
+    assert replayed.tunables['unit_prior_strength'] == field
+    assert replayed.static == data.static
+    assert replayed.entities == data.entities
+    assert replayed.statistics == data.statistics

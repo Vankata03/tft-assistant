@@ -15,6 +15,13 @@ def unsupported(tmp_path):
     return replace(data, static=static)
 
 
+def population(data):
+    return {'population': 'all_alive_boards_by_round_level', 'sampling': 'target_independent',
+        'whole_boards': True, 'disjoint_observations': True, 'provider': 'public-fixture',
+        'patch': data.patch, 'cohort': dict(data.sources['public-fixture'].cohort),
+        'source_updated_at': PUBLISHED.isoformat()}
+
+
 def board_rows():
     return [{'round_id': '3-2', 'level': 1, 'count': 150, 'board': Board((Unit('unit'),)).to_dict()},
         {'round_id': '3-2', 'level': 1, 'count': 450, 'board': Board((Unit('ice-unit'),)).to_dict()},
@@ -27,7 +34,7 @@ def test_builder_declares_counted_boards_bound_to_the_qualified_provider(tmp_pat
 
     data = unsupported(tmp_path)
     support, report = build_joint_support(board_rows(), data, provider='public-fixture',
-        citation='Fixture public board export, 610 boards')
+        citation='Fixture public board export, 610 boards', qualification=population(data))
     declaration = support.value
     assert declaration['patch'] == data.patch
     assert declaration['source_updated_at'] == PUBLISHED.isoformat()
@@ -53,9 +60,11 @@ def test_builder_declares_counted_boards_bound_to_the_qualified_provider(tmp_pat
 def test_builder_rejects_unqualified_providers_and_invalid_board_rows(tmp_path, change):
     from tft_harness.joint_support import build_joint_support
 
-    rows, data = change(board_rows(), unsupported(tmp_path))
+    original = unsupported(tmp_path)
+    qualification = population(original)
+    rows, data = change(board_rows(), original)
     with pytest.raises(DataError):
-        build_joint_support(rows, data, provider='public-fixture', citation='Fixture export')
+        build_joint_support(rows, data, provider='public-fixture', citation='Fixture export', qualification=qualification)
 
 
 def test_overlay_adds_support_only_to_snapshots_of_its_patch(tmp_path):
@@ -63,7 +72,7 @@ def test_overlay_adds_support_only_to_snapshots_of_its_patch(tmp_path):
 
     data = unsupported(tmp_path)
     other = replace(data, snapshot_id='other-patch', patch='previous')
-    support, _ = build_joint_support(board_rows(), data, provider='public-fixture', citation='Fixture export')
+    support, _ = build_joint_support(board_rows(), data, provider='public-fixture', citation='Fixture export', qualification=population(data))
 
     class Store:
         def get(self, snapshot_id):
@@ -73,3 +82,14 @@ def test_overlay_adds_support_only_to_snapshots_of_its_patch(tmp_path):
     assert overlay.get(data.snapshot_id).static['opponent_joint_support'] == support
     assert 'opponent_joint_support' not in overlay.get('other-patch').static
     assert overlay.identity == JointSupportOverlay(Store(), {data.patch: support}).identity
+
+
+def test_final_board_statistics_do_not_qualify_an_all_alive_round_population(tmp_path):
+    from tft_harness.joint_support import build_joint_support
+    data = unsupported(tmp_path)
+    for qualification in (None, population(data) | {'population': 'final_boards'},
+            population(data) | {'sampling': 'target_trait_filtered'},
+            population(data) | {'source_updated_at': 'older'}):
+        with pytest.raises(DataError, match='population'):
+            build_joint_support(board_rows(), data, provider='public-fixture',
+                citation='Fixture export', qualification=qualification)

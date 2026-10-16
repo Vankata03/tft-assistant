@@ -8,7 +8,7 @@ from datetime import datetime
 from types import MappingProxyType
 from typing import Any, Literal
 
-SourceTag = Literal["cdragon", "ddragon", "patch-notes", "carried", "default", "owner"]
+SourceTag = Literal["cdragon", "ddragon", "patch-notes", "carried", "default", "owner", "public-statistics"]
 
 
 class DataError(ValueError):
@@ -46,6 +46,7 @@ class TaggedValue:
             "carried",
             "default",
             "owner",
+            "public-statistics",
         }:
             raise DataError(f"Unknown source tag: {self.source}")
         if self.source == "patch-notes" and not self.citation:

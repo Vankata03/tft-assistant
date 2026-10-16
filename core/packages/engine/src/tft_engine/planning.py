@@ -380,7 +380,7 @@ def _econ_advice(context):
     if current_level_target(chosen.line,snapshot.round_id,data,int(read(snapshot,data,'level')))>int(read(snapshot,data,'level')):
         action='Level now'
     projections={r.line.id:tuple(p.to_dict() for p in r.projections) for r in results}
-    options=tuple(ScoredOption(r.line.id,'line',r.line.to_dict(),r.expected_placement,r.standard_error,'line_expected_placement') for r in results)
+    options=tuple(ScoredOption(r.line.id,'line',r.line.to_dict() | {'after': {'seed': r.seed, 'rollout_placements': r.rollout_placements}},r.expected_placement,r.standard_error,'line_expected_placement') for r in results)
     best=min(results,key=lambda r:r.expected_placement)
     gap=chosen.expected_placement-best.expected_placement
     from .bench import roll_sale_indices
