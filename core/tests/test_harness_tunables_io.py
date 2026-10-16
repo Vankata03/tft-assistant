@@ -1,4 +1,5 @@
 """Committed tunables come from Git HEAD; fits only ever write separate candidates."""
+import os
 import subprocess
 import tomllib
 
@@ -78,6 +79,8 @@ def test_candidate_is_a_whole_loadable_copy_with_fitted_values_and_never_replace
     path = write_candidate(committed, {'fight_scale': 1.75, 'win_scale_by_stage': {'3': 1.5}},
         tmp_path/'candidates', citation='Family-1 fit on 8 training games; holdout gates passed')
     assert path.parent == tmp_path/'candidates'
+    if os.name == 'posix':
+        assert path.stat().st_mode & 0o077 == 0
     assert (repository/'data'/'18.2'/'tunables.toml').read_bytes() == before
     text = path.read_text()
     assert text.startswith('# Candidate tunables for patch 18.2')

@@ -1,6 +1,7 @@
 """Private aggregate Markdown artifacts without decision identities or examples."""
 from datetime import UTC, datetime
 import json
+import os
 from pathlib import Path
 
 from tft_review.contracts import json_value
@@ -31,7 +32,7 @@ def aggregate_only(value):
 
 def write_markdown(destination, reference, report=None, *, advice_diff=None, fit=None, priors=None, margins=None, checks=None, producer=None):
     destination = Path(destination)
-    destination.mkdir(parents=True, exist_ok=True)
+    destination.mkdir(mode=0o700, parents=True, exist_ok=True)
     sections = [('Accepted reference', {'path': reference.path, 'file_commit': reference.commit,
         'Git blob': reference.blob, 'reference_checkout_head': reference.code_commit})]
     if producer is not None:
@@ -64,6 +65,6 @@ def write_markdown(destination, reference, report=None, *, advice_diff=None, fit
         raise ValueError('Aggregate Markdown report exceeds the bounded artifact size')
     stamp = datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ')
     path = destination/f'harness-{stamp}.md'
-    with path.open('x', encoding='utf-8') as output:
+    with open(path, 'x', encoding='utf-8', opener=lambda path, flags: os.open(path, flags, 0o600)) as output:
         output.write(body)
     return path

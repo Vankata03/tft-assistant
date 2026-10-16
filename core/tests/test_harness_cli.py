@@ -1,4 +1,5 @@
 """Owner start-run workflow through the public CLI and real durable store."""
+import os
 import json
 
 from tests.test_harness_baseline import external_matches
@@ -138,6 +139,8 @@ def test_eval_cli_reads_committed_tunables_and_writes_private_aggregate_report(t
     assert main(['eval', '--repository', str(repository), '--snapshots', str(store.root),
         '--output', str(output), '--bootstrap-draws', '20']) == 0
     report = next(output.glob('*.md')).read_text()
+    if os.name == 'posix':
+        assert next(output.glob('*.md')).stat().st_mode & 0o077 == 0
     assert 'Git blob' in report and 'Calibration' in report and 'Exclusions' in report
     assert '"901"' not in report and '"902"' not in report
     assert str(sessions.root) not in report

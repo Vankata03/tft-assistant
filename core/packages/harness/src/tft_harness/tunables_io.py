@@ -10,6 +10,7 @@ from math import isfinite
 import hashlib
 import importlib
 import json
+import os
 import sys
 from pathlib import Path
 import subprocess
@@ -190,13 +191,13 @@ def write_candidate(committed, updates, destination, *, citation, generated_at=N
         f'# Generated {generated_at.isoformat()}. Changed: {", ".join(sorted(updates))}.',
         f'# Accept by copying this file to {committed.path} and committing it.',
         *(f'# {line}' for note in notes for line in str(note).splitlines())]
-    destination.mkdir(parents=True, exist_ok=True)
+    destination.mkdir(mode=0o700, parents=True, exist_ok=True)
     stamp = generated_at.strftime('%Y%m%dT%H%M%S%fZ')
     for attempt in range(1000):
         suffix = f'-{attempt}' if attempt else ''
         path = destination/f'tunables-{committed.patch}-{stamp}{suffix}.toml'
         try:
-            with open(path, 'x', encoding='utf-8') as output:
+            with open(path, 'x', encoding='utf-8', opener=lambda path, flags: os.open(path, flags, 0o600)) as output:
                 output.write('\n'.join(header)+'\n\n'+body)
             return path
         except FileExistsError:
