@@ -235,6 +235,9 @@ class EvaluationHarness:
         gates = {name: {'status': 'unavailable', 'reason': 'insufficient_holdout_games'} for name in FITTED_METRICS}
         metrics['report_only'] = combine_diagnostics(rows, diagnostic_reports, counts)
         metrics['hand_set_checks'] = combine_checks(check_reports, rows)
+        # Field age is reported inside the capture-gap report, never as a gate.
+        metrics['hand_set_checks']['field_age'] = {name: metrics['report_only'][name]
+            for name in ('stale_fields', 'gap_share', 'gap_rounds', 'known_rounds')}
         metrics['flip_rates'] = {domain: summarize_flips(values) for domain, values in flip_games.items()}
         metrics['previous_patch_split'] = {label: {name: {
             'value': mean_by_game((row['game_id'], row['loss']) for row in rows

@@ -139,3 +139,18 @@ def test_opponent_classifier_compares_stage_labels_with_the_joined_final_match_b
     assert check['by_player']['opponent']['eligible_rows'] == 1
     assert check['by_stage']['3']['value'] == 1
     assert 'riot_match_opponent_final_board' in check['truth_sources']
+
+
+def test_field_age_check_reports_stale_silence_share_per_field_with_the_gap_share(tmp_path):
+    sessions, store, data, _ = logged_game(tmp_path, finish=False, mode='silent')
+    at = NOW+timedelta(seconds=1)
+    stale = log_snapshot(data, at=at, snapshot_id='stale')
+    stale['fields']['gold']['read_at'] = NOW.isoformat()
+    stale['stale_fields'] = ['gold']
+    sessions.append_event('snapshot', stale, timestamp=at.isoformat())
+    sessions.end_game(timestamp=(at+timedelta(seconds=1)).isoformat())
+    check = EvaluationHarness(sessions, store, repository=ROOT).evaluate().metrics['hand_set_checks']['field_age']
+    assert check['stale_fields']['gold'] == {'silences': 1, 'observations': 2, 'share': .5}
+    assert check['stale_fields']['hp']['share'] == 0
+    # The only captured round held a stale-field silence, so it counts as a gap round.
+    assert check['gap_share'] == 1 and check['known_rounds'] == 1
