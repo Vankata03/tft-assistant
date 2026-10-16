@@ -26,7 +26,7 @@ def _write(path, value):
 class ReviewJobs:
     def __init__(self, sessions, data_store, service, repository, *, ready=None,
                  hard_timeout=600, latency_budget=30, error=None,
-                 outcome_retry_seconds=30):
+                 outcome_retry_seconds=30, outcome_timeout=30):
         self.sessions, self.data_store, self.service = sessions, data_store, service
         self.repository = Path(repository)
         self.root = sessions.root / 'review-jobs'
@@ -39,6 +39,9 @@ class ReviewJobs:
         self.error = error
         self.outcomes = OutcomeCollector(sessions)
         self.outcome_retry_seconds = outcome_retry_seconds
+        # Optional external truth gets its own short watchdog so a slow API or
+        # a persisted server cooldown cannot hold the review for hard_timeout.
+        self.outcome_timeout = min(outcome_timeout, hard_timeout)
         self.status = 'Review worker waiting for a finalized game'
         self._wake = asyncio.Event()
         self._closed = False
@@ -340,7 +343,7 @@ class ReviewJobs:
             environment = dict(os.environ)
             environment.pop('TFT_CORE_TOKEN', None)
             flags = (subprocess.BELOW_NORMAL_PRIORITY_CLASS | subprocess.CREATE_NO_WINDOW) if os.name == 'nt' else 0
-            async with asyncio.timeout(self.hard_timeout):
+            async with asyncio.timeout(self.outcome_timeout):
                 await self._launch_child(command, environment, flags)
                 reads = [asyncio.create_task(self._read_bounded(self._process.stdout, 65536)),
                          asyncio.create_task(self._read_bounded(self._process.stderr, 262144))]

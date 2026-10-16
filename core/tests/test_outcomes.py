@@ -512,3 +512,67 @@ def test_blocked_outcome_http_is_owned_and_cannot_publish_after_shutdown(tmp_pat
 
     with outcome_http_fixture(tmp_path, monkeypatch, external_http):
         asyncio.run(scenario())
+
+
+def test_invalid_outcome_artifact_never_blocks_capture_or_index_rebuild(tmp_path):
+    import json
+    sessions = finished_session(tmp_path)
+    sessions.record_outcome('901', match_fixture(), owner_puuid='owner')
+    path = sessions.root/'outcomes'/'901.json'
+    altered = json.loads(path.read_text())
+    altered['placement'] = 7
+    path.write_text(json.dumps(altered))
+    reopened = SessionStore(sessions.root, sessions.config_root, live_installed=True)
+    reopened.start_game('902', set_id='18', queue_id=1100)
+    reopened.end_game()
+    games = {row['game_id']: row for row in reopened.list_games()}
+    assert (games['901']['placement'], games['901']['outcome_reason']) == (None, 'outcome_artifact_invalid')
+    assert (games['902']['placement'], games['902']['outcome_reason']) == (None, None)
+    with pytest.raises(ValueError):
+        reopened.read_outcome('901')
+
+
+def test_slow_outcome_collection_cannot_hold_the_review_for_the_review_watchdog(tmp_path, monkeypatch):
+    import json
+    import threading
+    import time
+    from tests.test_replay_contracts import ROOT, historical_data, log_snapshot, NOW
+    from tft_core.review_jobs import ReviewJobs
+    from tft_data.riot import HTTPResponse
+    from tft_review import ReviewService
+
+    store, data = historical_data(tmp_path)
+    sessions = SessionStore(tmp_path/'logs', tmp_path/'config', live_installed=True)
+    sessions.set_mode('baseline')
+    sessions.start_game('901', set_id='18', queue_id=1100, patch=data.patch,
+        data_snapshot_id=data.snapshot_id, timestamp=NOW.isoformat())
+    sessions.append_event('snapshot', log_snapshot(data), timestamp=NOW.isoformat())
+    sessions.end_game()
+    (sessions.config_root/'riot-api-key').write_text('fixture-key')
+    (sessions.config_root/'outcome-source.json').write_text(json.dumps({
+        'owner_puuid': 'owner', 'platform': 'eun1', 'region': 'europe'}))
+    release = threading.Event()
+
+    def external_http(url, headers):
+        release.wait(30)
+        return HTTPResponse(200, {}, [])
+
+    async def scenario():
+        jobs = ReviewJobs(sessions, store, ReviewService(sessions, store, repository=ROOT), ROOT,
+                          hard_timeout=60, outcome_timeout=1)
+        jobs.start()
+        started = time.monotonic()
+        jobs.enqueue('901')
+        try:
+            async with asyncio.timeout(12):
+                while not jobs.jobs() or jobs.jobs()[-1]['state'] == 'running':
+                    await asyncio.sleep(.01)
+            assert jobs.jobs()[-1]['state'] == 'completed', jobs.jobs()
+            assert time.monotonic() - started < 12
+            assert jobs.outcomes.status('901')['state'] == 'pending'
+        finally:
+            release.set()
+            assert await jobs.shutdown()
+
+    with outcome_http_fixture(tmp_path, monkeypatch, external_http):
+        asyncio.run(scenario())

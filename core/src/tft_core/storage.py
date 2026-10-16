@@ -356,15 +356,21 @@ class SessionStore:
                 modes = [SessionMode(metadata["mode"])] + [SessionMode(e["payload"]["mode"]) for e in events if e["kind"] == "mode_change"]
                 highest = max(modes, key=_MODE_RANK.__getitem__)
                 end = next((e for e in reversed(events) if e["kind"] == "game_end"), None)
-                outcome = self.read_outcome(path.parent.name)
                 placement = end['payload'].get('placement') if end else None
-                if outcome is not None:
-                    if placement is not None and placement != outcome['placement']:
+                # The index is disposable and gates capture start. An invalid
+                # private artifact stays unavailable here and fails on read_outcome.
+                outcome_reason = None
+                try:
+                    outcome = self.read_outcome(path.parent.name)
+                    if outcome is not None and placement not in {None, outcome['placement']}:
                         raise ValueError('Outcome placement conflicts with finalized capture')
+                except ValueError:
+                    outcome, outcome_reason = None, 'outcome_artifact_invalid'
+                if outcome is not None:
                     placement = outcome['placement']
                 games.append({"game_id": path.parent.name, "date": start["timestamp"], "patch": metadata.get("patch"),
                     "set_id": metadata.get("set_id"), "queue_id": metadata.get('queue_id') or (outcome['queue_id'] if outcome else None),
-                    "placement": placement,
+                    "placement": placement, "outcome_reason": outcome_reason,
                     "mode": highest.value, "review_locked": highest is SessionMode.SILENT and run is None,
                     "pinned": False, "block": None, "run_number": None, "engine_version": metadata.get("engine_version", ""),
                     "data_snapshot_id": metadata.get("data_snapshot_id"), "finished": end is not None})
