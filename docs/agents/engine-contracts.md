@@ -85,3 +85,5 @@ Tests use synthetic public-boundary fixtures. They cover exact posterior sets, h
 Mac timings exceed 100 ms. Target Ryzen 7 7800X3D/game-running qualification and any further required optimization remain ticket 49. Windows capture, held-out recognition accuracy, ranked games and fitted owner-match parameters have not been verified by these package tests. Ticket 48 owns current patch provenance and candidate completeness.
 
 Sourced team-slot costs, modifier activation, indexed transition proofs and Capture counter semantics are specified in [capacity-contracts.md](capacity-contracts.md). Physical unit count, occupied slots and maximum budget remain distinct across power, Lines, inference and replay.
+
+The same evidence includes `simulation_backups`, which records the Backup used for each simulated comp, and `threat_shares`, which records causal positioning shares even when an unchanged layout suppresses advice. Offline margin refits retain the original comp, candidate Line family, Backup and comparison orientation across model draws. Missing original valuations are reported as incomplete rather than removed from the model spread.

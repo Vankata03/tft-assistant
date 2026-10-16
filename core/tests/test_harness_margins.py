@@ -393,10 +393,10 @@ def test_shop_power_and_threat_share_margins_use_their_own_units(tmp_path):
     row = stage_margins(shares, [pooled(share_guards(batch)) for batch in replayed], target='threat_share_on',
         floor=TaggedValue(0, 'default', 'Zero floor', '2'), costly_or_sticky=False,
         rollout_citation='exact share', model_citation='draws')['all']
-    # aoe shares .2, .4, .6 have SD .2; the fixed share has none: RMS sqrt(.04/2).
-    assert row['unfloored'] == pytest.approx(.02**.5)
+    # The invariant tag cannot dilute the noisy tag's SD .2.
+    assert row['unfloored'] == pytest.approx(.2)
     on, off = share_band(row, on_floor=TaggedValue(.5, 'default', 'on', '2'), off_floor=TaggedValue(.3, 'default', 'off', '2'))
-    assert (on, off) == (pytest.approx(.4+.02**.5), pytest.approx(.4-.02**.5))
+    assert (on, off) == (pytest.approx(.5), pytest.approx(.3))
     # Small share noise keeps the sourced band.
     assert share_band(row | {'unfloored': .01}, on_floor=TaggedValue(.5, 'default', 'on', '2'),
         off_floor=TaggedValue(.3, 'default', 'off', '2')) == (pytest.approx(.5), pytest.approx(.3))
@@ -477,8 +477,9 @@ def test_margin_fit_produces_plan_power_and_share_targets_from_replayed_training
     assert result['diagnostics']['pivot_margin_by_stage']['3']['z'] == 2
     assert result['diagnostics']['pivot_margin_by_stage']['3']['available'] == 4
     assert fields['board_power_buy_min']['3'] >= .05
-    assert fields['threat_share_on'] >= .5 and fields['threat_share_off'] <= .3
-    for name in ('pivot_margin_by_stage', 'board_power_buy_min', 'threat_share_on', 'threat_share_off'):
+    assert 'threat_share_on' not in fields and 'threat_share_off' not in fields
+    assert carried['threat_share_on'] == carried['threat_share_off'] == 'guard_uncertainty_unavailable'
+    for name in ('pivot_margin_by_stage', 'board_power_buy_min'):
         assert name not in carried
     # Unobserved guards stay carried with the reason, never a default fit.
     assert carried['comp_defining_margin'] == 'comp_commit_paired_guard_unavailable'
@@ -608,3 +609,249 @@ def test_conditional_component_samples_are_immutable_and_short_samples_keep_floo
     short = replace(inputs, rollout_components=((1,), (1, 2)))
     result = estimate_margin(short)
     assert result.value == .1 and result.reason == 'insufficient_paired_rollouts'
+
+"""Public probes: model draws must pair the same guarded comparison even when the best/ordering changes."""
+import pytest
+from statistics import stdev
+from tft_data import TaggedValue
+
+
+
+def flipping_rival(pivot_scale):
+    from tft_engine import DomainHook, FitTerm
+    # rival minus guide = pivot_scale - fight_scale; its sign flips across draws.
+    return DomainHook('augment', (), fit=lambda comp, context: FitTerm(
+        (pivot_scale-float(context.data.tunable('fight_scale'))) if comp == 'rival' else 0, 'fixture'))
+
+
+def test_comp_defining_draws_drop_when_leader_flips(tmp_path):
+    from tft_engine import Board, Unit
+    from tft_harness.margins import plan_guards, replay_draws, stage_margins
+    harness = plan_harness(tmp_path, [('2-1', {})], flipping_rival(1.5), board=Board((Unit('unit'),)))
+    scale = float(harness.data_store.get(harness.sessions.list_games()[0]['data_snapshot_id']).tunable('fight_scale'))
+    base = plan_guards(replay_draws(harness, [{}])[0], kind='comp_defining')
+    print('baseline fight_scale', scale, [(g.best_option, g.runner_up, g.differences) for g in base])
+    draws = [{'fight_scale': s} for s in (1.0, 1.2, 2.0, 3.0)]
+    replayed = replay_draws(harness, draws)
+    per_draw = [plan_guards(b, kind='comp_defining', reference=base) for b in replayed]
+    for s, g in zip(draws, per_draw):
+        print(s, [(x.best_option, x.runner_up, x.mean) for x in g])
+    # Same comparison (rival score minus guide score) in every draw:
+    true = [1.5-s['fight_scale'] for s in draws]
+    result = stage_margins(base, per_draw, target='comp_defining_margin',
+        floor=TaggedValue(0., 'default', 'zero floor', '2'), costly_or_sticky=True,
+        rollout_citation='tape', model_citation='draws')
+    print('produced', dict(result['2']), 'paired-SD margin', 2*stdev(true))
+    assert result['2']['unfloored'] == pytest.approx(2*stdev(true))
+
+
+
+def test_reraise_extra_protects_each_applied_pivot_base():
+    from tft_harness.margins import PairedGuard, reraise_extra
+    guards = (PairedGuard('g', 1, 0, 'a', 'pivot_reraise', '3', 'a', 'b', (0., 0.), base_key='3'),
+        PairedGuard('g', 2, 0, 'b', 'pivot_reraise', '3', 'a', 'b', (0., 0.), base_key='post_roll_down'))
+    draws = [[replace(guard, differences=(value, value)) for guard in guards]
+        for value in (-.7071067811865475, .7071067811865475)]
+    result = reraise_extra(guards, draws, floor=TaggedValue(.1, 'default', 'floor', '2'),
+        pivot_table={'3': .5, 'post_roll_down': .8}, rollout_citation='tapes', model_citation='draws')
+    assert result['3']['value'] == pytest.approx(1.5)
+
+
+def test_option_draws_drop_when_best_option_flips(tmp_path):
+    from tft_engine import Advice, DomainHook, ScoredOption
+    from tft_harness import EvaluationHarness
+    from tft_harness.margins import paired_guards, replay_draws, stage_margins
+    from tests.test_replay_contracts import ROOT, logged_game
+
+    def choices(context):
+        s = float(context.data.tunable('fight_scale'))
+        a = [2, 4, 3, 5]
+        b = [x+(1.5-s) for x in a]  # b - a = 1.5 - s on the same tape
+        return (Advice('augment', 'Pick', 'act_this_phase', .9, 'fixture', decision_id=context.snapshot.snapshot_id+':augment',
+            option_id='a' if sum(a) <= sum(b) else 'b',
+            options=(ScoredOption('a', 'pick', {'augment_id': 'A', 'slot': 0, 'after': {'seed': context.seed, 'rollout_placements': a}}, sum(a)/4, 0),
+                     ScoredOption('b', 'pick', {'augment_id': 'B', 'slot': 1, 'after': {'seed': context.seed, 'rollout_placements': b}}, sum(b)/4, 0))),)
+    sessions, store, _, _ = logged_game(tmp_path, mode='baseline')
+    harness = EvaluationHarness(sessions, store, repository=ROOT, hooks=(DomainHook('augment', (), advice=choices),))
+    base = paired_guards(replay_draws(harness, [{}])[0], kind='augment')
+    draws = [{'fight_scale': s} for s in (1.0, 1.2, 2.0, 3.0)]
+    per_draw = [paired_guards(b, kind='augment', reference=base) for b in replay_draws(harness, draws)]
+    print([(g.best_option, g.runner_up, g.mean) for g in base], [[(x.best_option, x.mean) for x in g] for g in per_draw])
+    result = stage_margins(base, per_draw, target='wisp_buy_margin', floor=TaggedValue(0., 'default', 'zero', '2'),
+        costly_or_sticky=False, rollout_citation='tape', model_citation='draws')
+    true = [1.5-s['fight_scale'] for s in draws]
+    print('produced', dict(next(iter(result.values()))), 'paired SD', stdev(true))
+    assert next(iter(result.values()))['unfloored'] == pytest.approx(stdev(true))
+
+
+def test_materially_negative_conditional_covariance_estimate_carries_floor():
+    from tft_harness.margins import MarginInput, estimate_margin
+    result = estimate_margin(MarginInput('wisp_buy_margin', '3', 'wisp', 'placement',
+        TaggedValue(.1, 'default', 'floor', '2'), False, None, (0., 0.), 'tapes', 'draws',
+        rollout_components=((1., -1.)+(0.,)*98, (-.02, .02))))
+    assert result.reason == 'invalid_conditional_variance_estimate'
+    assert result.mc_standard_error is None and result.value == .1
+
+
+def distinct_combat_harness(tmp_path, rounds, hook, *, stars=2):
+    """Two distinct carries and Guide schedules on real combat simulation tapes."""
+    import json
+    import tomllib
+    import tomli_w
+    from datetime import timedelta
+    from tests.test_replay_contracts import historical_data, GuideFeed, NOW, ROOT
+    from tft_core.storage import SessionStore
+    from tft_engine import Board, Unit
+    from tft_harness import EvaluationHarness
+    from tft_harness.overlay import TunableOverlay
+    store, _ = historical_data(tmp_path)
+    path = tmp_path/'patch'
+    entities = json.loads((path/'entities.json').read_text())
+    entities['entities'].append(entities['entities'][0] | {'id': 'rival_unit', 'name': 'Distinct carry', 'cost': 2})
+    (path/'entities.json').write_text(json.dumps(entities))
+    static = tomllib.loads((path/'static.toml').read_text())
+    for round_id in static['fields']['round_types']['value']:
+        if round_id >= '2-1':
+            static['fields']['round_types']['value'][round_id] = 'combat'
+    for level in static['fields']['shop_odds']['value']:
+        static['fields']['shop_odds']['value'][level] = [.5, .5, 0, 0, 0]
+    (path/'static.toml').write_text(tomli_w.dumps(static))
+    class DistinctFeed(GuideFeed):
+        name = 'distinct-combat-guides'
+        def fetch(self):
+            guide = super().fetch()['guides'][0]
+            return {'guides': [guide, guide | {'id': 'rival', 'finalComp': [{'apiName': 'rival_unit'}],
+                'earlyComp': [{'apiName': 'rival_unit'}], 'mainChampion': 'rival_unit',
+                'line': [{'round': '2-2', 'level': 2}]}]}
+    data = store.refresh(path, now=NOW+timedelta(seconds=2), sources=(DistinctFeed(),)).snapshot
+    sessions = SessionStore(tmp_path/'logs', tmp_path/'config')
+    log_rounds(sessions, data, '901', rounds, board=Board((Unit('unit', stars=stars),)))
+    overlay = TunableOverlay(store, {'challengers_simulated': 2, 'open_candidate_count': 2,
+        'rollouts_full': 32, 'fight_scale': 1, 'win_scale_by_stage': {str(s): 1 for s in range(1, 7)},
+        'opponent_growth_correction_by_stage': {str(s): 4.5 for s in range(1, 7)}})
+    return EvaluationHarness(sessions, overlay, repository=ROOT, hooks=(hook,))
+
+
+@pytest.mark.parametrize('kind,rounds,weight,stars', [
+    ('pivot', [('3-1', {}), ('3-2', {})], .3, 2),
+    ('comp_defining', [('3-1', {})], -.5, 1),
+])
+def test_distinct_combat_comps_have_nonzero_paired_monte_carlo_error(tmp_path, kind, rounds, weight, stars):
+    from statistics import stdev
+    from tft_harness.margins import plan_guards, replay_draws, fixed_guards
+    harness = distinct_combat_harness(tmp_path, rounds, scaled_rival(weight), stars=stars)
+    batches = replay_draws(harness, [{}])[0]
+    guards = plan_guards(batches, kind=kind)
+    assert guards
+    fixed = fixed_guards(batches, guards, harness.data_store)
+    assert [guard.mean for guard in fixed] == pytest.approx([guard.mean for guard in guards])
+    assert any(stdev(guard.differences) > 1e-8 for guard in guards if guard.differences)
+    contexts = {context.log_seq: context for batch in batches for context in batch.contexts}
+    for guard in guards:
+        fits = contexts[guard.log_seq].evaluation['comp_fits']
+        assert guard.mean == pytest.approx(fits[guard.best_option]['score']-fits[guard.runner_up]['score'])
+
+
+def test_one_missing_model_draw_carries_the_whole_stage_instead_of_selecting_survivors():
+    from tft_harness.margins import PairedGuard, stage_margins
+    first = PairedGuard('g', 1, 0, 'a', 'econ', '3', 'a', 'b', (0., 0.))
+    second = replace(first, log_seq=2)
+    result = stage_margins((first, second), ((first, second), (replace(first, differences=(2., 2.)),)),
+        target='line_margin', floor=TaggedValue(.1, 'default', 'floor', '2'), costly_or_sticky=False,
+        rollout_citation='tapes', model_citation='draws')['3']
+    assert result['value'] == .1 and result['available'] == 0
+    assert result['missing_model_draw_values'] == 1
+    assert result['reasons'] == {'incomplete_fixed_comparison_model_draws': 1}
+
+
+def test_fixed_transition_boards_are_valued_even_when_the_draw_stops_advising_the_swap(tmp_path):
+    from tests.test_replay_contracts import ROOT, historical_data
+    from tft_core.storage import SessionStore
+    from tft_engine import Board, Unit
+    from tft_harness import EvaluationHarness
+    from tft_harness.overlay import TunableOverlay
+    from tft_harness.margins import replay_draws, transition_guards, fixed_guards
+    store, data = historical_data(tmp_path)
+    sessions = SessionStore(tmp_path/'logs', tmp_path/'config')
+    log_rounds(sessions, data, '901', [('3-2', {})], board=Board((Unit('unit', position=0),)),
+        bench=[Unit('unit', stars=2)])
+    harness = EvaluationHarness(sessions, TunableOverlay(store, {'capacity_transition_state_cap': 1000}), repository=ROOT)
+    baseline = replay_draws(harness, [{}])[0]
+    guards = transition_guards(baseline)
+    before = [batch.to_dict() for batch in baseline]
+    # Zero weight removes the stronger-board power advantage and suppresses the swap.
+    draw = {'unit_weight': 0, 'trait_weight': 0, 'item_weight': 0}
+    batches = replay_draws(harness, [draw])[0]
+    assert not transition_guards(batches)
+    fixed = fixed_guards(batches, guards, TunableOverlay(harness.data_store, draw))
+    assert len(fixed) == 1 and fixed[0].mean == 0
+    assert [batch.to_dict() for batch in baseline] == before
+    with pytest.raises(TypeError):
+        guards[0].fixed_board['units'] = ()
+
+
+def test_review_fixed_comparison_survives_the_draw_agreeing_with_the_player(tmp_path):
+    from datetime import timedelta
+    from tests.test_replay_contracts import NOW, ROOT, logged_game
+    from tft_engine import DomainHook
+    from tft_harness import EvaluationHarness
+    from tft_harness.overlay import TunableOverlay
+    from tft_harness.margins import pooled, replay_draws, review_guards, stage_margins
+    def changing_choice(context):
+        advice = scale_dependent_choices(context)[0]
+        return (replace(advice, option_id='b' if context.data.tunable('fight_scale') > 1.5 else 'a'),)
+    sessions, store, _, _ = logged_game(tmp_path, finish=False, mode='baseline')
+    sessions.append_event('augment_pick', {'slot': 1, 'augment_id': 'B', 'choice_token': 'offer',
+        'evidence': 'positive_pick_confirmation'}, timestamp=(NOW+timedelta(seconds=1)).isoformat())
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=2)).isoformat())
+    harness = EvaluationHarness(sessions, store, repository=ROOT,
+        hooks=(DomainHook('augment', (), advice=changing_choice),))
+    guards = pooled(review_guards(replay_draws(harness, [{}])[0], store))
+    replays = replay_draws(harness, SCALES)
+    model = [pooled(review_guards(batch, TunableOverlay(store, draw))) for batch, draw in zip(replays, SCALES)]
+    assert not model[-1]  # A fresh draw would remove this review guard.
+    row = stage_margins(guards, model, target='review_min_cost',
+        floor=TaggedValue(.05, 'default', 'floor', '2'), costly_or_sticky=False,
+        rollout_citation='tapes', model_citation='draws')['all']
+    assert row['value'] == pytest.approx(.3227486121839514)
+    assert row['missing_model_draw_values'] == 0
+
+
+def test_margin_centre_is_the_complete_candidate_and_changed_power_floor_scale_is_carried(tmp_path):
+    from tests.test_harness_fit import staged_logs
+    from tests.test_replay_contracts import ROOT
+    from tft_harness import EvaluationHarness
+    from tft_harness.fitting import fit
+    from tft_harness.margins import fit_margins
+    sessions, store = staged_logs(tmp_path, [[('3-2', outcome)] for outcome in ('win', 'loss', 'win', 'win', 'loss')])
+    harness = EvaluationHarness(sessions, store, repository=ROOT)
+    parameters, fixed = {'fight_scale': [.25, 1, 2]}, {'unit_weight': 2}
+    point = fit(harness, parameters, fixed=fixed, bootstrap_draws=20)
+    margins = fit_margins(harness, parameters, fixed=fixed, draws=2)
+    assert margins['model']['centre_parameters'] == fixed | dict(point.parameters)
+    for name in ('transition_tolerance', 'board_power_buy_min'):
+        assert name not in margins['fields']
+        assert margins['carried'][name] == 'power_floor_normalization_conversion_unqualified'
+
+
+def test_fixed_comp_option_revalues_its_line_minimum_when_the_internal_winner_changes(tmp_path):
+    from tests.test_replay_contracts import ROOT
+    from tft_harness import EvaluationHarness
+    from tft_harness.overlay import TunableOverlay
+    from tft_harness.margins import plan_guards, replay_draws, fixed_guards
+    old = distinct_combat_harness(tmp_path, [('3-1', {}), ('3-2', {})], scaled_rival(.3))
+    harness = EvaluationHarness(old.sessions, TunableOverlay(old.data_store, {'line_candidate_cap': 7}),
+        repository=ROOT, hooks=old.hooks)
+    baseline = replay_draws(harness, [{}])[0]
+    guards = plan_guards(baseline, kind='pivot')
+    draw = {'terminal_gold_weight': .001}
+    batches = replay_draws(harness, [draw])[0]
+    contexts = {context.log_seq: context for batch in batches for context in batch.contexts}
+    original = {context.log_seq: context for batch in baseline for context in batch.contexts}
+    assert any(min(original[guard.log_seq].evaluation['line_results']['rival'], key=lambda row: row['expected_placement'])['line']['id']
+        != min(contexts[guard.log_seq].evaluation['line_results']['rival'], key=lambda row: row['expected_placement'])['line']['id']
+        for guard in guards)
+    fixed = fixed_guards(batches, guards, TunableOverlay(harness.data_store, draw))
+    for guard in fixed:
+        fits = contexts[guard.log_seq].evaluation['comp_fits']
+        assert guard.mean == pytest.approx(fits[guard.best_option]['score']-fits[guard.runner_up]['score'])

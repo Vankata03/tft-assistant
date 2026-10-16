@@ -368,6 +368,7 @@ def _step(snapshot,history,data,previous,hooks,*,seed=None,effects=None,rollouts
         seen.add(pair)
         score(plan.target,plan.backup)
         plan=_choose_plan(snapshot,data,previous,fits,guards)
+    guards['simulation_backups']=dict(backups)
     plan=_line_choice(snapshot,data,previous,plan,results.get(plan.target,()))
     recommended=strongest_owned_board(board,int(read(snapshot,data,'level')),data,target=plan.target if plan.status=='committed' else None,round_id=snapshot.round_id,capacity=capacity)
     context=EngineContext(snapshot,history,data,plan,fits,results,recommended,context.seed,opponents,workload,explicit_effects,_simulation,guards)
@@ -579,7 +580,20 @@ def evaluate(snapshot,history,data,mode,*,hooks=None,seed=None,effects=None,roll
             ranked=tuple(replace(a,confidence=min(a.confidence,float(tunable(data,'confidence_medium_min')))) for a in ranked)
         # A pivot is the first call for the new plan even if another action estimates greater gain.
         ranked=tuple(a for a in ranked if a.decision=='pivot')+tuple(a for a in ranked if a.decision!='pivot')
-        return EngineEvaluation(context.plan,context.comp_fits,context.line_results,context.recommended_board,ranked,context.workload,_simulation.workload() if _simulation else {},context.guards)
+        guards=dict(context.guards)
+        # Offline evidence survives layout/activation suppression. These shares
+        # are evaluated from the same causal history and never change advice.
+        try:
+            from datetime import datetime
+            from .positioning import adjustments
+            settled=read(snapshot,data,'board_settled_since')
+            since=datetime.fromisoformat(settled) if settled else None
+            if since is not None and since.tzinfo is not None and (snapshot.captured_at-since).total_seconds()>=float(tunable(data,'board_settle_seconds')):
+                _,shares=adjustments(snapshot,context.history,data)
+                guards['threat_shares']=shares
+        except (DataError,KeyError,TypeError,ValueError):
+            pass
+        return EngineEvaluation(context.plan,context.comp_fits,context.line_results,context.recommended_board,ranked,context.workload,_simulation.workload() if _simulation else {},guards)
     except (DataError,KeyError,ValueError,TypeError) as error:
         context=EngineContext(snapshot,history,data,plan,{}, {},owned_board(snapshot,data),snapshot_seed(snapshot,data) if seed is None else seed,_simulation=_simulation)
         return EngineEvaluation(plan,advice=rank_advice((paused(str(error),domain='econ'),)+_hook_advice(hooks,context)))

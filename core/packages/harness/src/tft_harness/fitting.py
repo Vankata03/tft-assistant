@@ -277,15 +277,16 @@ def _golden(evaluate, low, high, start, tolerance):
             d = a+_GOLDEN*(b-a)
             fd = evaluate(d)
     best, value = (c, fc) if fc <= fd else (d, fd)
+    start_value = float('inf')
     if start is not None:
         start_value = evaluate(start)
-        if start_value < value:
+        if start_value <= value:
             best, value = start, start_value
     bound = None
     for edge in (low, high):
         if abs(best-edge) <= .01*(high-low):
             edge_value = evaluate(edge)
-            if edge_value <= value:
+            if edge_value <= value and edge_value < start_value:
                 best, value, bound = edge, edge_value, edge
     return best, value, bound
 
@@ -321,11 +322,32 @@ def _continuous(harness, objective, ranges, training, *, stage_split_min_fights,
         objective.budget = max(1, budget-1)
     objective(expand(space.expand(current)))
     at_bound = set()
+    coordinate_report = {}
+    starts = dict(current)
+
+    def search(evaluate, declared, start):
+        samples = []
+        def measured(point):
+            value = evaluate(point)
+            if isfinite(value):
+                samples.append((point, value))
+            return value
+        for anchor in (start, declared.low, declared.high):
+            measured(anchor)
+        point, loss, bound = _golden(measured, declared.low, declared.high, start, tolerance)
+        spread = max((value for _, value in samples), default=0)-min((value for _, value in samples), default=0)
+        status = 'budget_exhausted' if objective.exhausted else 'converged'
+        if len({point for point, _ in samples}) >= 3 and spread <= 1e-10:
+            point, loss, bound = start, evaluate(start), None
+            status = 'objective_flat_retained_start' if spread <= 1e-14 else 'objective_weak_retained_start'
+        return point, loss, bound, {'status': status, 'profile_loss_range': spread,
+            'at_bound': bound, 'qualified': status == 'converged'}
     for _ in range(max_cycles if len(current) > 1 else 1):
         moved = 0.0
         for path, declared in space.coordinates.items():
-            point, loss, bound = _golden(lambda value: objective(expand(space.expand(current | {path: value}))),
-                declared.low, declared.high, current[path], tolerance)
+            point, loss, bound, diagnostic = search(lambda value: objective(expand(space.expand(current | {path: value}))),
+                declared, starts[path])
+            coordinate_report['/'.join(map(str, path))] = diagnostic
             if not isfinite(loss):
                 break
             moved = max(moved, abs(point-current[path])/(declared.high-declared.low))
@@ -345,16 +367,27 @@ def _continuous(harness, objective, ranges, training, *, stage_split_min_fights,
     stage_report = {}
     for stage in stages:
         fights = counts.get(stage, 0)
-        split = fights >= stage_split_min_fights and not objective.exhausted
-        unshrunk = {}
-        if split:
+        qualified_count = fights >= stage_split_min_fights
+        unshrunk, bounds, diagnostics = {}, {}, {}
+        status = 'insufficient_fights' if not qualified_count else 'budget_exhausted' if objective.exhausted else 'converged'
+        if qualified_count and not objective.exhausted:
             for name in sorted(by_stage):
                 declared = ranges[name]
                 fixed = dict(candidate)
-                point, loss, _ = _golden(lambda value: objective(fixed | {name: dict(fixed[name]) | {stage: value}}),
-                    declared.low, declared.high, pooled[name], tolerance)
-                unshrunk[name] = point if isfinite(loss) else pooled[name]
-        stage_report[stage] = {'fights': fights, 'split': split, 'unshrunk': unshrunk or None}
+                point, loss, bound, diagnostic = search(
+                    lambda value: objective(fixed | {name: dict(fixed[name]) | {stage: value}}),
+                    declared, pooled[name])
+                diagnostics[name] = diagnostic
+                if bound is not None:
+                    bounds[name] = bound
+                if diagnostic['status'] != 'converged' or not isfinite(loss):
+                    status = diagnostic['status']
+                    break
+                unshrunk[name] = point
+        split = qualified_count and status == 'converged' and len(unshrunk) == len(by_stage)
+        stage_report[stage] = {'fights': fights, 'count_qualified': qualified_count,
+            'split': split, 'status': status, 'at_bound': bounds,
+            'coordinates': diagnostics, 'unshrunk': unshrunk if split else None}
     for name in by_stage:
         candidate[name] = {stage: ((row['fights']*row['unshrunk'][name]+stage_split_min_fights*pooled[name])
             /(row['fights']+stage_split_min_fights) if row['split'] else pooled[name])
@@ -362,8 +395,33 @@ def _continuous(harness, objective, ranges, training, *, stage_split_min_fights,
     objective.budget = budget
     value = objective(candidate)
     return candidate, value, {'pooled': pooled, 'at_bound': sorted(at_bound),
+        'coordinates': coordinate_report,
         'stages': stage_report if by_stage else {},
         'shrinkage': f'n/(n+{stage_split_min_fights}) toward pooled' if by_stage else None}
+
+
+def _retain_flat_grid(objective, parameters, best):
+    """Keep accepted coordinates (else the declared grid start) on flat profiles."""
+    coordinates = {}
+    games = [game for game in objective.harness.sessions.list_games() if game['game_id'] in objective.training]
+    for name in parameters:
+        profile = [row for row in objective.tested if row['objective'] is not None
+            and all(value == best[1][key] for key, value in row['parameters'].items() if key != name)]
+        if len(profile) < 2:
+            continue
+        spread = max(row['objective'] for row in profile)-min(row['objective'] for row in profile)
+        if spread > 1e-10:
+            continue
+        accepted = [json_value(objective.harness.data_store.get(game['data_snapshot_id']).tunable(name)) for game in games]
+        common = accepted and all(value == accepted[0] for value in accepted)
+        retained = next((row for row in profile if common and row['parameters'][name] == accepted[0]), None)
+        source = 'accepted' if retained is not None else 'declared_grid_start'
+        if retained is None:
+            retained = next(row for row in profile if row['parameters'][name] == parameters[name][0])
+        best = retained['objective'], retained['parameters']
+        coordinates[name] = {'status': 'objective_flat_retained_'+source if spread <= 1e-14 else 'objective_weak_retained_'+source,
+            'profile_loss_range': spread, 'qualified': False}
+    return best, coordinates
 
 
 def fit(harness, parameters, *, metric='fight_log_loss', bootstrap_seed=0, bootstrap_draws=2000, max_candidates=256,
@@ -417,13 +475,16 @@ def fit(harness, parameters, *, metric='fight_log_loss', bootstrap_seed=0, boots
                 best = (value,candidate)
         if best is None:
             raise ValueError('No finite eligible candidate in declared fitting grid')
+        best, coordinates = _retain_flat_grid(objective, parameters, best)
+        extra = {'coordinates': coordinates}
         method = 'exhaustive declared grid'
         convergence = 'global minimum on supplied finite grid; continuous optimum not claimed'
     evaluated = harness.evaluate([game['game_id'] for game in current], candidate=fixed | best[1],
         bootstrap_seed=bootstrap_seed, bootstrap_draws=bootstrap_draws)
     return FitReport(best[1],training,holdout,{'metric':metric,'reference':objective.reference,
         'reference_reason':None if objective.reference is not None else 'infinite_log_loss',
-        'candidate':best[0],'weighting':'equal games'},evaluated.gates,
+        'candidate':best[0],'weighting':'equal games',
+        'likelihood':'equal-game-weighted mean loss; per-fight likelihood not claimed'},evaluated.gates,
         {'method':method,'evaluations':len(objective.tested),'candidates':objective.tested,
          'convergence':convergence,'set_id':set_id,'fixed':fixed,
          'ranges': _SearchSpace(parameters).description() if continuous else None,
@@ -458,14 +519,16 @@ def model_uncertainty(harness, parameters, *, metric='fight_log_loss', draws=32,
     training, holdout = chronological_split([game for game in games if game['finished']])
     if len(training) < 2 or not holdout:
         raise ValueError('Model uncertainty requires at least two training games and a holdout')
-    rng, fitted = Random(seed), []
+    rng, fitted, diagnostics = Random(seed), [], []
     for _ in range(draws):
         weights = Counter(rng.choices(training, k=len(training)))
         objective = _Objective(harness, training, metric, fixed,
             max_evaluations if continuous else None, weights=weights)
         if continuous:
-            candidate, value, _ = _continuous(harness, objective, parameters, training,
+            candidate, value, diagnostic = _continuous(harness, objective, parameters, training,
                 stage_split_min_fights=STAGE_SPLIT_MIN_FIGHTS, tolerance=1e-4)
+            diagnostics.append({'budget_exhausted': objective.exhausted,
+                'stages': diagnostic['stages'], 'coordinates': diagnostic['coordinates']})
             if isfinite(value):
                 fitted.append(fixed | candidate)
                 continue
@@ -476,7 +539,13 @@ def model_uncertainty(harness, parameters, *, metric='fight_log_loss', draws=32,
         viable = [row for row in objective.tested if row['objective'] is not None]
         if not viable:
             raise ValueError('Bootstrap refit has no finite eligible model')
-        fitted.append(fixed | min(viable, key=lambda row: row['objective'])['parameters'])
+        best = min(viable, key=lambda row: row['objective'])
+        (_, candidate), coordinates = _retain_flat_grid(objective, parameters, (best['objective'], best['parameters'])) if not continuous else ((best['objective'], best['parameters']), {})
+        if not continuous:
+            diagnostics.append({'budget_exhausted': False, 'coordinates': coordinates, 'stages': {}})
+        fitted.append(fixed | candidate)
     return {'method': 'training-game bootstrap refits', 'metric': metric, 'seed': seed,
         'training_games': len(training), 'holdout_games': len(holdout),
-        'draws': draws, 'parameters': fitted}
+        'draws': draws, 'parameters': fitted, 'refits': diagnostics,
+        'qualified': not any(row['budget_exhausted'] or any(not value['qualified']
+            for value in row['coordinates'].values()) for row in diagnostics)}

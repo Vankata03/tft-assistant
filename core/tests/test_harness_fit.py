@@ -287,3 +287,39 @@ def test_family1_rejects_nonphysical_range_before_replay(tmp_path):
     with pytest.raises(ValueError, match='domain'):
         fit(EvaluationHarness(sessions,store,repository=ROOT),
             {'fight_scale':ContinuousRange(-1,1)}, bootstrap_draws=20, max_evaluations=3)
+
+
+def test_objective_flat_coordinate_retains_declared_start(tmp_path):
+    from tft_harness import EvaluationHarness
+    from tft_harness.fitting import fit, ContinuousRange
+    games = [[('3-2', 'win'), ('3-3', 'win' if i % 4 else 'loss'), ('4-2', 'loss' if i % 3 else 'win')] for i in range(10)]
+    sessions, store = staged_logs(tmp_path, games)
+    report = fit(EvaluationHarness(sessions, store, repository=ROOT),
+        {'fight_scale': ContinuousRange(.1, 5, 1), 'win_scale_by_stage': ContinuousRange(.05, 20)},
+        bootstrap_draws=20, max_evaluations=120, stage_split_min_fights=1000)
+    assert report.parameters['fight_scale'] == 1
+    assert report.solver['coordinates']['fight_scale']['status'] == 'objective_flat_retained_start'
+
+
+def test_budget_exhaustion_does_not_publish_count_qualified_stage_splits(tmp_path):
+    from tft_harness.fitting import fit, ContinuousRange
+    games = [[(f'{stage}-{fight}', 'win' if (game+fight) % 4 else 'loss', 0)
+        for stage in (3, 4) for fight in range(1, 8)] for game in range(30)]
+    sessions, store = staged_logs(tmp_path, games)
+    report = fit(EvaluationHarness(sessions, store, repository=ROOT),
+        {'win_scale_by_stage': ContinuousRange(.05, 20)}, bootstrap_draws=20, max_evaluations=30)
+    for stage in ('3', '4'):
+        row = report.solver['stages'][stage]
+        assert row['fights'] == 168 and row['count_qualified'] is True
+        assert row['split'] is False and row['status'] == 'budget_exhausted'
+        assert row['unshrunk'] is None
+        assert report.parameters['win_scale_by_stage'][stage] == report.solver['pooled']['win_scale_by_stage']
+
+
+def test_flat_grid_coordinate_retains_the_accepted_value_instead_of_first_grid_edge(tmp_path):
+    from tft_harness.fitting import fit
+    sessions, store = staged_logs(tmp_path, [[('3-2', outcome)] for outcome in ('win', 'loss', 'win', 'win', 'win')])
+    report = fit(EvaluationHarness(sessions, store, repository=ROOT),
+        {'fight_scale': [.1, 1, 5], 'win_scale_by_stage': [{'3': 2}]}, bootstrap_draws=20)
+    assert report.parameters['fight_scale'] == 1
+    assert report.solver['coordinates']['fight_scale']['status'] == 'objective_flat_retained_accepted'
