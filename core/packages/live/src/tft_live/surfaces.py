@@ -3,6 +3,7 @@ from collections.abc import Mapping
 from tft_data.models import DataError
 from tft_engine.lobby import alive_lobby
 from tft_engine.opponents import opponents_from_history, round_index
+from tft_engine.lines import current_level_target
 from tft_engine.planning import read, required, owned_board, observed_phase, causal_history
 from tft_engine.power import estimate_strength, win_probability, static
 from tft_engine.shop_math import key_goals, hit_probability, owned_copies, canonical_id
@@ -151,15 +152,24 @@ def next_planning_preview(snapshot, history, data, result):
         pinned = pin_id(snapshot)
         if pin_id(sources[-1]) != pinned or (pinned is not None and pinned != plan.line.id):
             return unavailable('Pinned Line changed since planning')
-        points = sorted({id for id in (*plan.line.levels, *plan.line.rolls) if round_index(id, data) > current},
-                        key=lambda id: round_index(id, data))
+        # Levels never fall, so the qualified planning read is a floor that a
+        # fresh combat read (XP bought during combat) may only raise. A point
+        # whose level is already reached is no call, exactly as at planning.
+        known = max(int(read(sources[-1], data, 'level')), int(read(snapshot, data, 'level') or 0))
+        def call(id):
+            target = current_level_target(plan.line, id, data, known)
+            return (target if target > known else None), plan.line.rolls.get(id)
+        points = [(id, *call(id)) for id in sorted({id for id in (*plan.line.levels, *plan.line.rolls)
+                                                     if round_index(id, data) > current},
+                                                    key=lambda id: round_index(id, data))]
+        points = [point for point in points if point[1] is not None or point[2] is not None]
     except (DataError, KeyError, TypeError, ValueError) as error:
         return unavailable(str(error))
     if not points:
         return unavailable('The planned Line schedules no later level or roll-down')
-    at = points[0]
+    at, level, floor = points[0]
     return {'available': True, 'reason': None, 'comp_id': plan.target, 'line_id': plan.line.id,
             'pinned': pinned is not None, 'planning_round': plan.planning_round,
             'planning_snapshot_id': sources[-1].snapshot_id, 'round_id': at,
-            'level': plan.line.levels.get(at), 'gold_floor': plan.line.rolls.get(at),
+            'level': level, 'gold_floor': floor,
             'evidence_path': ['plan', 'line']}

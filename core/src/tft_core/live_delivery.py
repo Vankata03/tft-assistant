@@ -173,7 +173,7 @@ class LiveDeliveryController:
             self._invalidate_changed_fields()
 
     def _next_planning_invalid(self):
-        """Combat's preview expires with its round, phase, pinned data and plan."""
+        """Combat's preview expires with its round, phase, pinned data, plan and reached level."""
         preview = self.current.content.next_planning
         if preview is None or not preview.available:
             return None
@@ -192,6 +192,10 @@ class LiveDeliveryController:
             return "new planning evidence"
         if self.observed_phase != "combat":
             return "combat phase unread" if self.observed_phase == "unknown" else "combat ended"
+        from tft_engine.planning import read
+        level = read(state, data, "level")
+        if preview.level is not None and level is not None and int(level) >= preview.level:
+            return "level reached"
         return None
 
     def _invalidate_changed_fields(self):

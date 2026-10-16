@@ -45,10 +45,32 @@ def test_combat_previews_the_next_scheduled_point_of_this_rounds_qualified_plan(
 
 
 def test_unpinned_preview_uses_the_engine_selected_guide_line():
-    # Guide A schedules level 5 and a 10-gold roll-down at 3-1.
+    # Guide A schedules level 5 and a 10-gold roll-down at 3-1. The player is
+    # already level 5, so that planning call is the roll-down alone.
     shown = preview(combat("2-5", pinned_line=None), frame("2-5"))
     assert (shown["available"], shown["pinned"], shown["line_id"]) == (True, False, "guide:A")
+    assert (shown["round_id"], shown["level"], shown["gold_floor"]) == ("3-1", None, 10)
+    shown = preview(combat("2-5", pinned_line=None, level=4), frame("2-5", level=4))
     assert (shown["round_id"], shown["level"], shown["gold_floor"]) == ("3-1", 5, 10)
+
+
+@pytest.mark.parametrize("planning_level,combat_level", ((6, 6), (5, 6), (7, None)))
+def test_a_scheduled_level_the_player_already_reached_is_not_the_next_call(planning_level, combat_level):
+    # Level 6 at 4-1 is no call at level 6 or above; the 4-2 roll-down is next.
+    # A fresh combat read counts (XP is bought during combat); an unread one
+    # leaves the qualified planning level in force.
+    fight = combat(level=combat_level) if combat_level is not None else combat()
+    if combat_level is None:
+        fight = replace(fight, fields={k: v for k, v in fight.fields.items() if k != "level"})
+    shown = preview(fight, frame(pinned_line=SCHEDULE, level=planning_level))
+    assert (shown["available"], shown["round_id"], shown["level"], shown["gold_floor"]) == (True, "4-2", None, 10)
+
+
+def test_a_missed_scheduled_level_stays_in_the_next_call():
+    # Level 6 was due at 3-2 and not taken: planning at 4-2 still calls it.
+    missed = {"id": "missed", "levels": {"3-2": 6}, "rolls": {"4-2": 10}}
+    shown = preview(combat(pinned_line=missed), frame(pinned_line=missed))
+    assert (shown["round_id"], shown["level"], shown["gold_floor"]) == ("4-2", 6, 10)
 
 
 def test_combat_preview_names_a_scheduled_roll_point_without_projected_state():
@@ -114,6 +136,10 @@ def test_delivery_publishes_the_preview_and_expires_it_with_phase_round_plan_and
     assert server.live.state(sessions.mode).next_planning_invalidated == "new planning evidence"
     server.observe_live_capture(combat("3-3", seconds=3, game_id="123"), data)
     assert server.live.state(sessions.mode).next_planning_invalidated == "round or game changed"
+    server.observe_live_capture(fight, data)
+    assert server.live.state(sessions.mode).next_planning_invalidated is None
+    server.observe_live_capture(combat(seconds=2, game_id="123", level=6), data)
+    assert server.live.state(sessions.mode).next_planning_invalidated == "level reached"
     server.observe_live_capture(fight, data)
     assert server.live.state(sessions.mode).next_planning_invalidated is None
 
