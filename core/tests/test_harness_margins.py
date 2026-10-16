@@ -484,3 +484,127 @@ def test_margin_fit_produces_plan_power_and_share_targets_from_replayed_training
     assert carried['comp_defining_margin'] == 'comp_commit_paired_guard_unavailable'
     assert carried['review_min_cost'] == 'compatible_paired_guard_unavailable'
     assert 'game_id' not in str(result)
+
+
+def test_conditional_shared_prefix_components_keep_unequal_tape_covariance():
+    from tft_harness.margins import MarginInput, estimate_margin
+    # Four grant draws and two price draws share the first two random lanes.
+    # MC variance is 1/3 + 1 + 1 = 7/3; model variance is 18.
+    result = estimate_margin(MarginInput('wisp_buy_margin', '3', 'wisp', 'placement',
+        TaggedValue(.1, 'default', 'Sourced starting floor', '2'), False,
+        None, (-3, 3), 'Conditional grant and price on the shared prefix', 'Family-1 bootstrap',
+        rollout_components=((0, 2, 0, 2), (0, 2))))
+    assert result.mc_standard_error == pytest.approx(1.5275252316519468)
+    assert result.value == pytest.approx(4.509249752822894)
+    assert result.reason is None
+
+
+@pytest.mark.parametrize('kind', ['unit_grant', 'risky'])
+def test_default_engine_conditional_wisp_guard_retains_grant_and_short_price_tapes(tmp_path, kind):
+    import tomllib
+    import tomli_w
+    from tests.test_replay_contracts import historical_data, log_snapshot, NOW, ROOT
+    from tft_core.storage import SessionStore
+    from tft_harness import EvaluationHarness
+    from tft_harness.margins import paired_guards, replay_draws
+    store, data = historical_data(tmp_path)
+    path = tmp_path/'patch/static.toml'
+    static = tomllib.loads(path.read_text())
+    static['fields']['round_types']['value'] = {key: 'combat' for key in static['fields']['round_order']['value']}
+    static['fields']['rules_flags']['value']['wisp_purchase_shop_slots_delta'] = 0
+    static['fields']['rules_flags']['value']['item_slots_max'] = 3
+    static['fields']['wisps']['value'] = {'grant': {'effect_kind': 'unit_grant', 'cost': 1,
+        'offer_stages': [3], 'values': {'outcomes': [
+            {'probability': .75, 'unit_ids': ['unit']},
+            {'probability': .25, 'unit_ids': ['unit', 'unit']}]}}}
+    if kind == 'risky':
+        static['fields']['wisps']['value']['grant'].update(effect_kind='risky', values={'outcomes': [
+            {'probability': .75, 'effect': {'effect_kind': 'gold', 'values': {'gold': 8}}},
+            {'probability': .25, 'effect': {'effect_kind': 'gold', 'values': {'gold': 0}}}]})
+    path.write_text(tomli_w.dumps(static))
+    import json
+    entities_path = path.parent/'entities.json'
+    entities = json.loads(entities_path.read_text())
+    entities['entities'][0]['values']['item_reference'] = {'value': 0, 'source': 'owner'}
+    entities['entities'].append({'id': 'fixture-item', 'kind': 'item', 'name': 'Fixture item', 'values': {'category': {'value': 'finished', 'source': 'owner'}}})
+    entities_path.write_text(json.dumps(entities))
+    tunables_path = path.parent/'tunables.toml'
+    tunables = tomllib.loads(tunables_path.read_text())
+    tunables['fields']['component_income_by_stage']['value'] = {str(stage): {} for stage in range(1, 9)}
+    tunables['fields']['component_discount_by_stage']['value'] = {str(stage): 0 for stage in range(1, 9)}
+    tunables_path.write_text(tomli_w.dumps(tunables))
+    from tests.test_replay_contracts import GuideFeed
+    class ConditionalFeed(GuideFeed):
+        name = 'conditional-guide-fixture'
+        def fetch(self):
+            value = super().fetch()
+            value['guides'][0]['finalComp'][0]['items'] = ['fixture-item']
+            return value
+    data = store.refresh(path.parent, now=NOW, sources=(ConditionalFeed(),)).snapshot
+    sessions = SessionStore(tmp_path/'logs', tmp_path/'config')
+    sessions.start_game('901', set_id='18', patch=data.patch, data_snapshot_id=data.snapshot_id,
+        timestamp=NOW.isoformat())
+    sessions.append_event('snapshot', log_snapshot(data, gold=1, hp=7,
+        pinned_line={'id': 'fixed-hold', 'levels': {}, 'rolls': {}}, wisp={'wisp_id': 'grant', 'slot': 4, 'cost': 1},
+        wisp_complete=True, wisp_purchases_this_round=0, wisp_purchase_count_complete=True,
+        item_bench=(), item_inventory_complete=True, held_augments=(), held_augments_complete=True),
+        timestamp=NOW.isoformat())
+    sessions.end_game(timestamp=NOW.isoformat())
+    batch = replay_draws(EvaluationHarness(sessions, store, repository=ROOT), [{}])[0]
+    record = next(record for record in batch[0].records if record.decision == 'wisp')
+    assert record.advice['payload'].get('paused') is not True
+    guards = paired_guards(batch, kind='wisp')
+    assert len(guards) == 1
+    assert tuple(map(len, guards[0].components)) == ((4, 2) if kind == 'unit_grant' else (4,))
+    assert guards[0].mean == pytest.approx(record.advice['payload']['placement_gain'])
+    assert guards[0].deterministic is False
+    buy = next(option for option in record.options if option['action'] == 'buy')
+    from tft_harness.margins import MarginInput, estimate_margin
+    estimate = estimate_margin(MarginInput('wisp_buy_margin', '3', 'wisp', 'placement',
+        TaggedValue(0, 'default', 'Fixture floor', '2'), False, None, (0, 0),
+        'Actual Engine conditional tapes', 'Fixed-model control', rollout_components=guards[0].components))
+    assert estimate.mc_standard_error == pytest.approx(buy['standard_error'])
+    if kind == 'unit_grant':
+        assert estimate.mc_standard_error > 0
+    from tft_harness.margins import stage_margins
+    draw_batches = replay_draws(EvaluationHarness(sessions, store, repository=ROOT),
+        [{'fight_scale': .1}, {'fight_scale': 2}, {'fight_scale': 10}])
+    draw_guards = [paired_guards(draw, kind='wisp') for draw in draw_batches]
+    assert all(guard[0].key == guards[0].key for guard in draw_guards)
+    stage = stage_margins(guards, draw_guards, target='wisp_buy_margin',
+        floor=TaggedValue(0, 'default', 'Fixture floor', '2'), costly_or_sticky=False,
+        rollout_citation='Actual conditional tapes', model_citation='Family-1 scale controls')
+    assert stage['3']['available'] == 1
+    if kind == 'unit_grant':
+        assert stage['3']['value'] > 0
+
+
+@pytest.mark.parametrize('citation', [None, False, 1])
+def test_conditional_component_provenance_rejects_nontext_citations(citation):
+    from tft_harness.margins import MarginInput
+    with pytest.raises(DataError):
+        MarginInput('wisp_buy_margin', '3', 'wisp', 'placement',
+            TaggedValue(.1, 'default', 'Floor', '2'), False, None, (0, 1),
+            citation, 'Model draws', rollout_components=((0, 1),))
+
+
+@pytest.mark.parametrize('vectors', [(), ((0, 1),)*3, ((0, float('nan')),), ((False, 1),)])
+def test_invalid_conditional_tapes_are_rejected(vectors):
+    from tft_harness.margins import MarginInput
+    with pytest.raises(DataError):
+        MarginInput('wisp_buy_margin', '3', 'wisp', 'placement',
+            TaggedValue(.1, 'default', 'Floor', '2'), False, None, (0, 1),
+            'Conditional tape', 'Model draws', rollout_components=vectors)
+
+
+def test_conditional_component_samples_are_immutable_and_short_samples_keep_floor():
+    from tft_harness.margins import MarginInput, estimate_margin
+    vectors = [[0, 2], [0, 2]]
+    inputs = MarginInput('wisp_buy_margin', '3', 'wisp', 'placement',
+        TaggedValue(.1, 'default', 'Floor', '2'), False, None, (0, 0),
+        'Shared prefix', 'Fixed model', rollout_components=vectors)
+    vectors[0][1] = 900
+    assert estimate_margin(inputs).mc_standard_error == pytest.approx(2)
+    short = replace(inputs, rollout_components=((1,), (1, 2)))
+    result = estimate_margin(short)
+    assert result.value == .1 and result.reason == 'insufficient_paired_rollouts'

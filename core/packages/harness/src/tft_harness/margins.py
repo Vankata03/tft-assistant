@@ -10,8 +10,8 @@ manufacture missing draws or publish accepted tunables; values go to a
 candidate tunables file.
 """
 from dataclasses import dataclass
-from math import hypot, isfinite, sqrt
-from statistics import stdev
+from math import hypot, isfinite, sqrt, isclose
+from statistics import stdev, covariance
 
 from tft_data import DataError, TaggedValue
 from tft_data.config import TUNABLE_FAMILIES
@@ -51,6 +51,8 @@ class MarginInput:
     # Exact deterministic guards (board power, threat share) have no Monte
     # Carlo term; their standard error is the family-1 model spread alone.
     deterministic: bool = False
+    # Components share a random prefix but may have different sample counts.
+    rollout_components: tuple[tuple[float, ...], ...] | None = None
 
     def __post_init__(self):
         if not isinstance(self.target, str) or TUNABLE_FAMILIES.get(self.target) != '2':
@@ -70,6 +72,18 @@ class MarginInput:
             raise DataError('Margin requires an explicit costly/sticky classification')
         if type(self.deterministic) is not bool or (self.deterministic and self.rollout_differences is not None):
             raise DataError('A deterministic guard has no rollout vector')
+        if self.rollout_components is not None:
+            if (self.deterministic or self.rollout_differences is not None
+                    or not isinstance(self.rollout_components, (tuple, list))
+                    or not 1 <= len(self.rollout_components) <= 2
+                    or not isinstance(self.rollout_citation, str) or not self.rollout_citation.strip()):
+                raise DataError('Conditional components require one or two sourced shared-prefix tapes')
+            components = []
+            for vector in self.rollout_components:
+                if not isinstance(vector, (tuple, list)):
+                    raise DataError('Conditional components require sample vectors')
+                components.append(tuple(_finite_number(value) for value in vector))
+            object.__setattr__(self, 'rollout_components', tuple(components))
         for name, citation_name in (('rollout_differences', 'rollout_citation'), ('model_gap_draws', 'model_citation')):
             values = getattr(self, name)
             citation = getattr(self, citation_name)
@@ -101,6 +115,9 @@ def estimate_margin(inputs: MarginInput) -> MarginEstimate:
     reason = None
     if inputs.deterministic:
         pass
+    elif inputs.rollout_components is not None:
+        if any(len(vector) < 2 for vector in inputs.rollout_components):
+            reason = 'insufficient_paired_rollouts'
     elif inputs.rollout_differences is None:
         reason = 'paired_rollout_uncertainty_unavailable'
     elif len(inputs.rollout_differences) < 2:
@@ -118,8 +135,18 @@ def estimate_margin(inputs: MarginInput) -> MarginEstimate:
             inputs.floor.value, z, None, None, reason,
             tuple(value for value in (inputs.floor.citation, inputs.rollout_citation, inputs.model_citation) if value))
     try:
-        mc_error = 0.0 if inputs.deterministic else (
-            stdev(inputs.rollout_differences) / sqrt(len(inputs.rollout_differences)))
+        if inputs.deterministic:
+            mc_error = 0.0
+        elif inputs.rollout_components is not None:
+            vectors = inputs.rollout_components
+            variance = sum(stdev(vector)**2 / len(vector) for vector in vectors)
+            if len(vectors) == 2:
+                left, right = vectors
+                overlap = min(len(left), len(right))
+                variance += 2 * covariance(left[:overlap], right[:overlap]) * overlap / (len(left)*len(right))
+            mc_error = sqrt(max(0.0, variance))
+        else:
+            mc_error = stdev(inputs.rollout_differences) / sqrt(len(inputs.rollout_differences))
         model_error = stdev(inputs.model_gap_draws)
         value = _finite_number(z * hypot(mc_error, model_error))
     except OverflowError as error:
@@ -136,8 +163,8 @@ class PairedGuard:
 
     ``differences`` is the per-rollout difference on the shared seed tape.
     A deterministic guard (board power, threat share) has no tape and carries
-    its exact ``value``; a guard whose tape is unavailable has neither and is
-    counted as unavailable rather than dropped.
+    its exact ``value``. Conditional Wisp guards carry one or two shared-prefix
+    components plus their exact fitted mean. Missing tapes stay unavailable.
     """
     game_id: str
     log_seq: int
@@ -151,6 +178,7 @@ class PairedGuard:
     units: str = 'placement'
     value: float | None = None
     base_key: str | None = None
+    components: tuple[tuple[float, ...], ...] | None = None
 
     @property
     def key(self):
@@ -159,10 +187,12 @@ class PairedGuard:
 
     @property
     def deterministic(self):
-        return self.differences is None and self.value is not None
+        return self.differences is None and self.components is None and self.value is not None
 
     @property
     def mean(self):
+        if self.components is not None:
+            return self.value
         if self.differences:
             return sum(self.differences)/len(self.differences)
         return self.value
@@ -190,6 +220,51 @@ def _stage(round_id):
     return str(round_id).split('-')[0]
 
 
+def _conditional_wisp(options, seed):
+    """Retain integrated outcome and price estimators on their actual tapes.
+
+    The price estimator may use fewer lanes. Its covariance with the integrated
+    outcome estimator comes only from the shared prefix, not invented draws.
+    """
+    buys = [option for option in options.values() if option.get('action') == 'buy'
+        and option.get('payload', {}).get('outcomes')]
+    skips = [option for option in options.values() if option.get('action') == 'skip']
+    if len(buys) != 1 or len(skips) != 1:
+        return None
+    buy, skip = buys[0], skips[0]
+    payload = buy['payload']
+    baseline = _rollouts(skip, seed)
+    gain = _finite(payload.get('placement_gain'))
+    if baseline is None or gain is None:
+        return None
+    vectors, probabilities = [], []
+    for outcome in payload['outcomes']:
+        probability = _finite(outcome.get('probability'))
+        before, after = outcome.get('before', {}), outcome.get('after', {})
+        left, right = _finite_vector(before.get('rollout_placements')), _finite_vector(after.get('rollout_placements'))
+        if (probability is None or probability <= 0 or before.get('seed') != seed or after.get('seed') != seed
+                or left != baseline or right is None or len(right) != len(baseline)):
+            return None
+        probabilities.append(probability)
+        vectors.append(tuple(probability*(a-b) for a, b in zip(left, right)))
+    if not vectors or not isclose(sum(probabilities), 1.0):
+        return None
+    components = [tuple(sum(row[index] for row in vectors) for index in range(len(baseline)))]
+    pairing = payload.get('pairing')
+    if pairing == 'conditional_outcomes_integrated_on_shared_tape_with_overlapping_gold_pair_covariance':
+        price = payload.get('gold_pair', {})
+        before, after = price.get('before', {}), price.get('after', {})
+        left, right = _finite_vector(before.get('rollout_placements')), _finite_vector(after.get('rollout_placements'))
+        if (before.get('seed') != seed or after.get('seed') != seed or left is None or right is None
+                or len(left) != len(right) or len(left) > len(baseline) or left != baseline[:len(left)]):
+            return None
+        components.append(tuple(a-b for a, b in zip(left, right)))
+    elif pairing != 'conditional_outcomes_with_price_on_shared_tape':
+        return None
+    # The Engine's exact fit terms can shift the mean without changing MC noise.
+    return buy['option_id'], skip['option_id'], gain, tuple(components)
+
+
 def paired_guards(batches, *, kind):
     """Paired placement differences (runner-up minus best) for one decision kind.
 
@@ -207,6 +282,13 @@ def paired_guards(batches, *, kind):
             occurrence = occurrences.get(record.log_seq, 0)
             occurrences[record.log_seq] = occurrence+1
             options = {option['option_id']: option for option in record.options}
+            conditional = _conditional_wisp(options, record.seed) if kind == 'wisp' else None
+            if conditional is not None:
+                buy_id, skip_id, gain, components = conditional
+                guards.append(PairedGuard(batch.game_id, record.log_seq, occurrence, record.decision_id,
+                    kind, _stage(rounds[record.log_seq]), buy_id, skip_id, None,
+                    value=gain, components=components))
+                continue
             best = options.get(record.advice.get('option_id'))
             best_rollouts = _rollouts(best, record.seed) if best else None
             if best_rollouts is None:
@@ -418,7 +500,7 @@ def stage_margins(guards, draw_guards, *, target, floor, costly_or_sticky, rollo
         model = tuple(draw[guard.key] for draw in by_draw if guard.key in draw)
         estimate = estimate_margin(MarginInput(target, guard.stage, guard.kind, units, floor,
             costly_or_sticky, guard.differences, model, rollout_citation, model_citation,
-            deterministic=guard.deterministic))
+            deterministic=guard.deterministic, rollout_components=guard.components))
         grouped.setdefault(guard.stage, []).append(estimate)
     result = StageMargins()
     for stage, estimates in grouped.items():
