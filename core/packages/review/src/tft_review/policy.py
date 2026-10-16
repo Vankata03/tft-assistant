@@ -257,6 +257,9 @@ def observed_option(record, batch):
         purchases, reason = _bundle_purchases(batch, record, context, purchases, later)
         if reason:
             return None, reason
+        last = max(purchases, key=lambda event: event['seq'])
+        if _shop_interrupted(batch, context, last['seq'], datetime.fromisoformat(last['timestamp'])):
+            return None, 'capture_gap_prevents_action_attribution'
         buys = [dict(event['payload']) for event in purchases]
         followed = _shop_identity(buys) == _shop_identity(record.advice['payload']['buys'])
         latest = max(purchases, key=lambda event: event['seq'])

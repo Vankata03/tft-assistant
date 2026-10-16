@@ -749,6 +749,29 @@ def test_shown_bundle_is_not_joined_across_a_changed_or_unobserved_offer(tmp_pat
         assert [row['slot'] for row in first['player_choice']['payload']['buys']] == [0]
 
 
+@pytest.mark.parametrize('interruption', [_log_gap, _log_ambiguity], ids=['capture_gap', 'tracking_ambiguity'])
+def test_shop_bundle_within_one_window_is_not_joined_across_an_unobserved_interval(tmp_path, interruption):
+    """No later decision splits the window, but the interval still hides the offer."""
+    from tft_engine import DomainHook
+    sessions, store, _, _ = logged_game(tmp_path, finish=False, mode='live', shop=_offer(*SHOP_UNITS))
+    hooks = (DomainHook('shop', (), advice=two_purchase_shop),)
+    decision = _decision_id(sessions, store, decision='shop', hooks=hooks)
+    log_delivery(sessions, decision_id=decision, option_id='shop', domain='shop',
+        payload={'buys': [{'slot': 0, 'unit_id': 'unit'}, {'slot': 1, 'unit_id': 'unit'}]})
+    log_shown(sessions, decision_id=decision, option_id='shop')
+    sessions.append_event('purchase', {'slot': 0, 'unit_id': 'unit', 'cost': 1, 'copies': 1},
+        timestamp=(NOW+timedelta(seconds=1)).isoformat())
+    interruption(sessions)
+    sessions.append_event('purchase', {'slot': 1, 'unit_id': 'unit', 'cost': 1, 'copies': 1},
+        timestamp=(NOW+timedelta(seconds=1.2)).isoformat())
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=2)).isoformat())
+    report = review(sessions, store, hooks)
+    point = next(row for row in report.timeline if row['category'] == 'shop')
+    assert point['shown']['followed'] is None
+    assert point['unavailable']['player_choice'] == 'capture_gap_prevents_action_attribution'
+    assert report.summary['follow_rate']['eligible'] == 0
+
+
 @pytest.mark.parametrize(('display_when', 'earlier_valid', 'followed'), [
     ('before', False, True), ('equal', False, None), ('after', False, None), ('after', True, True),
 ])
