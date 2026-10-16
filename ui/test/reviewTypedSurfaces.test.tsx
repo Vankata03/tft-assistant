@@ -48,19 +48,27 @@ it('fight strip separates the pre-fight forecast from the observed result and ke
  expect(second).not.toContain('NaN')
 })
 
-it('full timeline shows displayed status, paired uncertainty and the missing capture-gap rows explicitly',async()=>{
+it('full timeline shows displayed status, paired uncertainty and capture gaps in order',async()=>{
  const timeline=[
-  {moment_id:'m1',engine_decision_id:'econ:3-2',log_seq:12,round_id:'3-2',category:'econ',cost:-0.42,paired_uncertainty:.11,close_call:false,differed:true,shown:{status:'unavailable',reason:'display_attribution_unavailable'},reason:'line_projection',unavailable:{},evidence_path:['evidence','replay','records',0]},
-  {moment_id:'m2',engine_decision_id:'shop:3-2',log_seq:13,round_id:'3-2',category:'shop',cost:null,paired_uncertainty:null,close_call:false,differed:true,shown:{status:'no_advice_in_baseline_mode'},reason:'board_power_gain',unavailable:{paired_uncertainty:'paired_rollouts_unavailable',cost:'domain_does_not_value_placement'},evidence_path:['evidence','replay','records',1]},
+  {kind:'decision',moment_id:'m1',engine_decision_id:'econ:3-2',log_seq:12,round_id:'3-2',category:'econ',cost:-0.42,paired_uncertainty:.11,close_call:false,differed:true,shown:{status:'unavailable',reason:'display_attribution_unavailable'},reason:'line_projection',unavailable:{},evidence_path:['evidence','replay','records',0]},
+  {kind:'capture_gap',log_seq:14,cause:'core_restart',start:'2026-10-11T00:00:01+00:00',end:'2026-10-11T00:00:03+00:00',start_round_id:'3-2',end_round_id:'3-3',unreviewed_snapshot_count:1,reason:'decisions_inside_capture_gap_not_reviewed',evidence_path:['debug','gap_events',0]},
+  {kind:'decision',moment_id:'m2',engine_decision_id:'shop:3-3',log_seq:15,round_id:'3-3',category:'shop',cost:null,paired_uncertainty:null,close_call:false,differed:true,shown:{status:'no_advice_in_baseline_mode'},reason:'board_power_gain',unavailable:{paired_uncertainty:'paired_rollouts_unavailable',cost:'domain_does_not_value_placement'},evidence_path:['evidence','replay','records',1]},
  ]
  const host=await mount('timeline',{surface:{timeline}})
- const [first,second]=[...host.querySelectorAll('article')].map(node=>node.textContent!)
- expect(first).toContain('econ · Engine decision econ:3-2 · log 12')
- expect(first).toContain('Estimated signed cost -0.42 ± 0.11')
- expect(first).toContain('Shown status unavailable · display attribution unavailable')
- expect(second).toContain('Differed · no placement cost · domain does not value placement')
- expect(second).toContain('Shown status no advice in baseline mode')
- expect(host.textContent).toContain('Capture gaps are not rows in this section')
+ const [first,gap,second]=[...host.querySelectorAll('article')]
+ expect(first!.textContent).toContain('econ · Engine decision econ:3-2 · log 12')
+ expect(first!.textContent).toContain('Estimated signed cost -0.42 ± 0.11')
+ expect(first!.textContent).toContain('Shown status unavailable · display attribution unavailable')
+ expect(gap!.getAttribute('aria-label')).toBe('Capture gap · core restart · rounds 3-2 to 3-3')
+ expect(gap!.querySelector('h3')!.textContent).toBe('Capture gap · core restart')
+ expect(gap!.textContent).toContain('From 2026-10-11T00:00:01+00:00 to 2026-10-11T00:00:03+00:00 · log 14')
+ expect(gap!.textContent).toContain('Decisions inside this gap are not reviewed · 1 captured snapshot not evaluated')
+ expect(gap!.textContent).not.toContain('Engine decision')
+ expect(gap!.textContent).not.toContain('Shown status')
+ expect([...gap!.querySelectorAll('button')].map(node=>node.textContent)).toEqual(['Debug evidence'])
+ expect(second!.textContent).toContain('Differed · no placement cost · domain does not value placement')
+ expect(second!.textContent).toContain('Shown status no advice in baseline mode')
+ expect(host.textContent).not.toContain('Capture gaps are not rows')
 })
 
 it('positioning note shows the advised layout and keeps follow attribution unavailable',async()=>{

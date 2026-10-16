@@ -9,7 +9,7 @@ from statistics import stdev
 from .attribution import DisplayLog, follow_rate, shown_status
 from .identity import digest
 from .report import ReviewReport
-from .sections import sections, surface_sections
+from .sections import sections, surface_sections, timeline_with_gaps
 from .observed_line import value_observed_line
 from tft_data import DataError
 
@@ -471,4 +471,5 @@ class ReviewPolicy:
         detail = sections(batch, data, policies=policies, timeline=timeline)
         return ReviewReport(batch.game_id, summary, tuple(timeline), tuple(moments),
             evidence,
-            surface=surface_sections(detail, timeline), **detail)
+            surface=surface_sections(detail, timeline_with_gaps(batch, timeline,
+                detail['debug']['gap_events'])), **detail)

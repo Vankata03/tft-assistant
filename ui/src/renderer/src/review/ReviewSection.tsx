@@ -97,6 +97,13 @@ const fields = new Set([
   "unit_index",
   "unit_id",
   "cell",
+  // Full-timeline capture gap rows.
+  "kind",
+  "start",
+  "end",
+  "start_round_id",
+  "end_round_id",
+  "unreviewed_snapshot_count",
 ]);
 // Round-keyed maps and reason maps keep every recorded key.
 const openMaps = new Set(["observed", "unavailable", "levels", "rolls"]);
@@ -404,6 +411,34 @@ function TimelineRow({ row }: { row: RecordValue }): React.JSX.Element {
   );
 }
 
+const gapRounds = (row: RecordValue): string => {
+  const start = row.start_round_id, end = row.end_round_id;
+  const known = (value: unknown): boolean => typeof value === "string" && value !== "";
+  if (known(start) && known(end)) return `rounds ${text(start)} to ${text(end)}`;
+  if (known(start)) return `after round ${text(start)}`;
+  if (known(end)) return `before round ${text(end)}`;
+  return "rounds unavailable";
+};
+
+/** A logged capture gap holds no reviewed decisions; it is not a decision row. */
+function GapRow({ row }: { row: RecordValue }): React.JSX.Element {
+  const count = number(row.unreviewed_snapshot_count) ?? 0;
+  return (
+    <>
+      <p>
+        From {row.start === null ? "unknown start" : text(row.start)} to{" "}
+        {text(row.end)} · log {text(row.log_seq)} · {gapRounds(row)}
+      </p>
+      <p>
+        Decisions inside this gap are not reviewed ·{" "}
+        {count === 0
+          ? "no captured snapshots inside"
+          : `${count} captured snapshot${count === 1 ? "" : "s"} not evaluated`}
+      </p>
+    </>
+  );
+}
+
 function FightRow({ row }: { row: RecordValue }): React.JSX.Element {
   const unavailable = object(row.unavailable);
   const win = percent(row.win_probability);
@@ -564,12 +599,6 @@ function ScopedSection({
   return (
     <section aria-label={`${name.replaceAll("_", " ")} review`}>
       {state.error ? <p role="alert">{state.error}</p> : null}
-      {name === "timeline" ? (
-        <p>
-          Capture gaps are not rows in this section; the review records them
-          under Debug.
-        </p>
-      ) : null}
       {state.rows.length === 0 && !state.error ? (
         <p>No records in this section</p>
       ) : null}
@@ -591,22 +620,32 @@ function ScopedSection({
           ),
         };
         const debugPath = row.evidence_path;
+        const gap = name === "timeline" && row.kind === "capture_gap";
         return (
           <article
             key={index}
+            aria-label={
+              gap
+                ? `Capture gap · ${label(row.cause)} · ${gapRounds(row)}`
+                : undefined
+            }
             style={{
               marginBottom: 24,
               padding: 16,
-              border: "1px solid #64748b",
+              border: gap ? "2px dashed #f59e0b" : "1px solid #64748b",
               borderRadius: 8,
             }}
           >
             <h3>
-              {row.round_id === undefined
-                ? `Log ${text(row.log_seq)}`
-                : `Round ${text(row.round_id)}`}
+              {gap
+                ? `Capture gap · ${label(row.cause)}`
+                : row.round_id === undefined
+                  ? `Log ${text(row.log_seq)}`
+                  : `Round ${text(row.round_id)}`}
             </h3>
-            {name === "lines" ? (
+            {gap ? (
+              <GapRow row={row} />
+            ) : name === "lines" ? (
               <>
                 <p>
                   Observed · gold {text(observed.gold)} · level{" "}
