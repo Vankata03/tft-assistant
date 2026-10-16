@@ -432,12 +432,41 @@ def decision_evidence(advice,context,names):
     import json
     fields={name:_encode(context.snapshot.fields.get(name)) for name in names}
     model_hash=sha256(json.dumps(_encode(context.data.tunables),sort_keys=True,separators=(',',':')).encode()).hexdigest()
-    fingerprint={'round':context.snapshot.round_id,'fields':fields,'history':_encode(context.history),
+    fingerprint={'round':context.snapshot.round_id,'fields':fields,'history':history_evidence(context),
         'data_snapshot_id':context.data.snapshot_id,'model_hash':model_hash}
     semantic={'round':context.snapshot.round_id,'values':{name:_encode(read(context.snapshot,context.data,name)) for name in names},'data':context.data.snapshot_id,'model':model_hash}
     token=sha256(json.dumps(semantic,sort_keys=True,separators=(',',':')).encode()).hexdigest()[:16]
     return replace(advice,validity=tuple(dict.fromkeys(advice.validity+names)),validity_state=dict(advice.validity_state)|fingerprint,
         decision_id=f'{context.snapshot.game_id}:{context.snapshot.round_id}:{advice.decision}:{token}')
+
+
+def history_evidence(context):
+    """Inline standalone histories; bind replay histories to exact source evidence."""
+    from hashlib import sha256
+    import json
+
+    if context.history.source_reference is None:
+        return _encode(context.history)
+    if '_history_evidence' not in context.__dict__:
+        source=dict(context.history.source_reference) | {'round_id': context.snapshot.round_id}
+        encoded=json.dumps(_encode(context.history),sort_keys=True,separators=(',',':'),allow_nan=False)
+        object.__setattr__(context,'_history_evidence',freeze({'source': source,
+            'sha256': sha256(encoded.encode()).hexdigest()}))
+    return context.__dict__['_history_evidence']
+
+
+def causal_history(snapshot, history, data):
+    """The Engine's canonical causal ordering, shared with replay reconstruction."""
+    previous=[state for state in history.snapshots if state.game_id==snapshot.game_id
+        and state.captured_at<=snapshot.captured_at and state!=snapshot
+        and round_index(state.round_id,data)<=round_index(snapshot.round_id,data)]
+    previous.sort(key=lambda state:(state.captured_at,round_index(state.round_id,data)))
+    sightings=tuple(sighting for sighting in history.sightings if (
+        sighting.read_at<=snapshot.captured_at if sighting.read_at else
+        round_index(sighting.round_id,data)<=round_index(snapshot.round_id,data)))
+    source_reference=(dict(history.source_reference) | {'projection': 'engine_causal_v1'}
+        if history.source_reference is not None else None)
+    return replace(history,snapshots=tuple(previous),sightings=sightings,source_reference=source_reference)
 
 
 def core_evidence(items,context):
@@ -446,7 +475,26 @@ def core_evidence(items,context):
     return tuple(decision_evidence(a,context,names) if a.decision in ('econ','pivot','plan','transition') else a for a in items)
 
 
-def evaluate(snapshot,history,data,mode,*,hooks=None,seed=None,effects=None,rollouts=None,reuse_simulations=True,_simulation=None):
+class PlanningHistory:
+    """Request-local memo of exact causal planning prefixes.
+
+    Entries are reused only while the same immutable snapshot objects and
+    sightings occur in the same order with the same data and hook registry.
+    A changed prefix discards the suffix. This is an optimization of the
+    historical fold, never a substitute for evaluating the current decision.
+    """
+    def __init__(self):
+        self.data = None
+        self.hooks = None
+        self.entries = []
+
+    def bind(self, data, hooks):
+        if self.data is not data or self.hooks != hooks:
+            self.data, self.hooks, self.entries = data, hooks, []
+        return self.entries
+
+
+def evaluate(snapshot,history,data,mode,*,hooks=None,seed=None,effects=None,rollouts=None,reuse_simulations=True,_simulation=None,history_fold=None):
     if mode in ('baseline','silent'):
         return EngineEvaluation(GamePlan())
     if mode not in ('live','review'):
@@ -460,21 +508,30 @@ def evaluate(snapshot,history,data,mode,*,hooks=None,seed=None,effects=None,roll
     if _simulation is None and reuse_simulations:
         _simulation=_simulation_reuse()
     plan=GamePlan(); context=None
+    entries=history_fold.bind(data,tuple(hooks)) if history_fold is not None else None
+    fold_simulation=_simulation_reuse() if history_fold is not None and reuse_simulations else _simulation
     try:
         if not data.guides:
             raise DataError('No validated Guides available')
         # Replay actual observed history. Future and other-game snapshots cannot influence this game.
-        previous=[s for s in history.snapshots if s.game_id==snapshot.game_id and s.captured_at<=snapshot.captured_at and s!=snapshot and round_index(s.round_id,data)<=round_index(snapshot.round_id,data)]
-        previous.sort(key=lambda s:(s.captured_at,round_index(s.round_id,data)))
-        causal=replace(history,snapshots=tuple(previous),sightings=tuple(s for s in history.sightings if (s.read_at<=snapshot.captured_at if s.read_at else round_index(s.round_id,data)<=round_index(snapshot.round_id,data))))
+        causal=causal_history(snapshot,history,data)
+        previous=causal.snapshots
         for index,state in enumerate(previous):
-            if observed_phase(state,data) not in ('planning','roll_down'):
-                continue
-            if required(state,data,('board','bench','gold','hp','level','xp','streak','lobby')):
-                continue
-            prefix=replace(history,snapshots=tuple(previous[:index]),sightings=tuple(s for s in history.sightings if (s.read_at<=state.captured_at if s.read_at else round_index(s.round_id,data)<=round_index(state.round_id,data))))
-            context=_step(state,prefix,data,plan,hooks,_simulation=_simulation)
-            plan=context.plan
+            sightings=tuple(s for s in history.sightings if (s.read_at<=state.captured_at if s.read_at else round_index(s.round_id,data)<=round_index(state.round_id,data)))
+            if entries is not None and index<len(entries):
+                old_state,old_sightings,old_plan=entries[index]
+                if old_state is state and old_sightings==sightings:
+                    plan=old_plan
+                    continue
+                del entries[index:]
+            if observed_phase(state,data) in ('planning','roll_down') and not required(state,data,('board','bench','gold','hp','level','xp','streak','lobby')):
+                prefix=replace(history,snapshots=tuple(previous[:index]),sightings=sightings)
+                context=_step(state,prefix,data,plan,hooks,_simulation=fold_simulation)
+                plan=context.plan
+            if entries is not None:
+                entries.append((state,sightings,plan))
+        if entries is not None:
+            del entries[len(previous):]
         missing=required(snapshot,data,('board','bench','gold','hp','level','xp','streak','lobby'))
         if missing:
             lock=read(snapshot,data,'comp_lock')
@@ -493,8 +550,10 @@ def evaluate(snapshot,history,data,mode,*,hooks=None,seed=None,effects=None,roll
             items=tuple(paused('Fresh positive planning evidence unavailable',missing=('phase','planning_phase'),domain=domain) for domain in ('econ','plan','transition'))+_hook_advice(hooks,context)
             return EngineEvaluation(plan,advice=rank_advice(core_evidence(items,context)),simulation_diagnostics=_simulation.workload() if _simulation else {})
         else:
-            prefix=replace(history,snapshots=tuple(previous),sightings=tuple(s for s in history.sightings if (s.read_at<=snapshot.captured_at if s.read_at else round_index(s.round_id,data)<=round_index(snapshot.round_id,data))))
+            prefix=replace(causal,snapshots=tuple(previous),sightings=tuple(s for s in history.sightings if (s.read_at<=snapshot.captured_at if s.read_at else round_index(s.round_id,data)<=round_index(snapshot.round_id,data))))
             context=_step(snapshot,prefix,data,plan,hooks,seed=seed,effects=effects,rollouts=rollouts,_simulation=_simulation)
+            if entries is not None and effects is None and rollouts is None and (seed is None or seed==snapshot_seed(snapshot,data)):
+                entries.append((snapshot,prefix.sightings,context.plan))
         items=_pivot_advice(context)+_econ_advice(context)+transition_advice(snapshot,context.recommended_board,context.plan,data)+_hook_advice(hooks,context)
         ranked=rank_advice(core_evidence(items,context))
         guide=data.guides[context.plan.target]

@@ -1,6 +1,8 @@
 """Immutable, JSON-safe contracts shared by capture, advice and replay."""
 from __future__ import annotations
 from dataclasses import dataclass, field, fields, is_dataclass
+from collections.abc import Sequence
+from operator import index as sequence_index
 from datetime import datetime
 from typing import Any, Literal, Mapping
 from tft_data.models import freeze
@@ -9,6 +11,10 @@ Mode = Literal['baseline', 'live', 'silent', 'review']
 
 
 def _encode(value: Any) -> Any:
+    if isinstance(value, GameHistory):
+        return {'snapshots': _encode(value.snapshots), 'sightings': _encode(value.sightings)}
+    if isinstance(value, HistoryWindow):
+        return [_encode(v) for v in value]
     if isinstance(value, datetime):
         return value.isoformat()
     if is_dataclass(value):
@@ -124,13 +130,56 @@ class TraitSighting:
         return cls(**value)
 
 
+class HistoryWindow(Sequence):
+    """Immutable range over one tuple, without copying each historical prefix."""
+    __slots__ = ('_rows', '_start', '_stop')
+
+    def __init__(self, rows, start=0, stop=None):
+        rows = rows if isinstance(rows, tuple) else tuple(rows)
+        start, stop, _ = slice(start, stop).indices(len(rows))
+        object.__setattr__(self, '_rows', rows)
+        object.__setattr__(self, '_start', start)
+        object.__setattr__(self, '_stop', max(start, stop))
+
+    def __setattr__(self, name, value):
+        raise AttributeError('Historical windows are immutable')
+
+    def __len__(self):
+        return self._stop-self._start
+
+    def __getitem__(self, key):
+        if isinstance(key, slice):
+            start, stop, step = key.indices(len(self))
+            if step == 1:
+                return HistoryWindow(self._rows, self._start+start, self._start+max(start, stop))
+            return tuple(self[index] for index in range(start, stop, step))
+        key = sequence_index(key)
+        if key < 0:
+            key += len(self)
+        if key < 0 or key >= len(self):
+            raise IndexError('Historical window index out of range')
+        return self._rows[self._start+key]
+
+    def __iter__(self):
+        for index in range(self._start, self._stop):
+            yield self._rows[index]
+
+    def __eq__(self, other):
+        if not isinstance(other, Sequence) or isinstance(other, (str, bytes, bytearray)):
+            return NotImplemented
+        return len(self) == len(other) and all(left == right for left, right in zip(self, other))
+
+
 @dataclass(frozen=True)
 class GameHistory:
-    snapshots: tuple[GameSnapshot, ...] = ()
-    sightings: tuple[TraitSighting, ...] = ()
+    snapshots: tuple[GameSnapshot, ...] | HistoryWindow = ()
+    sightings: tuple[TraitSighting, ...] | HistoryWindow = ()
+    source_reference: Mapping | None = field(default=None, compare=False, repr=False)
     def __post_init__(self):
-        object.__setattr__(self, 'snapshots', tuple(self.snapshots))
-        object.__setattr__(self, 'sightings', tuple(self.sightings))
+        object.__setattr__(self, 'snapshots', self.snapshots if isinstance(self.snapshots, HistoryWindow) else tuple(self.snapshots))
+        object.__setattr__(self, 'sightings', self.sightings if isinstance(self.sightings, HistoryWindow) else tuple(self.sightings))
+        if self.source_reference is not None:
+            object.__setattr__(self, 'source_reference', freeze(self.source_reference))
     def to_dict(self):
         return _encode(self)
     @classmethod
