@@ -82,6 +82,26 @@ def test_followed_shown_advice_counts_toward_follow_rate(tmp_path):
     assert report.summary['follow_rate']['value'] == 1.0
 
 
+@pytest.mark.parametrize('show_first', [False, True])
+def test_single_pick_equal_time_following_respects_logged_display_order(tmp_path, show_first):
+    sessions, store, _, _ = logged_game(tmp_path, finish=False, mode='live')
+    decision = _decision_id(sessions, store)
+    log_delivery(sessions, decision_id=decision, option_id='a')
+    if show_first:
+        log_shown(sessions, decision_id=decision, option_id='a', at=NOW+timedelta(seconds=1))
+    log_pick(sessions, 'A', 0)
+    if not show_first:
+        log_shown(sessions, decision_id=decision, option_id='a', at=NOW+timedelta(seconds=1))
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=2)).isoformat())
+    report = review(sessions, store)
+    shown = augment_moment(report)['shown']
+    assert shown['status'] == ('followed' if show_first else 'shown')
+    assert shown['followed'] is (True if show_first else None)
+    if not show_first:
+        assert shown['reason'] == 'display_not_confirmed_before_policy_onset'
+    assert report.summary['follow_rate']['eligible'] == int(show_first)
+
+
 def test_followed_advice_that_the_current_engine_values_worse_is_an_engine_error(tmp_path):
     sessions, store, _, _ = logged_game(tmp_path, finish=False, mode='live')
     decision = _decision_id(sessions, store)
@@ -116,7 +136,7 @@ def test_advice_the_coach_did_not_show_in_time_is_a_capture_gap_and_not_eligible
         'eligible': 0, 'followed': 0}
 
 
-def test_live_advice_never_delivered_or_shown_after_the_choice_is_a_capture_gap(tmp_path):
+def test_missing_display_is_a_capture_gap_but_a_late_display_has_unknown_following(tmp_path):
     sessions, store, _, _ = logged_game(tmp_path, finish=False, mode='live')
     decision = _decision_id(sessions, store)
     log_pick(sessions, 'B', 1)
@@ -131,15 +151,59 @@ def test_live_advice_never_delivered_or_shown_after_the_choice_is_a_capture_gap(
     log_shown(sessions, decision_id=decision, option_id='a', at=NOW+timedelta(seconds=1.5))
     sessions.end_game(timestamp=(NOW+timedelta(seconds=2)).isoformat())
     shown = augment_moment(review(sessions, store))['shown']
-    assert shown['status'] == 'capture_gap'
-    assert shown['cause'] == 'shown_after_choice'
+    assert shown['status'] == 'shown'
+    assert shown['followed'] is None
+    assert shown['shown_at'] == (NOW+timedelta(seconds=1.5)).isoformat()
+    assert shown['reason'] == 'display_not_confirmed_before_policy_onset'
 
 
-def test_silent_and_baseline_decisions_keep_their_mode_status(tmp_path):
-    sessions, store, _, _ = logged_game(tmp_path, finish=False, mode='silent')
+@pytest.mark.parametrize('late_seconds', [1, 1.1])
+@pytest.mark.parametrize(('choice', 'slot', 'followed'), [('A', 0, True), ('B', 1, False)])
+def test_late_different_option_cannot_replace_the_latest_causal_single_pick_display(
+    tmp_path, late_seconds, choice, slot, followed
+):
+    sessions, store, _, _ = logged_game(tmp_path, finish=False, mode='live')
+    decision = _decision_id(sessions, store)
+    log_delivery(sessions, decision_id=decision, option_id='a')
+    log_shown(sessions, decision_id=decision, option_id='a')
+    revision = 'sha256:'+'3'*64
+    log_delivery(sessions, decision_id=decision, option_id='b',
+        at=NOW+timedelta(seconds=.6), revision=revision)
+    log_pick(sessions, choice, slot)
+    log_shown(sessions, decision_id=decision, option_id='b', revision=revision,
+        at=NOW+timedelta(seconds=late_seconds))
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=2)).isoformat())
+    report = review(sessions, store)
+    shown = augment_moment(report)['shown']
+    assert shown['shown_option_id'] == 'a'
+    assert shown['status'] == ('followed' if followed else 'ignored')
+    assert shown['followed'] is followed
+    assert report.summary['follow_rate']['value'] == float(followed)
+
+
+def test_display_without_an_observable_player_choice_remains_shown_and_unknown(tmp_path):
+    sessions, store, _, _ = logged_game(tmp_path, finish=False, mode='live')
+    decision = _decision_id(sessions, store)
+    log_delivery(sessions, decision_id=decision, option_id='a')
+    log_shown(sessions, decision_id=decision, option_id='a')
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=2)).isoformat())
+    report = review(sessions, store)
+    shown = augment_moment(report)['shown']
+    assert shown['status'] == 'shown'
+    assert shown['followed'] is None
+    assert shown['reason'] == 'player_choice_unavailable'
+    assert report.summary['follow_rate']['eligible'] == 0
+
+
+@pytest.mark.parametrize('mode', ['silent', 'baseline'])
+def test_silent_and_baseline_decisions_keep_their_mode_status(tmp_path, mode):
+    sessions, store, _, _ = logged_game(tmp_path, finish=False, mode=mode)
+    decision = _decision_id(sessions, store)
+    log_delivery(sessions, decision_id=decision, option_id='a')
+    log_shown(sessions, decision_id=decision, option_id='a')
     log_pick(sessions, 'B', 1)
     sessions.end_game(timestamp=(NOW+timedelta(seconds=2)).isoformat())
-    assert augment_moment(review(sessions, store))['shown'] == {'status': 'no_advice_in_silent_mode'}
+    assert augment_moment(review(sessions, store))['shown'] == {'status': f'no_advice_in_{mode}_mode'}
 
 
 def purchase_choices(context):
@@ -393,23 +457,25 @@ def two_purchase_shop(context):
     (1, False, None),
     (1.5, False, None),
 ])
+@pytest.mark.parametrize('purchase_count', [1, 2])
 def test_shop_bundle_display_must_precede_first_purchase_to_attribute_following(
-    tmp_path, shown_seconds, show_first, followed
+    tmp_path, shown_seconds, show_first, followed, purchase_count
 ):
     from tft_engine import DomainHook
     sessions, store, _, _ = logged_game(tmp_path, finish=False, mode='live')
-    hooks = (DomainHook('shop', (), advice=two_purchase_shop),)
+    hooks = (DomainHook('shop', (), advice=two_purchase_shop if purchase_count == 2 else aggregate_shop),)
     decision = _decision_id(sessions, store, decision='shop', hooks=hooks)
     log_delivery(sessions, decision_id=decision, option_id='shop', domain='shop',
-        payload={'buys': [{'slot': 0, 'unit_id': 'unit'}, {'slot': 1, 'unit_id': 'unit'}]})
+        payload={'buys': [{'slot': slot, 'unit_id': 'unit'} for slot in range(purchase_count)]})
     if show_first:
         log_shown(sessions, decision_id=decision, option_id='shop', at=NOW+timedelta(seconds=shown_seconds))
     sessions.append_event('purchase', {'slot': 0, 'unit_id': 'unit', 'cost': 1, 'copies': 1},
         timestamp=(NOW+timedelta(seconds=.3)).isoformat())
     if not show_first:
         log_shown(sessions, decision_id=decision, option_id='shop', at=NOW+timedelta(seconds=shown_seconds))
-    sessions.append_event('purchase', {'slot': 1, 'unit_id': 'unit', 'cost': 1, 'copies': 1},
-        timestamp=(NOW+timedelta(seconds=1)).isoformat())
+    if purchase_count == 2:
+        sessions.append_event('purchase', {'slot': 1, 'unit_id': 'unit', 'cost': 1, 'copies': 1},
+            timestamp=(NOW+timedelta(seconds=1)).isoformat())
     sessions.end_game(timestamp=(NOW+timedelta(seconds=2)).isoformat())
     report = review(sessions, store, hooks)
     point = next(row for row in report.timeline if row['category'] == 'shop')
@@ -418,12 +484,43 @@ def test_shop_bundle_display_must_precede_first_purchase_to_attribute_following(
     assert point['shown']['shown_at'] == (NOW+timedelta(seconds=shown_seconds)).isoformat()
     if followed is None:
         assert point['shown']['reason'] == 'display_not_confirmed_before_policy_onset'
-    assert point['player_choice']['observed_at'] == (NOW+timedelta(seconds=1)).isoformat()
+    assert point['player_choice']['observed_at'] == (NOW+timedelta(seconds=1 if purchase_count == 2 else .3)).isoformat()
     assert report.summary['follow_rate']['eligible'] == (1 if followed else 0)
 
 
-@pytest.mark.parametrize(('shown_seconds', 'followed'), [(.2, True), (.25, True), (.4, None), (1.5, None), (20, None)])
-def test_observed_line_display_must_precede_confirmed_level_action_bounds(tmp_path, shown_seconds, followed):
+@pytest.mark.parametrize('purchase_count', [1, 2])
+@pytest.mark.parametrize('late_seconds', [.3, 1.5])
+def test_late_different_shop_bundle_cannot_replace_a_causal_display(tmp_path, purchase_count, late_seconds):
+    from tft_engine import DomainHook
+    sessions, store, _, _ = logged_game(tmp_path, finish=False, mode='live')
+    hooks = (DomainHook('shop', (), advice=two_purchase_shop if purchase_count == 2 else aggregate_shop),)
+    decision = _decision_id(sessions, store, decision='shop', hooks=hooks)
+    log_delivery(sessions, decision_id=decision, option_id='shop', domain='shop',
+        payload={'buys': [{'slot': slot, 'unit_id': 'unit'} for slot in range(purchase_count)]})
+    log_shown(sessions, decision_id=decision, option_id='shop', at=NOW+timedelta(seconds=.25))
+    revision = 'sha256:'+'3'*64
+    log_delivery(sessions, decision_id=decision, option_id='late-buy', domain='shop',
+        payload={'buys': [{'slot': 4, 'unit_id': 'unit'}]}, at=NOW+timedelta(seconds=.27), revision=revision)
+    for slot in range(purchase_count):
+        sessions.append_event('purchase', {'slot': slot, 'unit_id': 'unit', 'cost': 1, 'copies': 1},
+            timestamp=(NOW+timedelta(seconds=.3 if slot == 0 else 1)).isoformat())
+    log_shown(sessions, decision_id=decision, option_id='late-buy', revision=revision,
+        at=NOW+timedelta(seconds=late_seconds))
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=2)).isoformat())
+    report = review(sessions, store, hooks)
+    shown = next(row['shown'] for row in report.timeline if row['category'] == 'shop')
+    assert shown['shown_option_id'] == 'shop'
+    assert shown['followed'] is True
+    assert report.summary['follow_rate']['value'] == 1.0
+
+
+@pytest.mark.parametrize(('shown_seconds', 'followed', 'earlier_valid'), [
+    (.2, True, False), (.25, True, False), (.4, None, False),
+    (1.5, None, False), (20, None, False), (20, True, True),
+])
+def test_observed_line_display_must_precede_confirmed_level_action_bounds(
+    tmp_path, shown_seconds, followed, earlier_valid
+):
     from dataclasses import replace
     from tft_engine import Line, ScoredOption, simulate_lines
     from tft_review import ReplayProducer, ReviewPolicy
@@ -439,8 +536,13 @@ def test_observed_line_display_must_precede_confirmed_level_action_bounds(tmp_pa
         'guide', (line,), seed=context.seed, rollouts=4)[0]
     log_delivery(sessions, decision_id=record.decision_id, option_id=line.id, domain='econ',
         payload={'line': line.to_dict()}, at=NOW+timedelta(seconds=.1))
-    log_shown(sessions, decision_id=record.decision_id, option_id=line.id,
-        at=NOW+timedelta(seconds=shown_seconds))
+    if earlier_valid:
+        log_shown(sessions, decision_id=record.decision_id, option_id=line.id, at=NOW+timedelta(seconds=.2))
+        log_delivery(sessions, decision_id=record.decision_id, option_id='late-hold', domain='econ',
+            payload={'line': Line('late-hold').to_dict()}, at=NOW+timedelta(seconds=.3),
+            revision='sha256:'+'3'*64)
+    log_shown(sessions, decision_id=record.decision_id, option_id='late-hold' if earlier_valid else line.id,
+        at=NOW+timedelta(seconds=shown_seconds), revision='sha256:'+('3' if earlier_valid else '1')*64)
     rounds = list(data.value('round_order'))
     for index, round_id in enumerate(rounds[rounds.index('3-3'):rounds.index('4-7')+1]):
         at = NOW+timedelta(seconds=index+1)
@@ -472,6 +574,7 @@ def test_observed_line_display_must_precede_confirmed_level_action_bounds(tmp_pa
         assert point['shown']['reason'] == 'display_not_confirmed_before_policy_onset'
         assert report.summary['follow_rate']['eligible'] == 0
     assert point['cost'] is not None
+    assert point['shown']['shown_option_id'] == line.id
     assert point['player_choice']['observed_at'] == batch.contexts[-1].timestamp
 
 
@@ -509,22 +612,44 @@ def test_shop_bundle_does_not_hide_an_additional_unscored_purchase(tmp_path):
     assert len(point['player_choice']['payload']['buys']) == 2
 
 
-def test_confirmed_unchanged_level_schedule_can_follow_shown_line_without_inventing_rolls(tmp_path):
+@pytest.mark.parametrize(('display_when', 'earlier_valid', 'followed'), [
+    ('before', False, True), ('equal', False, None), ('after', False, None), ('after', True, True),
+])
+def test_unchanged_line_display_uses_completion_when_no_action_onset_or_sequence_is_available(
+    tmp_path, display_when, earlier_valid, followed
+):
+    from dataclasses import replace
+    from tft_engine import Line
     from tests.test_replay_contracts import log_snapshot
     from tft_review import ReplayProducer, ReviewPolicy
     sessions, store, data, _ = logged_game(tmp_path, finish=False, mode='live')
     batch = ReplayProducer(sessions, store, repository=ROOT).produce('901')
     econ = next(row for row in batch.records if row.decision == 'econ')
     log_delivery(sessions, decision_id=econ.decision_id, option_id=econ.advice['option_id'], domain='econ', payload=econ.to_dict()['advice']['payload'])
-    log_shown(sessions, decision_id=econ.decision_id, option_id=econ.advice['option_id'])
+    if earlier_valid:
+        log_shown(sessions, decision_id=econ.decision_id, option_id=econ.advice['option_id'])
+        log_delivery(sessions, decision_id=econ.decision_id, option_id='late-level', domain='econ',
+            payload={'line': Line('late-level', levels={'3-3': 2}).to_dict()}, revision='sha256:'+'3'*64)
     at = NOW+timedelta(seconds=1)
     sessions.append_event('snapshot', log_snapshot(data, at=at, snapshot_id='confirmed-hold'), timestamp=at.isoformat())
     rounds = list(data.value('round_order'))
     for index, round_id in enumerate(rounds[rounds.index('3-2')+1:rounds.index('4-7')+1]):
         at = NOW+timedelta(seconds=index+2)
         sessions.append_event('snapshot', log_snapshot(data, at=at, snapshot_id=round_id)|{'round_id': round_id}, timestamp=at.isoformat())
-    sessions.end_game(timestamp=(at+timedelta(seconds=1)).isoformat())
+    shown_at = NOW+timedelta(seconds=.4) if display_when == 'before' else at+timedelta(seconds=display_when == 'after')
+    log_shown(sessions, decision_id=econ.decision_id, option_id='late-level' if earlier_valid else econ.advice['option_id'],
+        at=shown_at, revision='sha256:'+('3' if earlier_valid else '1')*64)
+    sessions.end_game(timestamp=(at+timedelta(seconds=2)).isoformat())
     batch = ReplayProducer(sessions, store, repository=ROOT).produce('901')
-    report = ReviewPolicy(min_cost=.05).build(batch, data=data)
+    record = next(row for row in batch.records if row.decision == 'econ' and row.log_seq == 1)
+    report = ReviewPolicy(min_cost=.05).build(replace(batch, records=(record,)), data=data)
     point = next(row for row in report.timeline if row['category'] == 'econ')
-    assert point['shown']['followed'] is True, dict(point['unavailable'])
+    assert point['player_choice']['payload']['action_log_seqs'] == ()
+    assert point['shown']['followed'] is followed, dict(point['unavailable'])
+    assert point['player_choice']['observed_at'] == batch.contexts[-1].timestamp
+    if followed:
+        assert point['shown']['shown_option_id'] == econ.advice['option_id']
+    else:
+        assert point['shown']['status'] == 'shown'
+        assert point['shown']['reason'] == 'display_not_confirmed_before_policy_onset'
+        assert report.summary['follow_rate']['eligible'] == 0

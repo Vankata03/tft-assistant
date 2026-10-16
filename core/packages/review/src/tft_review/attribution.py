@@ -6,8 +6,7 @@ was shown (`advice_too_late`, `advice_paused`). Review joins those events to the
 replayed decision by the Engine's semantic decision identity, falling back to
 the delivered domain and snapshot inside the replay's decision segment. Follow
 attribution requires an acknowledgement before the player's choice started.
-Multi-action policies retain display evidence after their onset, but cannot be
-credited as following that display.
+Displays after that boundary remain recorded, with unknown following.
 """
 from datetime import datetime
 from collections.abc import Mapping
@@ -82,12 +81,31 @@ def same_choice(shown_option, shown_row, player):
     return False
 
 
+def _before_action(show, player):
+    """Compare display with onset evidence, falling back to a confirmed choice.
+
+    Equal clocks require earlier logged display evidence. A missing sequence
+    cannot establish that ordering; a strictly earlier timestamp still can.
+    """
+    if player is None:
+        return False
+    onset = player.get('observed_started_at')
+    at = onset or player.get('observed_at')
+    if at is None:
+        return False
+    display_at, action_at = _at(show['timestamp']), _at(at)
+    if display_at != action_at:
+        return display_at < action_at
+    seq = player.get('observed_start_log_seq' if onset else 'observed_log_seq')
+    return type(seq) is int and type(show.get('seq')) is int and show['seq'] < seq
+
+
 def shown_status(display, record, *, mode, window, segment_snapshots, player, cost, close_call):
     """One shown-advice status per decision point.
 
     `window` is the replay segment's half-open time interval. A capture gap means
-    the coach would have said the Engine's choice but no acknowledgement reached
-    the log before the player chose.
+    no matching display acknowledgement exists. Known displays remain shown
+    even when they cannot establish that the player followed them.
     """
     if mode == 'baseline':
         return {'status': 'no_advice_in_baseline_mode'}
@@ -98,22 +116,17 @@ def shown_status(display, record, *, mode, window, segment_snapshots, player, co
     shows = [event for key in keys for event in display.shows.get(key, ())
         if display.row(event) is not None and _at(event['timestamp']) >= start
         and (stop is None or _at(event['timestamp']) < stop)]
-    chosen_at = _at(player['observed_at']) if player and player.get('observed_at') else None
-    started_at = _at(player['observed_started_at']) if player and player.get('observed_started_at') else None
-    before = shows if started_at is not None else [event for event in shows
-        if chosen_at is None or _at(event['timestamp']) <= chosen_at]
-    if before:
-        causal = [event for event in before if started_at is None or
-            (_at(event['timestamp']), event['seq']) <= (started_at, player['observed_start_log_seq'])]
-        latest = max(causal or before, key=lambda event: (_at(event['timestamp']), event['seq']))
+    if shows:
+        causal = [event for event in shows if _before_action(event, player)]
+        latest = max(causal or shows, key=lambda event: (_at(event['timestamp']), event['seq']))
         option = latest['payload']['option_id']
         followed = None if player is None or not causal else same_choice(option, display.row(latest), player)
         shown = {'shown_option_id': option, 'shown_at': latest['timestamp'],
             'delivery_revision': latest['payload']['delivery_revision'],
-            'surfaces': sorted({event['payload']['surface'] for event in before
+            'surfaces': sorted({event['payload']['surface'] for event in causal or shows
                 if event['payload']['option_id'] == option}), 'followed': followed}
         if followed is None:
-            reason = 'display_not_confirmed_before_policy_onset' if started_at is not None and not causal else 'player_choice_unavailable'
+            reason = 'display_not_confirmed_before_policy_onset' if player is not None and not causal else 'player_choice_unavailable'
             return shown | {'status': 'shown', 'reason': reason}
         if not followed:
             return shown | {'status': 'ignored'}
@@ -121,9 +134,7 @@ def shown_status(display, record, *, mode, window, segment_snapshots, player, co
         return shown | {'status': 'engine_error' if harmful else 'followed'}
     delivered = [row for key in keys for row in display.delivered.get(key, ())]
     dropped = [event for key in keys for event in display.dropped.get(key, ())]
-    if shows:
-        cause = 'shown_after_choice'
-    elif dropped:
+    if dropped:
         cause = dropped[0]['kind']
     elif delivered:
         cause = 'delivered_not_shown'
