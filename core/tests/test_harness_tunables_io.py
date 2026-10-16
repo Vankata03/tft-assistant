@@ -260,3 +260,55 @@ def test_candidate_destination_rejects_case_alias_of_committed_data(tmp_path):
     reference = latest_committed_tunables(repository)
     with pytest.raises(DataError, match='committed'):
         write_candidate(reference, {'fight_scale': 1.5}, alias/'new-patch', citation='fixture')
+
+
+def test_accepted_reference_reads_every_object_from_one_pinned_commit(tmp_path, monkeypatch):
+    import tft_harness.tunables_io as tunables_io
+    repository = committed_repository(tmp_path)
+    pinned = git(repository, 'rev-parse', 'HEAD')
+    real_run = subprocess.run
+    committed = []
+
+    def concurrent_commit_after_head_resolution(command, *args, **kwargs):
+        result = real_run(command, *args, **kwargs)
+        if command[3:] == ['rev-parse', 'HEAD'] and not committed:
+            committed.append(True)
+            path = repository/'data/18.2/tunables.toml'
+            document = tomllib.loads(path.read_text())
+            document['fields']['fight_scale']['value'] = 77.0
+            path.write_text(tomli_w.dumps(document))
+            real_run(['git', '-C', str(repository), 'commit', '-qam', 'concurrent owner acceptance'], check=True)
+        return result
+
+    monkeypatch.setattr(tunables_io.subprocess, 'run', concurrent_commit_after_head_resolution)
+    reference = tunables_io.latest_committed_tunables(repository)
+    monkeypatch.undo()
+    assert git(repository, 'rev-parse', 'HEAD') != pinned
+    assert reference.code_commit == reference.commit == pinned
+    assert reference.values()['fight_scale'] == 2.0
+    assert reference.blob == git(repository, 'rev-parse', f'{pinned}:data/18.2/tunables.toml')
+
+
+def test_unreadable_accepted_history_fails_the_cli_cleanly(tmp_path, monkeypatch, capsys):
+    from tests.test_harness import combat_logs
+    from tft_core.harness_cli import main
+    (tmp_path/'games').mkdir()
+    (tmp_path/'accepted').mkdir()
+    sessions, store = combat_logs(tmp_path/'games', results=('win', 'loss'))
+    repository = committed_repository(tmp_path/'accepted')
+    accepted_commit = git(repository, 'rev-parse', 'HEAD')
+    (repository/'notes.txt').write_text('unrelated later commit\n')
+    git(repository, 'add', 'notes.txt')
+    git(repository, 'commit', '-qm', 'unrelated')
+    # The tree at HEAD stays readable, but the commit that last touched the
+    # accepted file cannot be read, so its history lookup fails in Git.
+    loose = repository/'.git/objects'/accepted_commit[:2]/accepted_commit[2:]
+    loose.chmod(0o600)
+    loose.unlink()
+    monkeypatch.setenv('TFT_ASSISTANT_DATA_ROOT', str(sessions.root))
+    monkeypatch.setenv('TFT_ASSISTANT_CONFIG_ROOT', str(sessions.config_root))
+    assert main(['eval', '--repository', str(repository), '--snapshots', str(store.root),
+        '--output', str(tmp_path/'reports'), '--bootstrap-draws', '20']) == 2
+    captured = capsys.readouterr()
+    assert 'Offline evaluation failed' in captured.out and 'Traceback' not in captured.err
+    assert not (tmp_path/'reports').exists()
