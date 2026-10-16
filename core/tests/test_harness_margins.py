@@ -205,3 +205,15 @@ def test_margin_fit_produces_values_from_real_engine_tapes_and_training_refits(t
     assert result['diagnostics']['line_margin']['3']['available'] > 0
     assert result['carried']['transition_tolerance'] == 'compatible_paired_guard_unavailable'
     assert 'game_id' not in str(result)
+
+
+def test_missing_model_sample_carries_all_margins_without_blocking_family1(tmp_path):
+    from tests.test_harness import combat_logs
+    from tests.test_replay_contracts import ROOT
+    from tft_harness import EvaluationHarness
+    from tft_harness.margins import fit_margins
+    sessions, store = combat_logs(tmp_path, results=('win','loss'))
+    result = fit_margins(EvaluationHarness(sessions, store, repository=ROOT),
+        {'fight_scale': [.25,1,2]}, draws=3)
+    assert result['fields'] == {}
+    assert set(result['carried'].values()) == {'insufficient_training_games_for_model_uncertainty'}

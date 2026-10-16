@@ -263,10 +263,13 @@ def fit_margins(harness, parameters, *, metric='fight_log_loss', draws=8, seed=0
     if harness.sessions.run:
         return {'fields': {}, 'carried': {name: 'margins_frozen_during_live_run' for name in carried},
             'diagnostics': {}}
+    _, games = current_set_games(harness)
+    training, holdout = chronological_split([game for game in games if game['finished']])
+    if len(training) < 2 or not holdout:
+        return {'fields': {}, 'carried': {name: 'insufficient_training_games_for_model_uncertainty'
+            for name in carried}, 'diagnostics': {}}
     uncertainty = model_uncertainty(harness, parameters, metric=metric, draws=draws,
         seed=seed, max_evaluations=max_evaluations, fixed=fixed)
-    _, games = current_set_games(harness)
-    training, _ = chronological_split([game for game in games if game['finished']])
     replayed = replay_draws(harness, [{}]+uncertainty['parameters'], training)
     current = getattr(harness.data_store, 'current', None)
     if current is None:

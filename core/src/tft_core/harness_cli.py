@@ -38,7 +38,7 @@ def _offline(args):
     from tft_harness.overlay import TunableOverlay
     from tft_harness.tunables_io import latest_committed_tunables, write_candidate
     from tft_harness.markdown import write_markdown
-    from tft_harness.fitting import ContinuousRange, fit
+    from tft_harness.fitting import fit
     from tft_harness.priors import fit_priors
     from tft_harness.margins import fit_margins
 
@@ -70,13 +70,13 @@ def _offline(args):
                 updates = priors.fields
             else:
                 search = _read_json(args.search) if args.search else {'fight_scale': {'low': .01, 'high': 20.0}}
-                parameters = {name: ContinuousRange(**value) if isinstance(value, dict) else value
-                    for name, value in search.items()}
+                parameters = _search_parameters(search)
+                fixed = _read_json(args.fixed) if args.fixed else {}
                 fitted = fit(harness, parameters, metric=args.metric, bootstrap_seed=args.seed,
-                    bootstrap_draws=args.bootstrap_draws, max_evaluations=args.max_evaluations)
+                    bootstrap_draws=args.bootstrap_draws, max_evaluations=args.max_evaluations, fixed=fixed)
                 updates = dict(fitted.solver['fixed']) | dict(fitted.parameters)
                 margins = fit_margins(harness, parameters, metric=args.metric, draws=args.model_draws,
-                    seed=args.seed, max_evaluations=args.max_evaluations)
+                    seed=args.seed, max_evaluations=args.max_evaluations, fixed=fixed)
                 updates.update(margins['fields'])
         report = harness.evaluate(candidate=updates, bootstrap_seed=args.seed,
             bootstrap_draws=args.bootstrap_draws)
@@ -102,6 +102,21 @@ def _offline(args):
     except (DataError, ValueError, TypeError, KeyError, OSError, RuntimeError):
         print('tft-harness: Offline evaluation failed; check committed tunables, private snapshots, qualified inputs and declared search bounds.')
         return 2
+
+
+def _search_parameters(search):
+    from tft_harness.fitting import ContinuousRange, SimplexRange
+    def node(value):
+        if isinstance(value, dict):
+            if 'simplex' in value:
+                if set(value) != {'simplex'} or not isinstance(value['simplex'], dict):
+                    raise ValueError('Simplex search requires a simplex parameter object')
+                return SimplexRange(**value['simplex'])
+            if {'low', 'high'} <= value.keys():
+                return ContinuousRange(**value)
+            return {key: node(item) for key, item in value.items()}
+        return value
+    return {name: node(value) for name, value in search.items()}
 
 
 def _read_json(path):
@@ -135,6 +150,7 @@ def main(argv=None, *, riot_client=None):
         if command == 'fit':
             offline.add_argument('--priors', action='store_true')
             offline.add_argument('--prior-evidence', type=Path, help='Qualified public aggregate cohort JSON')
+            offline.add_argument('--fixed', type=Path, help='JSON family-1 normalization constants')
             offline.add_argument('--search', type=Path, help='JSON mapping family-1 names to grids or {low,high,start} ranges')
             offline.add_argument('--metric', default='fight_log_loss')
             offline.add_argument('--max-evaluations', type=int, default=64)
