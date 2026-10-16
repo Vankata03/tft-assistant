@@ -102,6 +102,11 @@ def test_report_only_calibration_uses_game_weights_and_never_enters_fit_or_gates
     assert curve['eligible_rows'] == 1 and curve['eligible_games'] == 1
     assert diagnostics['gap_share'] == 0
     assert diagnostics['follow_ignore_placement']['followed']['value'] is None
+    # No timeline point carries follow attribution, so every follow-based split says so.
+    for name in ('follow_ignore_placement', 'positioning_residual'):
+        assert {row['reason'] for row in diagnostics[name].values()} == {'follow_attribution_unavailable'}
+    assert {row['reason'] for row in diagnostics['expected_placement_by_follow_rate'].values()} == {
+        'follow_attribution_unavailable'}
     assert 'report_only' not in report.gates
     with pytest.raises(ValueError, match='Report-only'):
         harness.fit({'fight_scale': [1]}, metric='line_gold_mae')

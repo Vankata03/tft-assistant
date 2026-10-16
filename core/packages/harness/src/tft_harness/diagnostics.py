@@ -30,6 +30,15 @@ def combine_diagnostics(rows, reports, counts):
     for name in ('follow_ignore_placement', 'expected_placement_by_follow_rate', 'positioning_residual'):
         result[name] = {band: combine_aggregates((game, report[name][band]) for game, report in reports)
             for band in result[name]}
+    # Without slice B attribution these splits are unavailable, not merely empty.
+    attributed = sum(report['follow_attributed_points'] for _, report in reports)
+    rated = sum(report['follow_rate_games'] for _, report in reports)
+    for name, available in (('follow_ignore_placement', attributed), ('positioning_residual', attributed),
+            ('expected_placement_by_follow_rate', rated)):
+        for row in result[name].values():
+            if not available and not row['eligible_rows']:
+                row['reason'] = 'follow_attribution_unavailable'
+    result['follow_attributed_points'], result['follow_rate_games'] = attributed, rated
     result['owner_disagree_rate'] = combine_aggregates((game, report['owner_disagree_rate']) for game, report in reports)
     excluded = Counter()
     for _, report in reports:
@@ -72,13 +81,14 @@ def report_diagnostics(rows, games, counts):
         for bucket, sample in sorted(buckets.items())] for stage, buckets in sorted(curves.items())}
     follow_placement, expected, position = defaultdict(list), defaultdict(list), defaultdict(list)
     missing, stale, field_denominators, disagreement = Counter(), Counter(), Counter(), []
-    latency_games = []
+    latency_games, attributed, rated = [], 0, 0
     for game in games:
         batch, data, review, placement, tags = (game[name] for name in ('batch', 'data', 'review', 'placement', 'tags'))
         game_id = batch.game_id
         followed = review.summary.get('follow_rate', {}).get('value')
         by_seq = {point['log_seq']: point for point in review.timeline if point['category'] == 'econ'}
         if followed is not None:
+            rated += 1
             band = 'low' if followed < 1/3 else 'medium' if followed < 2/3 else 'high'
             for row in rows:
                 if row['game_id'] == game_id and row['metric'] == 'expected_placement_mae':
@@ -87,6 +97,7 @@ def report_diagnostics(rows, games, counts):
             missing['follow_rate_unavailable'] += 1
         for point in review.timeline:
             status = point['shown'].get('status')
+            attributed += status in ('followed', 'engine_error', 'ignored')
             if status in ('followed', 'engine_error', 'ignored') and placement is not None:
                 follow_placement['ignored' if status == 'ignored' else 'followed'].append((game_id, placement))
             else:
@@ -131,6 +142,7 @@ def report_diagnostics(rows, games, counts):
         'follow_rate_bands': {'low': '[0,1/3)', 'medium': '[1/3,2/3)', 'high': '[2/3,1]'},
         'positioning_residual': {name: aggregate(position[name]) for name in ('followed', 'ignored')},
         'owner_disagree_rate': aggregate(disagreement), 'excluded': dict(missing),
+        'follow_attributed_points': attributed, 'follow_rate_games': rated,
         'stale_fields': {name: {'silences': stale[name], 'observations': total, 'share': stale[name]/total}
             for name, total in sorted(field_denominators.items())},
         'gap_share': counts['gap_rounds']/counts['known_rounds'] if counts['known_rounds'] else None,
