@@ -275,3 +275,73 @@ def test_opponent_board_never_joins_simultaneous_eliminations(tmp_path):
     metric = EvaluationHarness(sessions, store, repository=ROOT).evaluate().metrics['opponent_board_brier']
     assert metric['eligible_rows'] == 0
     assert metric['excluded'] == {'elimination_order_not_unique': 1}
+
+
+def test_follow_based_reports_consume_review_attribution_from_logged_display_and_pick(tmp_path):
+    from tests.test_review_attribution import _decision_id, _hook, log_delivery, log_pick, log_shown
+
+    sessions, store, _, _ = logged_game(tmp_path, finish=False, mode='live')
+    decision = _decision_id(sessions, store)
+    log_delivery(sessions, decision_id=decision, option_id='a')
+    log_shown(sessions, decision_id=decision, option_id='a')
+    log_pick(sessions, 'A', 0)
+    sessions.end_game(placement=3, timestamp=(NOW+timedelta(seconds=2)).isoformat())
+    report = EvaluationHarness(sessions, store, repository=ROOT, hooks=_hook()).evaluate()
+    diagnostics = report.metrics['report_only']
+    assert diagnostics['follow_attributed_points'] == 1 and diagnostics['follow_rate_games'] == 1
+    followed = diagnostics['follow_ignore_placement']
+    assert followed['followed']['value'] == 3 and followed['followed']['eligible_rows'] == 1
+    assert followed['ignored']['value'] is None and followed['ignored']['reason'] == 'no_eligible_truth'
+    by_rate = diagnostics['expected_placement_by_follow_rate']
+    assert by_rate['high']['eligible_rows'] == report.metrics['expected_placement_mae']['eligible_rows'] > 0
+    assert by_rate['low']['reason'] == 'no_eligible_truth'
+
+
+def anti_dive_layout(context):
+    from tft_engine import Advice
+    return (Advice('positioning', 'Move', 'act_this_phase', .9, 'fixture', option_id='positioning:layout',
+        payload={'operation': 'layout', 'layout': [{'unit_index': 0, 'unit_id': 'unit', 'cell': 1}],
+            'adjustments': {'anti_dive': True, 'anti_aoe': False}}),)
+
+
+def test_positioning_residual_splits_active_anti_dive_fights_by_attributed_follow(tmp_path):
+    import tomllib
+    import tomli_w
+    from tft_core.storage import SessionStore
+    from tft_engine import Board, DomainHook, Unit
+    from tests.test_replay_contracts import historical_data
+    from tests.test_review_attribution import _decision_id, log_delivery, log_shown
+
+    store, _ = historical_data(tmp_path)
+    path = tmp_path/'patch'/'static.toml'
+    static = tomllib.loads(path.read_text())
+    static['fields']['round_types']['value']['3-2'] = 'combat'
+    path.write_text(tomli_w.dumps(static))
+    data = store.refresh(path.parent, now=NOW+timedelta(microseconds=1)).snapshot
+    sessions = SessionStore(tmp_path/'logs', tmp_path/'config', live_installed=True)
+    sessions.set_mode('live')
+    sessions.start_game('901', set_id='18', patch=data.patch, data_snapshot_id=data.snapshot_id,
+        timestamp=NOW.isoformat())
+    sessions.append_event('snapshot', log_snapshot(data), timestamp=NOW.isoformat())
+    hooks = (DomainHook('positioning', (), advice=anti_dive_layout),)
+    decision = _decision_id(sessions, store, decision='positioning', hooks=hooks)
+    log_delivery(sessions, decision_id=decision, option_id='positioning:layout', domain='positioning')
+    log_shown(sessions, decision_id=decision, option_id='positioning:layout')
+    # A fresh unchanged read after the display fixes the player's onset after it.
+    unchanged = NOW+timedelta(seconds=.5)
+    sessions.append_event('snapshot', log_snapshot(data, at=unchanged, snapshot_id='unchanged'),
+        timestamp=unchanged.isoformat())
+    at = NOW+timedelta(seconds=1)
+    sessions.append_event('snapshot', log_snapshot(data, at=at, snapshot_id='moved',
+        board=Board((Unit('unit', position=1),))), timestamp=at.isoformat())
+    sessions.append_event('fight_start', {'round_id': '3-2', 'opponent_id': 'rival'},
+        timestamp=(at+timedelta(seconds=.1)).isoformat())
+    sessions.append_event('fight_result', {'round_id': '3-2', 'opponent_id': 'rival', 'result': 'loss', 'hp_lost': 5},
+        timestamp=(at+timedelta(seconds=1)).isoformat())
+    sessions.end_game(timestamp=(at+timedelta(seconds=2)).isoformat())
+    report = EvaluationHarness(sessions, store, repository=ROOT, hooks=hooks).evaluate()
+    residual = report.metrics['report_only']['positioning_residual']
+    forecast = next(row for row in report.examples if row['metric'] == 'fight_brier')
+    assert residual['followed']['eligible_rows'] == 1
+    assert residual['followed']['value'] == forecast['prediction']-0
+    assert residual['ignored']['reason'] == 'no_eligible_truth'

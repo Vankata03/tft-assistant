@@ -100,21 +100,33 @@ def report_diagnostics(rows, games, counts):
             attributed += status in ('followed', 'engine_error', 'ignored')
             if status in ('followed', 'engine_error', 'ignored') and placement is not None:
                 follow_placement['ignored' if status == 'ignored' else 'followed'].append((game_id, placement))
+            elif status in ('followed', 'engine_error', 'ignored'):
+                missing['follow_ignore:placement_unavailable'] += 1
             else:
                 missing['follow_ignore:'+str(point['shown'].get('reason') or status)] += 1
+        fight_rounds = {event['seq']: event['payload'].get('round_id') for event in batch.observations
+            if event['kind'] == 'fight_start'}
         for row in rows:
             if row['game_id'] != game_id or row['metric'] != 'fight_brier':
                 continue
-            candidates = [record for record in batch.records if record.decision == 'positioning'
-                and record.log_seq <= row['log_seq']]
-            record = candidates[-1] if candidates else None
-            payload = record.advice.get('payload', {}) if record else {}
-            if not any(payload.get('adjustments', {}).values()):
+            # The governing layout is the newest attributed positioning point of
+            # this fight's round; later re-evaluations of an already-taken layout
+            # are delivered but not re-shown and must not erase that attribution.
+            records = {(record.decision_id, record.log_seq): record for record in batch.records
+                if record.decision == 'positioning'}
+            points = [point for point in review.timeline if (point['engine_decision_id'], point['log_seq']) in records
+                and point['log_seq'] <= row['log_seq'] and point['round_id'] == fight_rounds.get(row['observation_seq'])]
+            if not any(records[(point['engine_decision_id'], point['log_seq'])].advice.get('payload', {})
+                    .get('adjustments', {}).values() for point in points):
                 continue
-            point = next((point for point in review.timeline if point['engine_decision_id'] == record.decision_id), None)
-            status = point['shown'].get('status') if point else None
-            if status in ('followed', 'engine_error', 'ignored'):
-                position['ignored' if status == 'ignored' else 'followed'].append((game_id, row['prediction']-row['truth']))
+            attributed_points = [point for point in points
+                if point['shown'].get('status') in ('followed', 'engine_error', 'ignored')]
+            point = attributed_points[-1] if attributed_points else None
+            active = point and any(records[(point['engine_decision_id'], point['log_seq'])].advice
+                .get('payload', {}).get('adjustments', {}).values())
+            if active:
+                position['ignored' if point['shown']['status'] == 'ignored' else 'followed'].append(
+                    (game_id, row['prediction']-row['truth']))
             else:
                 missing['positioning_follow_unavailable'] += 1
         if tags is None:
