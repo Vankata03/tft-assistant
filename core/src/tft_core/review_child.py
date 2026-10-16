@@ -8,6 +8,7 @@ import json
 import os
 import re
 from pathlib import Path
+import time
 
 import psutil
 
@@ -57,7 +58,7 @@ def main(argv=None):
     try:
         owner = json.loads(owner_path.read_text())
         if (owner['owner_nonce'] != args.owner_nonce or owner['pid'] != args.owner_pid
-            or owner['created_at'] != args.owner_created):
+            or owner['created_at'] != args.owner_created or owner.get('state') != 'running'):
             raise ValueError('Review core owner identity changed')
         record = {'schema_version': 1, 'kind': 'tft-review-child',
             'game_id': args.game_id, 'job_id': args.job_id,
@@ -66,6 +67,20 @@ def main(argv=None):
             **process_identity(psutil.Process()), 'state': 'running',
             'core_auth_present': False, 'started_at': datetime.now(UTC).isoformat()}
         atomic_record(path, record)
+        # Process creation can finish after its parent times out. Such a child
+        # may never collect or publish until the parent has accepted its handle.
+        deadline = time.monotonic() + 1
+        while True:
+            launch = json.loads((root / 'launches' / f'{args.launch_nonce}.json').read_text())
+            if (launch.get('owner_nonce') != args.owner_nonce or launch.get('job_id') != args.job_id
+                or launch.get('launch_nonce') != args.launch_nonce
+                or launch.get('state') not in {'prepared', 'active'}):
+                raise ValueError('Review launch admission revoked')
+            if launch['state'] == 'active':
+                break
+            if time.monotonic() >= deadline:
+                raise ValueError('Review launch admission timed out')
+            time.sleep(.005)
         from tft_core.review_worker import main as produce
         output = ReceiptBuffer()
         with redirect_stdout(output):

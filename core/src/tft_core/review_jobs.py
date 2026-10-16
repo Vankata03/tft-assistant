@@ -45,6 +45,7 @@ class ReviewJobs:
         self._child_shutdown_complete = True
         self._task = None
         self._process = None
+        self._launches = set()
         self._future = None
         self._identity = LatestEngineWorker(self._identify, self._identified)
         self.children = OwnedReviewChildren(self.root / 'leases')
@@ -189,14 +190,38 @@ class ReviewJobs:
         return b''.join(chunks)
 
     async def _launch_child(self, command, environment, flags):
-        launch = asyncio.create_task(asyncio.create_subprocess_exec(*command, env=environment,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, creationflags=flags))
+        revoked = False
+        async def spawn():
+            process = await asyncio.create_subprocess_exec(*command, env=environment,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, creationflags=flags)
+            if revoked:
+                stopped = await self._stop_process(process)
+                if stopped:
+                    self.children.reaped(command[command.index('--job-id') + 1], command, stopped[0])
+                raise asyncio.CancelledError()
+            self._process = process
+            self.children.launch_state(command, 'active')
+            return process
+        launch = asyncio.create_task(spawn())
+        self._launches.add(launch)
+        def finished(task):
+            self._launches.discard(task)
+            if not task.cancelled():
+                task.exception()
+        launch.add_done_callback(finished)
         try:
-            self._process = await asyncio.shield(launch)
+            await asyncio.shield(launch)
         except asyncio.CancelledError:
-            # Cancellation during OS launch must still attach the process to
-            # this owner so the surrounding finally block can stop and reap it.
-            self._process = await launch
+            revoked = True
+            self.children.launch_state(command, 'revoked')
+            launch.cancel()
+            _, pending = await asyncio.wait({launch}, timeout=.15)
+            if pending:
+                job_id = command[command.index('--job-id') + 1]
+                self._blocked.add(job_id)
+                self.children.launch_state(command, 'blocked')
+                if self.error:
+                    self.error('review_launch_blocked', 'Process startup cancellation remains unconfirmed; late child admission is blocked')
             raise
 
     async def _produce(self, game_id):
@@ -226,10 +251,10 @@ class ReviewJobs:
             command = self.children.command(self._command(game_id, job_id), game_id, job_id)
             environment = dict(os.environ)
             environment.pop('TFT_CORE_TOKEN', None)
-            await self._launch_child(command, environment, flags)
-            reads = [asyncio.create_task(self._read_bounded(self._process.stdout, 65536)),
-                     asyncio.create_task(self._read_bounded(self._process.stderr, 262144))]
             async with asyncio.timeout(self.hard_timeout):
+                await self._launch_child(command, environment, flags)
+                reads = [asyncio.create_task(self._read_bounded(self._process.stdout, 65536)),
+                         asyncio.create_task(self._read_bounded(self._process.stderr, 262144))]
                 output, diagnostic = await asyncio.gather(*reads)
                 exit_code = await self._process.wait()
             receipt = json.loads(output)
@@ -351,8 +376,13 @@ class ReviewJobs:
         process = self._process
         if process is None:
             return None
-        if process.returncode is not None:
+        stopped = await self._stop_process(process)
+        if stopped:
             self._process = None
+        return stopped
+
+    async def _stop_process(self, process):
+        if process.returncode is not None:
             return (process.returncode,)
         try:
             process.terminate()
@@ -374,7 +404,6 @@ class ReviewJobs:
                 if self.error:
                     self.error('review_shutdown_timeout', self.status)
                 return None
-        self._process = None
         return (process.returncode,)
 
     async def shutdown(self):
@@ -382,8 +411,11 @@ class ReviewJobs:
         if self._task:
             self._task.cancel()
             await asyncio.gather(self._task, return_exceptions=True)
+        launches = set(self._launches)
+        if launches:
+            await asyncio.wait(launches, timeout=.3)
         stopped = await self._identity.shutdown(timeout=.25)
         if not stopped:
             self.status = 'Review identity shutdown timed out; no result was published'
         self.children.close_owner()
-        return stopped and self._child_shutdown_complete
+        return stopped and self._child_shutdown_complete and not self._launches

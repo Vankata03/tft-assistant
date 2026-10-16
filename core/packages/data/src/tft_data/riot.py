@@ -83,6 +83,7 @@ class RiotClient:
         self._limits = defaultdict(lambda: ((20, 1), (100, 120)))
         self._method_history = defaultdict(deque)
         self._method_limits = {}
+        self._cooldowns = {}
         self._allowed_matches = set()
         self.owner_puuid = None
         # A caller using this checkpoint must serialize the entire API operation
@@ -102,6 +103,14 @@ class RiotClient:
             if (type(state['schema_version']) is not int or state['schema_version'] != 1 or type(saved) not in (int, float)
                 or not isfinite(saved) or saved < 0 or not isfinite(now) or now < 0):
                 raise ValueError()
+            cooldowns = state.get('cooldowns', {})
+            if (not isinstance(cooldowns, dict) or len(cooldowns) > 128
+                or any(not isinstance(route, str) or not re.fullmatch('[a-z0-9]+', route)
+                    or type(deadline) not in (int, float) or not isfinite(deadline) or deadline < saved
+                    for route, deadline in cooldowns.items())):
+                raise ValueError()
+            self._cooldowns = {route: deadline if now >= saved else now + (deadline - saved)
+                for route, deadline in cooldowns.items()}
             rows = state['rows']
             if not isinstance(rows, list) or len(rows) > 128:
                 raise ValueError()
@@ -157,7 +166,8 @@ class RiotClient:
             window = max(seconds for _, seconds in (limits or self._limits[routing]))
             rows.append({'routing': routing, 'method': method, 'limits': limits,
                 'history': [stamp for stamp in history if now - stamp < window]})
-        raw = json.dumps({'schema_version': 1, 'saved_at': now, 'rows': rows}, allow_nan=False)
+        raw = json.dumps({'schema_version': 1, 'saved_at': now, 'rows': rows,
+            'cooldowns': {route: deadline for route, deadline in self._cooldowns.items() if deadline > now}}, allow_nan=False)
         if len(raw.encode()) > 262144:
             raise DataError('Riot pacing checkpoint exceeds its byte budget')
         self.pacing_path.parent.mkdir(parents=True, exist_ok=True)
@@ -178,7 +188,7 @@ class RiotClient:
                     self._method_limits[(routing, method)],
                 )
             )
-        delay = 0.0
+        delay = max(0.0, self._cooldowns.get(routing, 0) - now)
         for history, limits in histories:
             longest = max(window for _, window in limits)
             while history and now - history[0] >= longest:
@@ -245,13 +255,21 @@ class RiotClient:
             self._save_pacing()
             if response.status == 200:
                 return response.body
-            if response.status == 429 and attempt < 2:
+            if response.status == 429:
                 try:
                     delay = float(response_headers.get("retry-after", "1.25"))
+                    if not isfinite(delay):
+                        raise ValueError()
                 except ValueError:
                     delay = 1.25
-                self.sleep(max(delay, 0))
-                continue
+                delay = max(delay, 0)
+                self._cooldowns[routing] = max(self._cooldowns.get(routing, 0), self.clock() + delay)
+                # Preserve server cooldown before a cancellable wait, including
+                # the final failed attempt and replacement collection children.
+                self._save_pacing()
+                if attempt < 2:
+                    self.sleep(delay)
+                    continue
             if response.status in {502, 503, 504} and attempt < 2:
                 self.sleep(1.25 * (attempt + 1))
                 continue

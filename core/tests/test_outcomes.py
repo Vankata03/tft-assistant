@@ -224,6 +224,88 @@ def test_actual_review_job_collects_outcome_before_historical_evaluation(tmp_pat
         asyncio.run(scenario())
 
 
+@pytest.mark.parametrize('cooperative', [True, False])
+@pytest.mark.parametrize('spawn_before_gate', [False, True])
+def test_stalled_external_launch_is_bounded_and_late_child_cannot_collect(tmp_path, monkeypatch, cooperative, spawn_before_gate):
+    import json
+    from tests.test_replay_contracts import ROOT, historical_data, log_snapshot, NOW
+    from tft_core.review_jobs import ReviewJobs
+    from tft_data.riot import HTTPResponse
+    from tft_review import ReviewService
+
+    store, data = historical_data(tmp_path)
+    sessions = SessionStore(tmp_path/'logs', tmp_path/'config', live_installed=True)
+    sessions.set_mode('baseline')
+    sessions.start_game('901', set_id='18', queue_id=1100, patch=data.patch,
+        data_snapshot_id=data.snapshot_id, timestamp=NOW.isoformat())
+    sessions.append_event('snapshot', log_snapshot(data), timestamp=NOW.isoformat())
+    sessions.end_game()
+    (sessions.config_root/'riot-api-key').write_text('fixture-key')
+    (sessions.config_root/'outcome-source.json').write_text(json.dumps({
+        'owner_puuid': 'owner', 'platform': 'eun1', 'region': 'europe'}))
+    requests = []
+    def external_http(url, headers):
+        requests.append(url)
+        return HTTPResponse(200, {}, ['EUN1_901'] if '/ids?' in url else match_fixture())
+
+    async def scenario():
+        entered, release, late_exited = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        original = asyncio.create_subprocess_exec
+        first = True
+        async def gated_start(*args, **kwargs):
+            nonlocal first
+            if first:
+                first = False
+                process = await original(*args, **kwargs) if spawn_before_gate else None
+                entered.set()
+                while not release.is_set():
+                    try:
+                        await release.wait()
+                    except asyncio.CancelledError:
+                        if cooperative:
+                            if process is not None:
+                                process.terminate()
+                                await process.wait()
+                            raise
+                if process is None:
+                    process = await original(*args, **kwargs)
+                async def observe_exit():
+                    await process.wait()
+                    late_exited.set()
+                asyncio.create_task(observe_exit())
+                return process
+            return await original(*args, **kwargs)
+        monkeypatch.setattr(asyncio, 'create_subprocess_exec', gated_start)
+        jobs = ReviewJobs(sessions, store, ReviewService(sessions, store, repository=ROOT), ROOT, hard_timeout=1.5)
+        jobs.start()
+        jobs.enqueue('901')
+        try:
+            await asyncio.wait_for(entered.wait(), 2)
+            async with asyncio.timeout(3):
+                while not jobs.outcomes.status('901'):
+                    await asyncio.sleep(.005)
+            assert jobs.outcomes.status('901')['state'] == 'pending'
+            async with asyncio.timeout(3):
+                while not jobs.jobs() or jobs.jobs()[0]['state'] == 'running':
+                    await asyncio.sleep(.005)
+            assert jobs.jobs()[0]['state'] == 'completed', jobs.jobs()
+            result = await asyncio.wait_for(jobs.shutdown(), 1)
+            assert result is cooperative
+            status = jobs.outcomes.status('901')
+            release.set()
+            if not cooperative:
+                await asyncio.wait_for(late_exited.wait(), 3)
+            await asyncio.sleep(.1)
+            assert requests == []
+            assert sessions.read_outcome('901') is None
+            assert jobs.outcomes.status('901') == status
+        finally:
+            release.set()
+            await jobs.shutdown()
+    with outcome_http_fixture(tmp_path, monkeypatch, external_http):
+        asyncio.run(scenario())
+
+
 def test_actual_app_persists_ranked_queue_from_the_gameflow_watcher(tmp_path):
     from tests.test_runtime_app import ScriptedClient, core
 
