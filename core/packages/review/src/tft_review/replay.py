@@ -46,6 +46,8 @@ def validate_events(events, game_id):
                     raise ValueError('field read occurs after its capture')
             elif event['kind'] == 'sighting':
                 TraitSighting.from_dict(payload | {'read_at': event['timestamp']})
+            elif event['kind'] == 'capture_gap' and _legacy_stats_less_end(payload):
+                continue
             elif event['kind'] == 'capture_gap':
                 end = aware_timestamp(payload['end'])
                 if payload['start'] is None and payload.get('reason') != 'incomplete_first_event':
@@ -57,6 +59,30 @@ def validate_events(events, game_id):
     except (KeyError, TypeError, ValueError, AttributeError) as error:
         raise ValueError(f'Invalid replay evidence: {error}') from error
     return events
+
+
+def _legacy_stats_less_end(payload):
+    """Older cores logged a stats-less game end as a gap without bounds."""
+    return (payload.get('reason') == 'game_ended_without_stats'
+        and 'start' not in payload and 'end' not in payload)
+
+
+def bound_legacy_gaps(events):
+    """Project legacy stats-less end markers onto the span the log left unobserved.
+
+    The span runs from the last earlier logged capture (or the log start) to the
+    marker's own logged time, as the current core records it. The committed log
+    and its hash keep the original payload.
+    """
+    projected, last_capture = [], events[0]['timestamp'] if events else None
+    for event in events:
+        if event['kind'] == 'capture_gap' and _legacy_stats_less_end(event['payload']):
+            event = event | {'payload': event['payload'] | {'start': last_capture,
+                'end': event['timestamp'], 'bounds': 'derived_from_log'}}
+        elif event['kind'] == 'snapshot':
+            last_capture = event['payload']['captured_at']
+        projected.append(event)
+    return projected
 
 
 class ReplayProducer:
@@ -86,6 +112,7 @@ class ReplayProducer:
                     raise ValueError('Replay cache identity mismatch')
                 self._check_unchanged(game_id, data, identity)
                 return batch
+        events = bound_legacy_gaps(events)
         contexts, records = [], []
         previous_fingerprint, evaluation_log_seq = None, None
         controls = SessionControlLog(events)
