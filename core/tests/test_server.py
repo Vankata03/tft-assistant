@@ -152,3 +152,24 @@ def test_metadata_failure_is_visible_and_gameflow_keeps_running(tmp_path):
                 assert storage.active_game_id is None
 
     asyncio.run(test())
+
+
+def test_game_that_returns_to_lobby_without_stats_remains_reviewable(tmp_path):
+    from datetime import datetime
+    from tests.test_replay_contracts import NOW, ROOT, logged_game
+    from tft_review import ReviewService
+
+    logs, store, _, _ = logged_game(tmp_path, finish=False, mode='baseline')
+    server = CoreServer(TOKEN, sessions=logs)
+    server.publish_gameflow(GameflowUpdate(True, "Lobby"))
+
+    assert logs.active_game_id is None
+    events = logs.read_events('901')
+    assert events[-1]['kind'] == 'game_end' and events[-1]['payload'].get('placement') is None
+    summary = ReviewService(logs, store, repository=ROOT).produce('901')
+    assert summary['game_id'] == '901'
+    gap = next(event for event in events if event['kind'] == 'capture_gap')
+    assert gap['payload']['reason'] == 'game_ended_without_stats'
+    # The unobserved span starts at the last logged capture and ends at detection.
+    assert gap['payload']['start'] == NOW.isoformat()
+    assert datetime.fromisoformat(gap['payload']['end']) == datetime.fromisoformat(gap['timestamp'])

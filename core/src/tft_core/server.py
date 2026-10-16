@@ -12,6 +12,7 @@ import hmac
 import logging
 import json
 from collections.abc import Callable
+from datetime import UTC, datetime
 
 from pydantic import ValidationError
 from tft_capture.lcu import NOT_RUNNING, GameflowUpdate
@@ -219,9 +220,7 @@ class CoreServer:
                 elif update.phase in {"EndOfGame", "WaitingForStats"}:
                     self.sessions.end_game()
                 elif update.phase in {"Lobby", "None"} and self.sessions.active_game_id:
-                    self.sessions.append_event(
-                        "capture_gap", {"reason": "game_ended_without_stats"}
-                    )
+                    self._log_game_ended_without_stats()
                     self.sessions.end_game()
             except Exception as error:  # noqa: BLE001 -- Storage/metadata failures must leave the connection usable.
                 log.error("Session logging failed: %s", error)
@@ -246,6 +245,28 @@ class CoreServer:
             self._broadcast(self._clients, dump(self._mode_message()))
             self._publish_baseline_state()
         self._broadcast(self._clients, dump(self._gameflow_message()))
+
+    def _log_game_ended_without_stats(self) -> None:
+        """Record the unobserved terminal span; placement stays unavailable.
+
+        The span starts at the last logged capture (or the log's start when
+        nothing was captured) and ends when the stats-less exit is detected.
+        """
+        events = self.sessions.read_events(self.sessions.active_game_id)
+        start = next(
+            (
+                event["payload"]["captured_at"]
+                for event in reversed(events)
+                if event["kind"] == "snapshot"
+            ),
+            events[0]["timestamp"],
+        )
+        end = datetime.now(UTC).isoformat()
+        self.sessions.append_event(
+            "capture_gap",
+            {"reason": "game_ended_without_stats", "start": start, "end": end},
+            timestamp=end,
+        )
 
     def publish_baseline(
         self,
