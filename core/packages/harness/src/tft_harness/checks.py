@@ -3,12 +3,13 @@ from collections import Counter, defaultdict
 from datetime import datetime
 from dataclasses import replace
 
+from tft_data import DataError
 from tft_engine.classifier import classify
 from tft_engine.planning import owned_board, read, required
 from tft_review.contracts import frozen_json
 
 from .diagnostics import aggregate, combine_aggregates
-from .metrics import final_unit_ids, unit_key
+from .metrics import final_unit_ids, infer_from_history, opponent_final_joins, unit_key
 
 
 def confidence_checks(rows):
@@ -50,6 +51,8 @@ def combine_checks(reports, rows):
     result['classifier']['by_stage'] = {stage: combine_aggregates(
         (game, report['classifier']['by_stage'][stage]) for game, report in reports
         if stage in report['classifier']['by_stage']) for stage in stages}
+    result['classifier']['by_player'] = {kind: combine_aggregates((game, report['classifier']['by_player'][kind])
+        for game, report in reports) for kind in ('owner', 'opponent')}
     result['classifier']['truth_sources'] = tuple(sorted({source for _, report in reports
         for source in report['classifier']['truth_sources']}))
     return result
@@ -57,7 +60,7 @@ def combine_checks(reports, rows):
 
 def observational_checks(games, rows):
     classifier, classifier_excluded = [], Counter()
-    stages, sources = defaultdict(list), set()
+    stages, sources, players = defaultdict(list), set(), defaultdict(list)
     reader, reader_excluded, buckets = [], Counter(), defaultdict(list)
     for game in games:
         batch, data = game['batch'], game['data']
@@ -80,11 +83,40 @@ def observational_checks(games, rows):
                     sample = (batch.game_id, int(labels[0].label == final_label))
                     classifier.append(sample)
                     stages[stage].append(sample)
+                    players['owner'].append(sample)
                     sources.add('own_terminal_capture')
                 else:
                     classifier_excluded['classifier_vocabulary_unavailable'] += 1
         elif not outcome:
             classifier_excluded['terminal_boards_unavailable'] += 1
+        if outcome:
+            joins, reasons = opponent_final_joins(batch, data, outcome)
+            classifier_excluded.update({'opponent:'+reason: count for reason, count in reasons.items()})
+            for opponent, join in joins.items():
+                final = {unit: 1. for unit in final_unit_ids(outcome, data, join['participant']['participant_id'])
+                    if unit in data.entities}
+                final_label = classify(final, data, limit=1)
+                # One label per stage: the newest causal sighting in that stage.
+                by_stage = {}
+                for event in batch.observations:
+                    if (event['kind'] == 'sighting' and event['payload']['opponent_id'] == opponent
+                        and event['seq'] <= join['sighting']['seq']):
+                        by_stage[str(event['payload']['round_id']).split('-')[0]] = event
+                for stage, sighting in by_stage.items():
+                    try:
+                        inferred = infer_from_history(batch, data, opponent, sighting)
+                    except (DataError, KeyError, TypeError, ValueError):
+                        classifier_excluded['opponent:opponent_inference_unavailable'] += 1
+                        continue
+                    labels = classify(inferred.probabilities, data, limit=1)
+                    if not labels or not final_label:
+                        classifier_excluded['classifier_vocabulary_unavailable'] += 1
+                        continue
+                    sample = (batch.game_id, int(labels[0].label == final_label[0].label))
+                    classifier.append(sample)
+                    stages[stage].append(sample)
+                    players['opponent'].append(sample)
+                    sources.add('riot_match_opponent_final_board')
         disagreements = [row for event in batch.observations
             if event['kind'] in ('reader_disagreement', 'reader_tracker_disagreement', 'board_read_disagreement')
             for row in event['payload'].get('disagreements', (event['payload'],))]
@@ -110,7 +142,8 @@ def observational_checks(games, rows):
                 reader.append(sample)
                 buckets[confidence_bucket(confidence)].append(sample)
     return {'status': 'report_only', 'classifier': aggregate(classifier)|{'excluded': dict(classifier_excluded),
-        'by_stage': {stage: aggregate(values) for stage, values in stages.items()}, 'truth_sources': tuple(sorted(sources))},
+        'by_stage': {stage: aggregate(values) for stage, values in stages.items()}, 'truth_sources': tuple(sorted(sources)),
+        'by_player': {kind: aggregate(players[kind]) for kind in ('owner', 'opponent')}},
         'board_reader_identity': aggregate(reader)|{'excluded': dict(reader_excluded),
             'by_reader_confidence': {bucket: aggregate(values) for bucket, values in sorted(buckets.items())}},
         'confidence_bands': confidence_checks(rows)}

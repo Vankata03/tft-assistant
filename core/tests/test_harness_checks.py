@@ -126,3 +126,16 @@ def test_board_reader_identity_scores_disagreements_against_the_owners_final_mat
     assert check['by_reader_confidence']['[0.4,0.5)']['reader_right_share']['eligible_rows'] == 2
     assert check['excluded'] == {'final_board_does_not_resolve': 1}
     assert check['truth_source'] == 'riot_match_owner_final_board'
+
+
+def test_opponent_classifier_compares_stage_labels_with_the_joined_final_match_board(tmp_path):
+    from tests.test_harness_metrics import eliminated_rival_game, rival_match
+
+    sessions, store, _ = eliminated_rival_game(tmp_path)
+    harness = EvaluationHarness(sessions, store, repository=ROOT)
+    sessions.record_outcome('901', rival_match(['unit', 'TFT18_Ghost']), owner_puuid='owner')
+    check = harness.evaluate().metrics['hand_set_checks']['classifier']
+    assert check['by_player']['opponent']['value'] == 1
+    assert check['by_player']['opponent']['eligible_rows'] == 1
+    assert check['by_stage']['3']['value'] == 1
+    assert 'riot_match_opponent_final_board' in check['truth_sources']
