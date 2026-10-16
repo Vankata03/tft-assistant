@@ -1,6 +1,8 @@
 """Versioned frozen replay evidence; unavailable attribution stays unavailable."""
 from collections.abc import Mapping
-from dataclasses import dataclass, fields, is_dataclass
+from bisect import bisect_left, bisect_right
+from tft_engine.models import HistoryWindow
+from dataclasses import dataclass, fields, is_dataclass, replace
 from datetime import datetime
 import json
 import math
@@ -11,7 +13,7 @@ from tft_data.models import freeze
 REPLAY_SCHEMA_VERSION = 1
 
 
-def history_prefix(observations, *, through_seq, captured_at, controls=None):
+def _scan_history_prefix(observations, *, through_seq, captured_at, controls=None):
     """Rebuild only earlier committed information observable by this capture.
 
     Callers replaying many frames of one log pass its SessionControlLog so each
@@ -42,8 +44,79 @@ def history_prefix(observations, *, through_seq, captured_at, controls=None):
     return GameHistory(tuple(snapshots), tuple(sightings))
 
 
+class _HistoryIndex:
+    """Index monotonic logs; irregular evidence retains the exact scan path."""
+    def __init__(self, observations, controls):
+        self.observations, self.controls = observations, controls
+        self.monotonic = False
+        from tft_engine import TraitSighting
+
+        try:
+            snapshots, sightings, gaps = [], [], []
+            for event in observations:
+                at = datetime.fromisoformat(event['timestamp'])
+                if event['kind'] == 'snapshot':
+                    snapshot = controls.frame(event).snapshot
+                    snapshots.append((event['seq'], at, snapshot.captured_at, snapshot))
+                elif event['kind'] == 'sighting':
+                    sighting = TraitSighting.from_dict(dict(event['payload']) | {'read_at': event['timestamp']})
+                    sightings.append((event['seq'], at, sighting))
+                elif event['kind'] == 'capture_gap':
+                    gaps.append((event['seq'], at, datetime.fromisoformat(event['payload']['end'])))
+            ordered = lambda rows, column: all(left[column] <= right[column] for left, right in zip(rows, rows[1:]))
+            if not all(ordered(snapshots, column) for column in (0, 1, 2)) or not all(ordered(sightings, column) for column in (0, 1)):
+                return
+            self.snapshot_seq = tuple(row[0] for row in snapshots)
+            self.snapshot_at = tuple(row[1] for row in snapshots)
+            self.capture_at = tuple(row[2] for row in snapshots)
+            self.snapshots = tuple(row[3] for row in snapshots)
+            self.sighting_seq = tuple(row[0] for row in sightings)
+            self.sighting_at = tuple(row[1] for row in sightings)
+            self.sightings = tuple(row[2] for row in sightings)
+            self.gaps = tuple(gaps)
+            self.monotonic = True
+        except (KeyError, TypeError, ValueError, AttributeError):
+            # Do not surface a malformed future control/sighting earlier than
+            # the original scan would. Committed producer logs validate first.
+            pass
+
+    def history(self, *, through_seq, captured_at):
+        if not self.monotonic:
+            return _scan_history_prefix(self.observations, through_seq=through_seq,
+                captured_at=captured_at, controls=self.controls)
+        from tft_engine import GameHistory
+
+        at = datetime.fromisoformat(captured_at)
+        resume = max((end for seq, logged, end in self.gaps
+            if seq <= through_seq and logged <= at and end <= at), default=None)
+        snapshot_start = bisect_left(self.snapshot_at, resume) if resume is not None else 0
+        sighting_start = bisect_left(self.sighting_at, resume) if resume is not None else 0
+        snapshot_stop = min(bisect_right(self.snapshot_seq, through_seq),
+            bisect_right(self.snapshot_at, at), bisect_right(self.capture_at, at))
+        sighting_stop = min(bisect_right(self.sighting_seq, through_seq),
+            bisect_right(self.sighting_at, at))
+        return GameHistory(HistoryWindow(self.snapshots, snapshot_start, max(snapshot_start, snapshot_stop)),
+            HistoryWindow(self.sightings, sighting_start, max(sighting_start, sighting_stop)))
+
+
+def history_prefix(observations, *, through_seq, captured_at, controls=None):
+    """Return a causal immutable view, sharing one parsed log across frames."""
+    from .controls import SessionControlLog
+
+    controls = controls if controls is not None else SessionControlLog(observations)
+    if getattr(controls, '_history_observations', None) is not observations:
+        controls._history_observations = observations
+        controls._history_index = _HistoryIndex(observations, controls)
+    history = controls._history_index.history(through_seq=through_seq, captured_at=captured_at)
+    return replace(history, source_reference={'kind': 'replay_history_v1',
+        'game_id': str(observations[0]['payload']['game_id']),
+        'prefix_through_seq': through_seq, 'captured_at': captured_at, 'projection': 'replay_prefix_v1'})
+
+
 def json_value(value):
     """Copy public dataclass contracts to finite JSON values."""
+    if isinstance(value, HistoryWindow):
+        return [json_value(item) for item in value]
     if is_dataclass(value):
         return {field.name: json_value(getattr(value, field.name)) for field in fields(value)}
     if isinstance(value, Mapping):
@@ -203,6 +276,34 @@ class ReplayBatch:
             raise ValueError('Context does not belong to this replay batch')
         return history_prefix(self.observations, through_seq=context.prefix_through_seq,
             captured_at=context.snapshot['captured_at'], controls=self._controls())
+
+    def resolve_history(self, reference, *, data):
+        """Reconstruct and authenticate compact Engine history within this batch."""
+        from hashlib import sha256
+        from tft_engine.planning import causal_history
+
+        try:
+            source = reference['source']
+            if (set(reference) != {'source', 'sha256'}
+                or set(source) != {'kind', 'game_id', 'prefix_through_seq', 'captured_at', 'projection', 'round_id'}
+                or source['kind'] != 'replay_history_v1' or source['game_id'] != self.game_id
+                or source['projection'] not in ('engine_causal_v1', 'replay_prefix_v1')
+                or type(source['prefix_through_seq']) is not int
+                or data.snapshot_id != self.identity['data_snapshot_id']):
+                raise ValueError('Invalid replay history source')
+            context = next(context for context in self.contexts
+                if context.prefix_through_seq == source['prefix_through_seq']
+                and context.snapshot['captured_at'] == source['captured_at']
+                and context.snapshot['round_id'] == source['round_id'])
+            history = self.history_for(context)
+            if source['projection'] == 'engine_causal_v1':
+                history = causal_history(self.snapshot_for(context), history, data)
+            encoded = json.dumps(history.to_dict(), sort_keys=True, separators=(',', ':'), allow_nan=False)
+            if sha256(encoded.encode()).hexdigest() != reference['sha256']:
+                raise ValueError('Replay history content hash mismatch')
+            return history
+        except (KeyError, TypeError, AttributeError, StopIteration) as error:
+            raise ValueError('Invalid replay history reference') from error
 
     def snapshot_for(self, context):
         """Return the causal evaluation view while retaining the raw context."""
