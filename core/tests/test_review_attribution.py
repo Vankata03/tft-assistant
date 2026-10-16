@@ -1,6 +1,8 @@
 """Review attribution over real logs: shown advice, follow status and choices."""
 from datetime import timedelta
 
+import pytest
+
 from tests.test_replay_contracts import NOW, ROOT, logged_game
 from tests.test_review_policy import augment_choices
 
@@ -199,6 +201,57 @@ def test_observed_transition_pivot_and_prefight_positioning_are_linked_to_logged
     assert report.plan_timeline[0]['called_status'] == 'taken_without_call'
 
 
+def test_later_committed_board_captured_before_decision_cannot_prove_transition_or_pivot(tmp_path):
+    from tft_engine import Board, Unit, DomainHook
+    from tests.test_replay_contracts import log_snapshot
+    sessions, store, data, _ = logged_game(tmp_path, finish=False, mode='live')
+    at = NOW-timedelta(seconds=.5)
+    sessions.append_event('snapshot', log_snapshot(data, at=at, snapshot_id='captured-earlier',
+        board=Board((Unit('unit', position=1),)), comp_lock='new-comp'), timestamp=at.isoformat())
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=2)).isoformat())
+    report = review(sessions, store, (DomainHook('board-calls', (), advice=board_calls),))
+    points = [row for row in report.timeline
+        if row['log_seq'] == 1 and row['category'] in {'transition', 'pivot'}]
+    assert len(points) == 2
+    assert all(row['player_choice'] is None for row in points)
+
+
+def test_later_snapshot_cannot_attribute_board_fields_read_before_the_decision(tmp_path):
+    from tft_engine import Board, Unit, DomainHook
+    from tests.test_replay_contracts import log_snapshot
+    sessions, store, data, _ = logged_game(tmp_path, finish=False, mode='live')
+    read_at, captured_at = NOW-timedelta(seconds=.5), NOW+timedelta(seconds=1)
+    snapshot = log_snapshot(data, at=captured_at, snapshot_id='carried-board',
+        board=Board((Unit('unit', position=1),)), comp_lock='new-comp')
+    for field in ('board', 'comp_lock'):
+        snapshot['fields'][field]['read_at'] = read_at.isoformat()
+    sessions.append_event('snapshot', snapshot, timestamp=captured_at.isoformat())
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=2)).isoformat())
+    report = review(sessions, store, (DomainHook('board-calls', (), advice=board_calls),))
+    points = [row for row in report.timeline
+        if row['log_seq'] == 1 and row['category'] in {'transition', 'pivot'}]
+    assert len(points) == 2
+    assert all(row['player_choice'] is None for row in points)
+
+
+def test_positioning_ignores_board_captured_after_fight_despite_earlier_log_sequence(tmp_path):
+    from tft_engine import Board, Unit, DomainHook
+    from tests.test_replay_contracts import log_snapshot
+    sessions, store, data, _ = logged_game(tmp_path, finish=False, mode='live')
+    at = NOW+timedelta(seconds=2)
+    sessions.append_event('snapshot', log_snapshot(data, at=at, snapshot_id='captured-after-fight',
+        board=Board((Unit('unit', position=1),))), timestamp=at.isoformat())
+    sessions.append_event('fight_start', {'round_id': '3-2', 'opponent_id': 'rival'},
+        timestamp=(NOW+timedelta(seconds=1)).isoformat())
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=3)).isoformat())
+    report = review(sessions, store, (DomainHook('board-calls', (), advice=board_calls),))
+    points = [row for row in report.timeline if row['category'] == 'positioning']
+    first = next(row for row in points if row['log_seq'] == 1)
+    assert first['player_choice']['observed_log_seq'] == 1
+    assert first['differed'] is True
+    assert next(row for row in points if row['log_seq'] == 2)['player_choice'] is None
+
+
 def test_pinned_line_is_scored_beside_engine_recommendation_in_normal_surface(tmp_path):
     from tests.test_session_controls import pin_payload
     from tests.test_replay_contracts import log_snapshot
@@ -238,6 +291,62 @@ def test_semantically_same_deviation_groups_when_scored_option_id_changes(tmp_pa
     assert len(moments) == 1
     assert len(moments[0]['members']) == 2
     assert moments[0]['cost'] == -2
+
+
+@pytest.mark.parametrize(('schedule_key', 'schedule_value', 'second_round', 'members'), [
+    ('levels', 2, '3-4', [1, 1]),
+    ('rolls', 10, '3-4', [1, 1]),
+    ('levels', 2, '3-3', [2]),
+    ('rolls', 10, '3-3', [2]),
+])
+def test_line_grouping_preserves_round_schedules_and_ignores_option_ids(
+    tmp_path, schedule_key, schedule_value, second_round, members
+):
+    from dataclasses import replace
+    from tft_engine import Line, ScoredOption, simulate_lines
+    from tft_review import ReplayProducer, ReviewPolicy
+    from tft_review.contracts import json_value
+    from tests.test_replay_contracts import log_snapshot
+
+    sessions, store, data, _ = logged_game(tmp_path, finish=False, mode='baseline')
+    at = NOW+timedelta(seconds=.25)
+    sessions.append_event('snapshot', log_snapshot(data, at=at, snapshot_id='second', gold=19),
+        timestamp=at.isoformat())
+    rounds = list(data.value('round_order'))
+    for index, round_id in enumerate(rounds[rounds.index('3-3'):rounds.index('4-7')+1]):
+        at = NOW+timedelta(seconds=index+1)
+        if index == 0:
+            sessions.append_event('level_up', {'before': {'level': 1, 'xp': 0, 'xp_to_level': 2},
+                'after': {'level': 3, 'xp': 0, 'xp_to_level': 6}, 'before_read_at': NOW.isoformat(),
+                'after_read_at': at.isoformat(), 'confidence': .95,
+                'sources': {'level': 'external-fixture'}}, timestamp=at.isoformat())
+        sessions.append_event('snapshot', log_snapshot(data, at=at, snapshot_id=round_id, level=3)
+            | {'round_id': round_id}, timestamp=at.isoformat())
+    sessions.end_game(timestamp=(at+timedelta(seconds=1)).isoformat())
+    batch = ReplayProducer(sessions, store, repository=ROOT).produce('901')
+    contexts, records = [], []
+    for index, context in enumerate(batch.contexts):
+        if index > 1:
+            contexts.append(context)
+            continue
+        line = Line(f'declared-{index}',
+            **{schedule_key: {'3-3' if index == 0 else second_round: schedule_value}})
+        result = simulate_lines(batch.snapshot_for(context), batch.history_for(context), data,
+            'guide', (line,), seed=context.seed, rollouts=4)[0]
+        evaluation = json_value(context.evaluation)
+        evaluation['plan']['line'] = line.to_dict()
+        evaluation['line_results']['guide'] = [result.to_dict()]
+        contexts.append(replace(context, evaluation=evaluation))
+        record = next(row for row in batch.records if row.log_seq == context.log_seq and row.decision == 'econ')
+        option = ScoredOption(line.id, 'line', line.to_dict(), result.expected_placement,
+            result.standard_error).to_dict()
+        advice = json_value(record.advice) | {'option_id': line.id, 'payload': {'line': line.to_dict()}}
+        records.append(replace(record, advice=advice, options=(option,)))
+    # Public typed replay input with concrete forecasts from the real simulator.
+    report = ReviewPolicy(min_cost=.05).build(
+        replace(batch, contexts=tuple(contexts), records=tuple(records)), data=data)
+    assert len(report.timeline) == 2
+    assert [len(moment['members']) for moment in report.moments] == members
 
 
 def test_saved_tags_return_in_summary_and_survive_regeneration_and_cross_game_costs(tmp_path):

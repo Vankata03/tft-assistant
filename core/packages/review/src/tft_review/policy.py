@@ -34,18 +34,24 @@ def board_identity(board, *, positions=False):
 
 def observed_board_call(record, batch):
     context = next(c for c in batch.contexts if c.log_seq == record.log_seq)
+    decision_at = datetime.fromisoformat(context.snapshot['captured_at'])
+    fight_at = None
     later = [r.log_seq for r in batch.records if r.decision == record.decision and r.log_seq > record.log_seq]
     stop = min(later, default=float('inf'))
     # The next decision snapshot is also the observation of the previous action.
     candidates = [c for c in batch.contexts if record.log_seq < c.log_seq <= stop
-        and c.snapshot['round_id'] == context.snapshot['round_id']]
+        and c.snapshot['round_id'] == context.snapshot['round_id']
+        and datetime.fromisoformat(c.snapshot['captured_at']) >= decision_at]
     if record.decision == 'positioning':
         fight = next((e for e in batch.observations if e['kind'] == 'fight_start'
             and e['seq'] > record.log_seq and e['payload'].get('round_id') == context.snapshot['round_id']), None)
         if fight is None:
             return None, 'prefight_board_unavailable'
+        fight_at = datetime.fromisoformat(fight['timestamp'])
         candidates = [c for c in batch.contexts if record.log_seq <= c.log_seq < fight['seq']
-            and c.snapshot['round_id'] == context.snapshot['round_id']]
+            and c.snapshot['round_id'] == context.snapshot['round_id']
+            and decision_at <= datetime.fromisoformat(c.snapshot['captured_at'])
+                <= fight_at]
     for observed in reversed(candidates):
         if any(e['kind'] in {'capture_gap', 'tracking_ambiguity', 'board_read_disagreement'}
                 and record.log_seq < e['seq'] <= observed.log_seq for e in batch.observations):
@@ -177,7 +183,7 @@ def deviation_choice(choice):
         'component', 'recipe', 'levels', 'rolls')
     meaning = {key: payload[key] for key in keys if key in payload}
     if choice['action'] == 'line':
-        meaning = {key: sorted(payload.get(key, {}).values()) for key in ('levels', 'rolls')}
+        meaning = {key: payload.get(key, {}) for key in ('levels', 'rolls')}
     if not meaning:
         return (choice['action'], choice['option_id'])
     return (choice['action'], digest(meaning))

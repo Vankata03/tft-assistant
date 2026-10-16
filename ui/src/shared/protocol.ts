@@ -89,7 +89,7 @@ export function parseCoreMessage(raw: string): CoreMessage | null {
   }
   if(type==='review_ready'&&(!['baseline','live'].includes(message.mode as string)||typeof message.game_id!=='string'||!/^\d{1,30}$/.test(message.game_id)||!hash(message.report_id)||!hash(message.evidence_id)||!['ended_at','ready_at'].every(key=>typeof message[key]==='string'&&Number.isFinite(Date.parse(message[key] as string)))||typeof message.latency_seconds!=='number'||message.latency_seconds<0||typeof message.late!=='boolean'))return null
   if(type==='review_games'&&(typeof message.request_id!=='string'||!Array.isArray(message.games)||!message.games.every(game=>object(game)&&typeof game.game_id==='string'&&typeof game.review_locked==='boolean'&&typeof game.finished==='boolean')))return null
-  if(type==='review_response'&&(typeof message.request_id!=='string'||typeof message.game_id!=='string'||!['summary','page','what_if','tag','media'].includes(message.operation as string)||!object(message.value)))return null
+  if(type==='review_response'&&(typeof message.request_id!=='string'||typeof message.game_id!=='string'||!['summary','page','what_if','tag','media','regenerate'].includes(message.operation as string)||!object(message.value)))return null
   if (type === 'evidence_page' && (typeof message.request_id !== 'string' || typeof message.game_id !== 'string' || !hash(message.revision) || !object(message.page) || !Array.isArray(message.page.items))) return null
   if (type === 'surface_geometry') {
     if (!SESSION_MODES.includes(message.mode as SessionMode) || typeof message.status !== 'string' || !Array.isArray(message.anchors)) return null
