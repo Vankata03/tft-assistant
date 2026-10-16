@@ -75,9 +75,10 @@ def sections(batch, data=None, *, policies=None, timeline=()):
         pivot = next((row for row in timeline if row['log_seq'] == context.log_seq and row['category'] == 'pivot'), None)
         called = pivot and pivot['shown'].get('shown_option_id') is not None
         taken = pivot and pivot['player_choice'] is not None
-        called_status = ('called_and_taken' if taken and pivot['player_choice']['option_id'] == pivot['shown'].get('shown_option_id')
-            else 'called_and_ignored') if called and taken else ('called_action_unknown' if called
-            else 'taken_without_call' if taken else 'display_attribution_unavailable')
+        # A call is taken or ignored only when its display preceded the pivot.
+        followed = pivot['shown'].get('followed') if called else None
+        called_status = ({True: 'called_and_taken', False: 'called_and_ignored'}.get(followed, 'called_action_unknown')
+            if called else 'taken_without_call' if taken else 'display_attribution_unavailable')
         plans.append({'log_seq': context.log_seq, 'round_id': context.snapshot['round_id'],
             **dict(plan), 'called_status': called_status,
             'observed_lock': fields.get('comp_lock', {}).get('value')})

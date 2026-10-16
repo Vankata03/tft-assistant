@@ -653,3 +653,49 @@ def test_unchanged_line_display_uses_completion_when_no_action_onset_or_sequence
         assert point['shown']['status'] == 'shown'
         assert point['shown']['reason'] == 'display_not_confirmed_before_policy_onset'
         assert report.summary['follow_rate']['eligible'] == 0
+
+
+def _board_game(tmp_path, *, unchanged_read_at=None, show_at=.5):
+    """Positioning and pivot calls whose board change is first read at NOW+1s."""
+    from tft_engine import Board, Unit, DomainHook
+    from tests.test_replay_contracts import log_snapshot
+    sessions, store, data, _ = logged_game(tmp_path, finish=False, mode='live')
+    hooks = (DomainHook('board-calls', (), advice=board_calls),)
+    ids = {kind: _decision_id(sessions, store, kind, hooks) for kind in ('positioning', 'pivot')}
+    for kind, option in (('positioning', 'layout'), ('pivot', 'new-comp')):
+        revision = 'sha256:'+('4' if kind == 'pivot' else '5')*64
+        log_delivery(sessions, decision_id=ids[kind], option_id=option, domain=kind, revision=revision)
+        log_shown(sessions, decision_id=ids[kind], option_id=option, revision=revision,
+            at=NOW+timedelta(seconds=show_at))
+    if unchanged_read_at is not None:
+        at = NOW+timedelta(seconds=unchanged_read_at)
+        sessions.append_event('snapshot', log_snapshot(data, at=at, snapshot_id='unchanged'),
+            timestamp=at.isoformat())
+    at = NOW+timedelta(seconds=1)
+    sessions.append_event('snapshot', log_snapshot(data, at=at, snapshot_id='moved',
+        board=Board((Unit('unit', position=1),)), comp_lock='new-comp'), timestamp=at.isoformat())
+    sessions.append_event('fight_start', {'round_id': '3-2', 'opponent_id': 'rival'},
+        timestamp=(NOW+timedelta(seconds=1.1)).isoformat())
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=3)).isoformat())
+    report = review(sessions, store, hooks)
+    return report, {row['category']: row for row in report.timeline if row['log_seq'] == 1}
+
+
+def test_board_call_shown_between_reads_cannot_prove_the_change_followed_the_display(tmp_path):
+    report, points = _board_game(tmp_path)
+    for kind in ('positioning', 'pivot'):
+        assert points[kind]['player_choice'] is not None
+        shown = points[kind]['shown']
+        assert shown['status'] == 'shown', kind
+        assert shown['followed'] is None
+        assert shown['reason'] == 'display_not_confirmed_before_policy_onset'
+    assert report.summary['follow_rate']['eligible'] == 0
+    assert report.plan_timeline[0]['called_status'] == 'called_action_unknown'
+
+
+def test_board_call_shown_before_a_later_unchanged_read_attributes_following(tmp_path):
+    report, points = _board_game(tmp_path, unchanged_read_at=.7)
+    shown = points['positioning']['shown']
+    assert shown['status'] == 'followed'
+    assert shown['followed'] is True
+    assert points['positioning']['player_choice']['observed_started_at'] == (NOW+timedelta(seconds=.7)).isoformat()

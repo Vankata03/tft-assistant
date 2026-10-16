@@ -32,6 +32,32 @@ def board_identity(board, *, positions=False):
         unit.get('position') if positions else None) for unit in board.get('units', ()))
 
 
+def board_onset(record, context, candidates, observed):
+    """Latest fresh read still showing the decision-time state before any change.
+
+    A board or comp-lock change is only localized after the last read that still
+    showed the decision-time value. The player's choice cannot have started
+    before that read, so a display logged before it preceded the choice.
+    """
+    name = 'comp_lock' if record.decision == 'pivot' else 'board'
+    state = lambda value: value if name == 'comp_lock' else board_identity(
+        value or {}, positions=record.decision == 'positioning')
+    baseline = state(context.snapshot['fields'].get(name, {}).get('value'))
+    onset = context
+    for candidate in candidates:
+        if candidate.log_seq > observed.log_seq:
+            break
+        if candidate.log_seq == context.log_seq:
+            continue
+        field = candidate.snapshot['fields'].get(name)
+        if not field or field['read_at'] != candidate.timestamp:
+            continue
+        if state(field['value']) != baseline:
+            break
+        onset = candidate
+    return {'observed_started_at': onset.timestamp, 'observed_start_log_seq': onset.log_seq}
+
+
 def observed_board_call(record, batch):
     context = next(c for c in batch.contexts if c.log_seq == record.log_seq)
     decision_at = datetime.fromisoformat(context.snapshot['captured_at'])
@@ -89,7 +115,8 @@ def observed_board_call(record, batch):
                 'option_id': 'observed-board:'+digest(value), 'payload': {'board': value},
                 'expected_placement': None, 'standard_error': None}
         return dict(option) | {'observed_at': observed.timestamp, 'observed_log_seq': observed.log_seq,
-            'evidence': 'fresh_captured_comp_lock' if record.decision == 'pivot' else 'fresh_captured_board'}, None
+            'evidence': 'fresh_captured_comp_lock' if record.decision == 'pivot' else 'fresh_captured_board',
+            **board_onset(record, context, candidates, observed)}, None
     return None, 'confirmed_action_unavailable'
 
 

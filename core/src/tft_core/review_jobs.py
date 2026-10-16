@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import threading
 from uuid import uuid4
 from datetime import UTC, datetime
 
@@ -39,6 +40,8 @@ class ReviewJobs:
         self._closed = False
         self._child_shutdown_complete = True
         self._loop = None
+        # Server worker threads enqueue while the supervisor marks requests handled.
+        self._requests_lock = threading.Lock()
         self._task = None
         self._process = None
         self._future = None
@@ -80,8 +83,13 @@ class ReviewJobs:
             raise ValueError('Review requires successful capture finalization and game_end')
         if self._closed or (self._task is not None and self._task.done()):
             raise RuntimeError('Review supervisor is closed or stopped')
-        _write(self.requests / f'{game_id}.json', {'game_id': game_id, 'state': 'queued',
-            'regenerate': regenerate, 'request_nonce': uuid4().hex})
+        path = self.requests / f'{game_id}.json'
+        with self._requests_lock:
+            pending = json.loads(path.read_text()) if path.exists() else {}
+            # A queued manual regeneration is not downgraded by a later ordinary request.
+            regenerate = regenerate or (pending.get('state') == 'queued' and pending.get('regenerate', False))
+            _write(path, {'game_id': game_id, 'state': 'queued',
+                'regenerate': regenerate, 'request_nonce': uuid4().hex})
         if self._loop:
             self._loop.call_soon_threadsafe(self._wake.set)
         else:
@@ -134,10 +142,11 @@ class ReviewJobs:
                     request['reason'] = self.status
                     if self.error:
                         self.error('review_unavailable', self.status)
-                latest = json.loads(path.read_text())
-                if latest.get('request_nonce') == request.get('request_nonce'):
-                    request['state'] = 'handled'
-                    _write(path, request)
+                with self._requests_lock:
+                    latest = json.loads(path.read_text())
+                    if latest.get('request_nonce') == request.get('request_nonce'):
+                        request['state'] = 'handled'
+                        _write(path, request)
 
     async def _recover(self):
         reconciled = await self.children.reconcile()
