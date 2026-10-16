@@ -1,5 +1,6 @@
 """Statistics-derived par growth; callers may retain the immutable result at refresh."""
 from typing import Mapping
+from math import isfinite
 from tft_data.models import DataError, freeze
 from .power import static, tunable, keyed, unit_power, stage_items
 from .opponents import round_index, unit_play_rate
@@ -68,30 +69,39 @@ def par_unit_count(round_id,data):
     return min(28,CapacityModel(data).base(level)*average_unit_power(level,round_id,data,count_only=True))
 
 
-def growth_curve_lookup(round_id, data, *, curve=None):
+def growth_curve_lookup(round_id, data, *, curve=None, apply_correction=True):
     if curve is None and 'opponent_growth_curve' in data.tunables:
         curve=tunable(data,'opponent_growth_curve')
+    correction = 1.
+    if apply_correction and 'opponent_growth_correction_by_stage' in data.tunables:
+        table = tunable(data, 'opponent_growth_correction_by_stage')
+        if not isinstance(table, Mapping):
+            raise DataError('Opponent growth correction requires a stage map')
+        correction = table.get(round_id.split('-')[0], 1.)
+        if isinstance(correction, bool) or not isinstance(correction, (int, float)) or not isfinite(correction) or correction <= 0:
+            raise DataError('Opponent growth correction must be finite and positive')
     if curve is not None and round_id in curve:
-        return float(curve[round_id])
+        return float(curve[round_id])*correction
     level = standard_level(round_id,data)
     stage = int(round_id.split('-')[0])
     from .capacity import CapacityModel
     # Par has no captured item/augment/trait activation. It values the explicit
     # level budget in slot-average units, without inventing those modifiers.
-    return CapacityModel(data).base(level) * average_unit_power(level,round_id,data) * float(tunable(data,'unit_weight')) + stage_items(stage,data) * float(tunable(data,'item_weight'))
+    return correction*(CapacityModel(data).base(level) * average_unit_power(level,round_id,data) * float(tunable(data,'unit_weight')) + stage_items(stage,data) * float(tunable(data,'item_weight')))
 
 
 def growth_curve(data, *, observations=()):
     """Build round powers and a weighted correction from (round, power, confidence) observations."""
     rounds = static(data,'round_order') if 'round_order' in data.static else tuple(static(data,'level_calendar'))
-    # A refresh recomputes from the new snapshot, never from the carried curve.
-    base = {r:growth_curve_lookup(r,data,curve={}) for r in rounds}
+    # Store an uncorrected refresh curve; runtime lookup applies the optional
+    # fitted multiplier once, including when this table is cached.
+    base = {r:growth_curve_lookup(r,data,curve={},apply_correction=False) for r in rounds}
     by_stage = {}
     for round_id,power,confidence in observations:
         if confidence <= 0:
             continue
         stage = round_id.split('-')[0]
-        residual = power - growth_curve_lookup(round_id,data,curve={})
+        residual = power - growth_curve_lookup(round_id,data,curve={},apply_correction=False)
         weighted, total = by_stage.get(stage,(0.0,0.0))
         by_stage[stage] = weighted + confidence * residual, total + confidence
     return freeze({r:p + (by_stage[r.split('-')[0]][0] / by_stage[r.split('-')[0]][1] if r.split('-')[0] in by_stage else 0) for r,p in base.items()})

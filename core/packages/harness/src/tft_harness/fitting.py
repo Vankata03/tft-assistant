@@ -10,7 +10,7 @@ chronological holdout by the existing comparative gates.
 from dataclasses import dataclass
 from itertools import product
 import json
-from math import isfinite, prod, sqrt
+from math import exp, isfinite, log, prod, sqrt
 
 from tft_data.config import TUNABLE_FAMILIES
 from tft_review.contracts import frozen_json, json_value
@@ -37,6 +37,94 @@ class ContinuousRange:
             raise ValueError('Continuous range requires finite ordered bounds')
         if self.start is not None and not self.low <= self.start <= self.high:
             raise ValueError('Continuous range start must lie inside its bounds')
+
+
+@dataclass(frozen=True)
+class SimplexRange:
+    """A probability vector fitted with K-1 bounded logits; the last logit is zero.
+
+    Bounds apply to log(p_i/p_last), so finite ranges describe strictly positive
+    probabilities. Fixed probability vectors may contain zeros. ``start`` must
+    lie in the declared logit bounds. ``keys`` returns a category map when set.
+    """
+    size: int = 3
+    low: float = -8.
+    high: float = 8.
+    start: tuple[float, ...] | None = None
+    keys: tuple[str, ...] | None = None
+
+    def __post_init__(self):
+        if type(self.size) is not int or not 2 <= self.size <= 129:
+            raise ValueError('Simplex range requires 2–129 categories')
+        ContinuousRange(self.low, self.high)
+        if self.keys is not None and (not isinstance(self.keys, (tuple, list)) or len(self.keys) != self.size
+                or any(not isinstance(key, str) or not key for key in self.keys) or len(set(self.keys)) != self.size):
+            raise ValueError('Simplex range keys must identify each category exactly once')
+        if self.start is not None:
+            if (not isinstance(self.start, (tuple, list)) or len(self.start) != self.size
+                    or any(isinstance(p, bool) or not isinstance(p, (int, float))
+                        or not isfinite(p) or p <= 0 for p in self.start)
+                    or abs(sum(self.start)-1) > 1e-9):
+                raise ValueError('Simplex range start requires positive probabilities summing to one')
+            if any(not self.low <= log(p/self.start[-1]) <= self.high for p in self.start[:-1]):
+                raise ValueError('Simplex range start lies outside its logit bounds')
+
+
+def _contains_range(value):
+    if isinstance(value, (ContinuousRange, SimplexRange)):
+        return True
+    return isinstance(value, dict) and any(_contains_range(v) for v in value.values())
+
+
+class _SearchSpace:
+    """Flatten declared nested maps into identifiable bounded scalar coordinates."""
+
+    def __init__(self, template):
+        self.template, self.coordinates = template, {}
+        def visit(value, path):
+            if isinstance(value, ContinuousRange):
+                self.coordinates[path] = value
+            elif isinstance(value, SimplexRange):
+                for index in range(value.size-1):
+                    start = log(value.start[index]/value.start[-1]) if value.start else (value.low+value.high)/2
+                    self.coordinates[path+(index,)] = ContinuousRange(value.low, value.high, start)
+            elif isinstance(value, dict):
+                if not value or any(not isinstance(key, str) or not key for key in value):
+                    raise ValueError('Nested fitting maps require nonempty string keys')
+                for key, child in value.items():
+                    visit(child, path+(key,))
+            elif isinstance(value, (list, tuple)):
+                # Lists inside a template are fixed Engine values, never candidate grids.
+                if any(_contains_range(child) for child in value):
+                    raise ValueError('Nested ranges require maps or SimplexRange probability vectors')
+                for index, child in enumerate(value):
+                    visit(child, path+(index,))
+            elif isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value):
+                raise ValueError('Continuous template constants require finite numbers')
+        visit(template, ())
+        if len(self.coordinates) > 128:
+            raise ValueError('Continuous fitting supports at most 128 coordinates')
+
+    def expand(self, values):
+        def build(value, path):
+            if isinstance(value, ContinuousRange):
+                return values[path]
+            if isinstance(value, SimplexRange):
+                logits = [values[path+(index,)] for index in range(value.size-1)]+[0.]
+                maximum = max(logits)
+                weights = [exp(point-maximum) for point in logits]
+                probabilities = [weight/sum(weights) for weight in weights]
+                return dict(zip(value.keys, probabilities)) if value.keys is not None else probabilities
+            if isinstance(value, dict):
+                return {key: build(child, path+(key,)) for key, child in value.items()}
+            if isinstance(value, (list, tuple)):
+                return list(value)
+            return value
+        return build(self.template, ())
+
+    def description(self):
+        return {'/'.join(map(str, path)): {'low': value.low, 'high': value.high, 'start': value.start}
+            for path, value in self.coordinates.items()}
 
 
 @dataclass(frozen=True)
@@ -78,17 +166,24 @@ def current_set_games(harness, set_id=None):
 def _validate(parameters, fixed, max_candidates):
     if not parameters or any(TUNABLE_FAMILIES.get(name) != '1' for name in (*parameters, *fixed)):
         raise ValueError('Owner-log fitting accepts family 1 only')
-    ranges = [isinstance(value, ContinuousRange) for value in parameters.values()]
+    if set(parameters) & set(fixed):
+        raise ValueError('Fixed normalization fields cannot also be fitted')
+    ranges = [_contains_range(value) for value in parameters.values()]
     if any(ranges) and not all(ranges):
         raise ValueError('Continuous ranges cannot be mixed with grid values in one fit')
     continuous = all(ranges)
+    if continuous:
+        _SearchSpace(parameters)
     if not continuous:
         if any(not isinstance(values,(tuple,list)) or not values for values in parameters.values()):
             raise ValueError('Fit requires an explicit nonempty candidate grid per parameter')
-        if type(max_candidates) is not int or max_candidates < 1 or prod(map(len,parameters.values())) > max_candidates:
+        if type(max_candidates) is not int or not 1 <= max_candidates <= 4096 or prod(map(len,parameters.values())) > max_candidates:
             raise ValueError('Declared fitting search budget exceeded')
     varied = lambda name: name in parameters and (continuous or len(parameters[name]) > 1)
     if varied('fight_scale') and any(varied(name) for name in ('unit_weight','trait_weight','item_weight')) \
+            and not ('unit_weight' in fixed and not isinstance(fixed['unit_weight'], bool)
+                and isinstance(fixed['unit_weight'], (int, float)) and isfinite(fixed['unit_weight'])
+                and fixed['unit_weight'] > 0) \
             and not (not continuous and len(parameters.get('unit_weight',())) == 1):
         raise ValueError('Joint power/scale fitting requires an explicit fixed unit-weight normalization')
     return continuous
@@ -97,17 +192,31 @@ def _validate(parameters, fixed, max_candidates):
 class _Objective:
     """Training objective with memoized replays and the frozen eligible-truth check."""
 
-    def __init__(self, harness, training, metric, fixed, budget):
+    def __init__(self, harness, training, metric, fixed, budget, weights=None):
         self.harness, self.training, self.metric, self.fixed, self.budget = harness, training, metric, fixed, budget
         self.memo, self.tested = {}, []
+        self.weights = weights
         baseline, original = harness._evaluate(training, harness.data_store)
         if metric not in baseline.metrics:
             raise ValueError('Fit objective is unavailable')
         self.reference_rows = [row for row in original if row['metric'] == metric]
+        self.fight_rows = [row for row in original if row['metric'] == 'fight_brier']
         if not self.reference_rows:
             raise ValueError('Fit objective has no qualified training truth')
         self.keys = {(row['game_id'], row['observation_seq']) for row in self.reference_rows}
         self.reference = mean_by_game((row['game_id'], row['loss']) for row in self.reference_rows)
+
+    def mean(self, rows):
+        if not self.weights:
+            return mean_by_game((row['game_id'], row['loss']) for row in rows)
+        by_game = {}
+        for row in rows:
+            by_game.setdefault(row['game_id'], []).append(row['loss'])
+        if any(value is None for values in by_game.values() for value in values):
+            return None
+        total = sum(self.weights.get(game, 0) for game in by_game)
+        return sum(sum(values)/len(values)*self.weights.get(game, 0)
+            for game, values in by_game.items())/total if total else None
 
     @property
     def exhausted(self):
@@ -123,7 +232,7 @@ class _Objective:
         _, rows = self.harness._evaluate(self.training, overlay, hook_version='fit:'+overlay.identity)
         rows = [row for row in rows if row['metric'] == self.metric]
         eligible = {(row['game_id'], row['observation_seq']) for row in rows} == self.keys
-        objective = mean_by_game((row['game_id'], row['loss']) for row in rows) if eligible else None
+        objective = self.mean(rows) if eligible else None
         self.tested.append({'parameters': candidate, 'objective': objective,
             'reason': None if objective is not None else 'infinite_loss_or_changed_eligible_truth'})
         value = float('inf') if objective is None else objective
@@ -170,7 +279,9 @@ def _stages(harness, training):
 
 
 def _continuous(harness, objective, ranges, training, *, stage_split_min_fights, tolerance, max_cycles=4):
-    by_stage = {name for name in ranges if name.endswith('_by_stage')}
+    by_stage = {name for name in ranges if name.endswith('_by_stage') and isinstance(ranges[name], ContinuousRange)}
+    if any(name.endswith('_by_stage') and name not in by_stage for name in ranges):
+        raise ValueError('Per-stage continuous fitting requires one pooled ContinuousRange per field')
     stages = _stages(harness, training) if by_stage else []
     if by_stage and not stages:
         raise ValueError('Per-stage fitting requires the historical round order')
@@ -179,41 +290,55 @@ def _continuous(harness, objective, ranges, training, *, stage_split_min_fights,
         return {name: ({stage: value for stage in stages} if name in by_stage else value)
             for name, value in values.items()}
 
-    current = {name: (declared.start if declared.start is not None else (declared.low+declared.high)/2)
-        for name, declared in ranges.items()}
+    space = _SearchSpace(ranges)
+    current = {path: (declared.start if declared.start is not None else (declared.low+declared.high)/2)
+        for path, declared in space.coordinates.items()}
+    # Reserve one evaluation for the final shrunk candidate, so budget exhaustion
+    # cannot publish an unshrunk stage optimum as the fitted result.
+    budget = objective.budget
+    if budget is not None:
+        objective.budget = max(1, budget-1)
+    objective(expand(space.expand(current)))
     at_bound = set()
-    for _ in range(max_cycles if len(ranges) > 1 else 1):
+    for _ in range(max_cycles if len(current) > 1 else 1):
         moved = 0.0
-        for name, declared in sorted(ranges.items()):
-            point, _, bound = _golden(lambda value: objective(expand(current | {name: value})),
-                declared.low, declared.high, current[name], tolerance)
-            moved = max(moved, abs(point-current[name])/(declared.high-declared.low))
-            current[name] = point
-            (at_bound.add if bound is not None else at_bound.discard)(name)
+        for path, declared in space.coordinates.items():
+            point, loss, bound = _golden(lambda value: objective(expand(space.expand(current | {path: value}))),
+                declared.low, declared.high, current[path], tolerance)
+            if not isfinite(loss):
+                break
+            moved = max(moved, abs(point-current[path])/(declared.high-declared.low))
+            current[path] = point
+            label = '/'.join(map(str, path))
+            (at_bound.add if bound is not None else at_bound.discard)(label)
+            if objective.exhausted:
+                break
         if moved <= tolerance or objective.exhausted:
             break
-    pooled = dict(current)
+    pooled = space.expand(current)
     candidate = expand(pooled)
     counts = {}
-    for row in objective.reference_rows:
-        counts[str(row['stage'])] = counts.get(str(row['stage']), 0)+1
+    for row in objective.fight_rows:
+        count = objective.weights.get(row['game_id'], 0) if objective.weights is not None else 1
+        counts[str(row['stage'])] = counts.get(str(row['stage']), 0)+count
     stage_report = {}
     for stage in stages:
         fights = counts.get(stage, 0)
-        split = fights >= stage_split_min_fights
+        split = fights >= stage_split_min_fights and not objective.exhausted
         unshrunk = {}
         if split:
             for name in sorted(by_stage):
                 declared = ranges[name]
                 fixed = dict(candidate)
-                point, _, _ = _golden(lambda value: objective(fixed | {name: dict(fixed[name]) | {stage: value}}),
+                point, loss, _ = _golden(lambda value: objective(fixed | {name: dict(fixed[name]) | {stage: value}}),
                     declared.low, declared.high, pooled[name], tolerance)
-                unshrunk[name] = point
+                unshrunk[name] = point if isfinite(loss) else pooled[name]
         stage_report[stage] = {'fights': fights, 'split': split, 'unshrunk': unshrunk or None}
     for name in by_stage:
         candidate[name] = {stage: ((row['fights']*row['unshrunk'][name]+stage_split_min_fights*pooled[name])
             /(row['fights']+stage_split_min_fights) if row['split'] else pooled[name])
             for stage, row in stage_report.items()}
+    objective.budget = budget
     value = objective(candidate)
     return candidate, value, {'pooled': pooled, 'at_bound': sorted(at_bound),
         'stages': stage_report if by_stage else {},
@@ -229,8 +354,8 @@ def fit(harness, parameters, *, metric='fight_log_loss', bootstrap_seed=0, boots
         raise ValueError('Report-only metrics cannot be fitted')
     fixed = dict(fixed or {})
     continuous = _validate(parameters, fixed, max_candidates)
-    if type(max_evaluations) is not int or max_evaluations < 3:
-        raise ValueError('Continuous fitting requires an evaluation budget of at least three')
+    if type(max_evaluations) is not int or not 3 <= max_evaluations <= 256:
+        raise ValueError('Continuous fitting requires an evaluation budget of 3–256')
     if type(stage_split_min_fights) is not int or stage_split_min_fights < 1:
         raise ValueError('Stage split threshold must be a positive fight count')
     if not 0 < tolerance < 1:
@@ -252,7 +377,11 @@ def fit(harness, parameters, *, metric='fight_log_loss', bootstrap_seed=0, boots
         best, value, extra = _continuous(harness, objective, parameters, training,
             stage_split_min_fights=stage_split_min_fights, tolerance=tolerance)
         if not isfinite(value):
-            raise ValueError('No finite eligible candidate inside the declared fitting ranges')
+            viable = [row for row in objective.tested if row['objective'] is not None]
+            if not viable:
+                raise ValueError('No finite eligible candidate inside the declared fitting ranges')
+            winner = min(viable, key=lambda row: row['objective'])
+            best, value = winner['parameters'], winner['objective']
         best = (value, best)
         method = 'bounded golden-section coordinate search'
         convergence = ('evaluation budget exhausted' if objective.exhausted else
@@ -276,7 +405,57 @@ def fit(harness, parameters, *, metric='fight_log_loss', bootstrap_seed=0, boots
         'candidate':best[0],'weighting':'equal games'},evaluated.gates,
         {'method':method,'evaluations':len(objective.tested),'candidates':objective.tested,
          'convergence':convergence,'set_id':set_id,'fixed':fixed,
-         'ranges':{name:{'low':value.low,'high':value.high,'start':value.start}
-             for name,value in parameters.items()} if continuous else None,
+         'ranges': _SearchSpace(parameters).description() if continuous else None,
          **({'at_bound':[], 'pooled':{}, 'stages':{}, 'shrinkage':None} | extra),
          'publication':'unaccepted; owner Git commit required'})
+
+
+def model_uncertainty(harness, parameters, *, metric='fight_log_loss', draws=32, seed=0,
+        max_evaluations=64, fixed=None):
+    """Refit training games under a deterministic game bootstrap; never use holdout truth.
+
+    These draws estimate fitted parameter uncertainty. They are distinct from
+    declared sensitivity draws and from Monte Carlo rollout uncertainty.
+    """
+    from collections import Counter
+    from random import Random
+    from .evaluation import chronological_split
+    from .metrics import FITTED_METRICS
+    if metric not in FITTED_METRICS or type(draws) is not int or not 2 <= draws <= 128:
+        raise ValueError('Model uncertainty requires a fitted metric and 2–128 bootstrap refits')
+    if type(max_evaluations) is not int or not 3 <= max_evaluations <= 256:
+        raise ValueError('Model refitting requires an evaluation budget of 3–256')
+    if harness.sessions.active_game_id:
+        raise ValueError('Model refitting cannot run during an active game')
+    if harness.sessions.run:
+        pinned = [game for game in harness.sessions.list_games() if game['pinned']]
+        if any(not game['finished'] or game['placement'] is None for game in pinned) or len(pinned)%10:
+            raise ValueError('During the run family 1 refits require a completed ten-game block boundary')
+    fixed = dict(fixed or {})
+    continuous = _validate(parameters, fixed, 256)
+    _, games = current_set_games(harness)
+    training, holdout = chronological_split([game for game in games if game['finished']])
+    if len(training) < 2 or not holdout:
+        raise ValueError('Model uncertainty requires at least two training games and a holdout')
+    rng, fitted = Random(seed), []
+    for _ in range(draws):
+        weights = Counter(rng.choices(training, k=len(training)))
+        objective = _Objective(harness, training, metric, fixed,
+            max_evaluations if continuous else None, weights=weights)
+        if continuous:
+            candidate, value, _ = _continuous(harness, objective, parameters, training,
+                stage_split_min_fights=STAGE_SPLIT_MIN_FIGHTS, tolerance=1e-4)
+            if isfinite(value):
+                fitted.append(fixed | candidate)
+                continue
+        else:
+            names = tuple(sorted(parameters))
+            for values in product(*(parameters[name] for name in names)):
+                objective(dict(zip(names, values)))
+        viable = [row for row in objective.tested if row['objective'] is not None]
+        if not viable:
+            raise ValueError('Bootstrap refit has no finite eligible model')
+        fitted.append(fixed | min(viable, key=lambda row: row['objective'])['parameters'])
+    return {'method': 'training-game bootstrap refits', 'metric': metric, 'seed': seed,
+        'training_games': len(training), 'holdout_games': len(holdout),
+        'draws': draws, 'parameters': fitted}

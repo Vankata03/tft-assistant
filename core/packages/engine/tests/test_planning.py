@@ -722,3 +722,26 @@ def test_active_forms_preserve_double_trait_grants_and_share_one_shop_pool():
     assert strength(owned,2,data)==strength(Board(owned.units,owned.bench,{'avatar':1,'fire':2}),2,data)
     assert result.recommended_board.units[0].unit_id=='lux_fire'
     assert strength(owned,2,data)>0
+
+
+def test_optional_growth_correction_is_neutral_when_absent_and_applied_once_to_cached_curves():
+    from tft_engine import growth_curve, growth_curve_lookup
+    data = patch()
+    raw = growth_curve(data)
+    corrected = replace(data,tunables=dict(data.tunables)|{
+        'opponent_growth_correction_by_stage':tag({'3':1.5})})
+    assert growth_curve_lookup('3-2',corrected) == pytest.approx(1.5*raw['3-2'])
+    assert growth_curve(corrected) == raw
+    cached = replace(corrected,tunables=dict(corrected.tunables)|{'opponent_growth_curve':tag(raw)})
+    assert growth_curve_lookup('3-2',cached) == pytest.approx(1.5*raw['3-2'])
+    assert growth_curve_lookup('4-1',corrected) == growth_curve_lookup('4-1',data)
+
+
+@pytest.mark.parametrize('value',[0,-1,float('inf'),True,'1.5'])
+def test_growth_correction_rejects_invalid_stage_multipliers(value):
+    from tft_engine import growth_curve_lookup
+    from tft_data.models import DataError
+    data = patch()
+    changed = replace(data,tunables=dict(data.tunables)|{'opponent_growth_correction_by_stage':tag({'3':value})})
+    with pytest.raises(DataError,match='growth correction'):
+        growth_curve_lookup('3-2',changed)

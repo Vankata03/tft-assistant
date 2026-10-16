@@ -42,7 +42,10 @@ def test_fit_rejects_other_families_and_unidentified_scale_before_any_candidate(
 
 
 def staged_logs(tmp_path, games, *, set_ids=None):
-    """Logged games whose fights are (round_id, result) pairs with prefight snapshots."""
+    """Logged games of (round_id, result[, own stars]) fights with prefight snapshots.
+
+    Own stars default to 2; zero stars logs an empty board.
+    """
     from datetime import timedelta
     import tomllib
     import tomli_w
@@ -54,7 +57,7 @@ def staged_logs(tmp_path, games, *, set_ids=None):
     path = tmp_path/'patch'/'static.toml'
     static = tomllib.loads(path.read_text())
     for fights in games:
-        for round_id, _ in fights:
+        for round_id, *_ in fights:
             static['fields']['round_types']['value'][round_id] = 'combat'
     path.write_text(tomli_w.dumps(static))
     data = store.refresh(path.parent, now=NOW+timedelta(seconds=1)).snapshot
@@ -64,10 +67,11 @@ def staged_logs(tmp_path, games, *, set_ids=None):
         game_id, at = str(901+index), NOW+timedelta(days=index)
         sessions.start_game(game_id, set_id=(set_ids or {}).get(index, '18'), patch=data.patch,
             data_snapshot_id=data.snapshot_id, timestamp=at.isoformat())
-        for number, (round_id, result) in enumerate(fights):
+        for number, (round_id, result, *stars) in enumerate(fights):
+            stars = stars[0] if stars else 2
             moment = at+timedelta(seconds=20*number)
             snapshot = log_snapshot(data, at=moment, snapshot_id=f'{game_id}-{number}',
-                board=Board((Unit('unit', stars=2),))) | {
+                board=Board((Unit('unit', stars=stars),) if stars else ())) | {
                 'game_id': game_id, 'round_id': round_id}
             sessions.append_event('snapshot', snapshot, timestamp=moment.isoformat())
             sessions.append_event('fight_start', {'round_id': round_id, 'opponent_id': 'rival',
@@ -160,3 +164,109 @@ def test_continuous_fit_rejects_report_only_metrics_and_conflicting_harness_set(
     with pytest.raises(ValueError, match='current set 17'):
         fit(EvaluationHarness(sessions, store, repository=ROOT, current_set='17'),
             {'fight_scale': ContinuousRange(1, 2)}, set_id='18')
+
+
+def test_continuous_power_scale_joint_fit_accepts_explicit_fixed_normalization(tmp_path):
+    from tft_harness.fitting import ContinuousRange, fit
+    sessions, store = staged_logs(tmp_path, [[('3-2', result)] for result in ('win','loss','win','win','loss')])
+    report = fit(EvaluationHarness(sessions, store, repository=ROOT),
+        {'fight_scale': ContinuousRange(.2, 2), 'trait_weight': ContinuousRange(.2, 2)},
+        fixed={'unit_weight': 1.0}, max_evaluations=80, bootstrap_draws=20)
+    assert report.solver['fixed']['unit_weight'] == 1
+
+
+def test_model_uncertainty_refits_game_bootstrap_training_without_holdout(tmp_path):
+    from tft_harness.fitting import model_uncertainty
+    sessions, store = staged_logs(tmp_path, [[('3-2', result)] for result in
+        ('win','loss','win','win','loss')])
+    uncertainty = model_uncertainty(EvaluationHarness(sessions, store, repository=ROOT),
+        {'fight_scale': [.25,1,2]}, draws=6, seed=17)
+    assert uncertainty['method'] == 'training-game bootstrap refits'
+    assert len(uncertainty['parameters']) == 6
+    assert len({row['fight_scale'] for row in uncertainty['parameters']}) > 1
+    assert uncertainty['training_games'] == 4 and uncertainty['holdout_games'] == 1
+    assert 'game_id' not in str(uncertainty)
+
+
+def test_nested_star_mix_simplex_fits_real_opponent_predictions(tmp_path):
+    from tft_harness.fitting import SimplexRange, fit
+    sessions, store = staged_logs(tmp_path, [[('3-2', result)] for result in
+        ('win','loss','win','loss','win','loss','win','loss','win','loss')])
+    report = fit(EvaluationHarness(sessions,store,repository=ROOT),
+        {'opponent_star_mix': {'1-1': {str(cost): SimplexRange(3,start=(.8,.1,.1)) if cost == 1 else [1,0,0]
+            for cost in range(1,6)}}}, max_evaluations=100, bootstrap_draws=20)
+    mix = report.parameters['opponent_star_mix']['1-1']['1']
+    assert all(0 < p < 1 for p in mix) and sum(mix) == pytest.approx(1.)
+    assert report.training_objective['candidate'] < report.training_objective['reference']
+    assert report.training_objective['candidate'] == pytest.approx(.69314718056,abs=1e-5)
+    assert set(report.solver['ranges']) == {'opponent_star_mix/1-1/1/0','opponent_star_mix/1-1/1/1'}
+    assert report.solver['evaluations'] <= 100
+
+
+def test_nested_prior_maps_preserve_fixed_cells_and_replay_predictions(tmp_path):
+    from tft_harness.fitting import ContinuousRange, fit
+    sessions, store = staged_logs(tmp_path, [[('3-2', result)] for result in ('win','loss','win','loss','win')])
+    report = fit(EvaluationHarness(sessions,store,repository=ROOT), {
+        'emblem_count_prior': {'0': ContinuousRange(.2,1,start=1), '1': .1},
+        'size_level_prior': {'1': {'1': ContinuousRange(.2,1,start=1), '2': .1}},
+    }, max_evaluations=20, bootstrap_draws=20)
+    assert report.parameters['emblem_count_prior']['1'] == .1
+    assert report.parameters['size_level_prior']['1']['2'] == .1
+    assert set(report.solver['ranges']) == {'emblem_count_prior/0','size_level_prior/1/1'}
+    assert report.training_objective['candidate'] is not None
+    assert report.holdout_game_ids == ('905',)
+
+
+@pytest.mark.parametrize('arguments', [
+    {'size':1}, {'low':0,'high':float('inf')}, {'start':(1.,0.,0.)},
+    {'start':(.2,.2,.2)}, {'low':-.1,'high':.1,'start':(.8,.1,.1)},
+])
+def test_simplex_ranges_require_finite_identifiable_domains(arguments):
+    from tft_harness.fitting import SimplexRange
+    with pytest.raises(ValueError,match='range'):
+        SimplexRange(**arguments)
+
+
+def test_growth_correction_continuous_fit_changes_real_predictions(tmp_path):
+    from tft_harness.fitting import ContinuousRange, fit
+    sessions, store = staged_logs(tmp_path, [[('3-2', result)] for result in
+        ('win','loss','win','loss','win','loss','win','loss','win','loss')])
+    report = fit(EvaluationHarness(sessions,store,repository=ROOT),
+        {'opponent_growth_correction_by_stage': ContinuousRange(.5,3,start=1)},
+        max_evaluations=40, bootstrap_draws=20)
+    assert report.parameters['opponent_growth_correction_by_stage']['3'] == pytest.approx(2.,abs=.01)
+    assert report.training_objective['candidate'] < report.training_objective['reference']
+
+
+def test_probability_maps_have_identifiable_simplex_coordinates(tmp_path):
+    from tft_harness.fitting import SimplexRange, fit
+    sessions, store = staged_logs(tmp_path, [[('3-2',result)] for result in ('win','loss','win','loss','win')])
+    report = fit(EvaluationHarness(sessions,store,repository=ROOT), {
+        'emblem_count_prior': SimplexRange(2,keys=('0','1')),
+        'size_level_prior': {'1': SimplexRange(2,keys=('1','2'))},
+    }, max_evaluations=6,bootstrap_draws=20)
+    assert sum(report.parameters['emblem_count_prior'].values()) == pytest.approx(1)
+    assert sum(report.parameters['size_level_prior']['1'].values()) == pytest.approx(1)
+    assert len(report.solver['ranges']) == 2
+
+
+def test_stage_qualification_counts_all_eligible_fights_for_damage_objective(tmp_path):
+    from tft_harness.fitting import ContinuousRange, fit
+    sessions, store = staged_logs(tmp_path, [[('3-2','win'),('3-3','loss')] for _ in range(5)])
+    report = fit(EvaluationHarness(sessions,store,repository=ROOT),
+        {'survivor_scale_by_stage':ContinuousRange(.1,2)},metric='damage_mae',
+        max_evaluations=8,stage_split_min_fights=6,bootstrap_draws=20)
+    assert report.solver['stages']['3']['fights'] == 8
+
+
+def test_search_rejects_unbounded_software_budgets_and_too_many_coordinates(tmp_path):
+    from tft_harness.fitting import ContinuousRange, SimplexRange, fit, model_uncertainty
+    sessions, store = staged_logs(tmp_path, [[('3-2','win')],[('3-2','loss')]])
+    harness = EvaluationHarness(sessions,store,repository=ROOT)
+    for run in (fit,model_uncertainty):
+        with pytest.raises(ValueError,match='budget'):
+            run(harness,{'fight_scale':ContinuousRange(.1,2)},max_evaluations=257)
+    with pytest.raises(ValueError,match='128 coordinates'):
+        fit(harness,{'emblem_count_prior':{str(i):ContinuousRange(.1,1) for i in range(129)}})
+    with pytest.raises(ValueError,match='categories'):
+        SimplexRange(130)
