@@ -59,7 +59,7 @@ def historical_data(tmp_path):
     }
     tunables = {name: 1 for name in TUNABLE_FAMILIES}
     tunables.update({'rollouts_full': 4, 'rollouts_reroll': 2, 'gold_floors': [10, 0],
-        'commit_latest_round': '3-2', 'opponent_growth_curve': {}, 'default_lines_by_carry_cost': {},
+        'commit_latest_round': '3-2', 'opponent_growth_curve': {}, 'opponent_growth_correction_by_stage': {}, 'default_lines_by_carry_cost': {},
         'confidence_show_min': .2, 'confidence_medium_min': .5, 'confidence_high_min': .8,
         'cost_star_baseline': {str(c): {str(s): c+s-1 for s in (1, 2, 3)} for c in range(1, 6)},
         'item_values': {'finished': 1, 'component': .35, 'high_cost_bonus': .25},

@@ -40,11 +40,14 @@ class EngineEvaluation:
     advice: tuple[Advice,...] = ()
     workload: Mapping = field(default_factory=dict)
     simulation_diagnostics: Mapping = field(default_factory=dict,compare=False)
+    # Offline margin evidence: the comps each plan guard compared at this step.
+    guards: Mapping = field(default_factory=dict,compare=False)
     def __post_init__(self):
         object.__setattr__(self,'comp_fits',freeze(self.comp_fits))
         object.__setattr__(self,'line_results',freeze(self.line_results))
         object.__setattr__(self,'workload',freeze(self.workload))
         object.__setattr__(self,'simulation_diagnostics',freeze(self.simulation_diagnostics))
+        object.__setattr__(self,'guards',freeze(self.guards))
 
 @dataclass(frozen=True)
 class EngineContext:
@@ -60,10 +63,12 @@ class EngineContext:
     workload: Mapping = field(default_factory=dict)
     effects: object = None
     _simulation: object = field(default=None,compare=False,repr=False)
+    guards: Mapping = field(default_factory=dict,compare=False)
     def __post_init__(self):
         object.__setattr__(self,'comp_fits',freeze(self.comp_fits))
         object.__setattr__(self,'line_results',freeze(self.line_results))
         object.__setattr__(self,'workload',freeze(self.workload))
+        object.__setattr__(self,'guards',freeze(self.guards))
 
 
 def paused(reason, *, missing=(), domain='status'):
@@ -146,6 +151,12 @@ def domain_fit(hooks,id,context):
     return result
 
 
+def _past_main_roll_down(snapshot,data,guide):
+    from .transition import main_roll_down
+    deadline=main_roll_down(guide,data)
+    return bool(deadline and round_index(snapshot.round_id,data)>=round_index(deadline,data))
+
+
 def pivot_margin(snapshot,data,guide):
     values=tunable(data,'pivot_margin_by_stage')
     stage=snapshot.round_id.split('-')[0]
@@ -155,14 +166,12 @@ def pivot_margin(snapshot,data,guide):
     if value is None:
         raise DataError(f'Missing pivot margin for stage {stage}')
     margin=float(value)
-    from .transition import main_roll_down
-    deadline=main_roll_down(guide,data)
-    if deadline and round_index(snapshot.round_id,data)>=round_index(deadline,data):
+    if _past_main_roll_down(snapshot,data,guide):
         margin=max(margin,float(values.get('post_roll_down',margin)))
     return margin
 
 
-def _commit_trigger(snapshot,data,ordered,fits):
+def _commit_trigger(snapshot,data,ordered,fits,guards=None):
     board=owned_board(snapshot,data)
     from .capacity import CapacityModel
     from .capacity_fields import evidence_from_snapshot
@@ -182,6 +191,9 @@ def _commit_trigger(snapshot,data,ordered,fits):
         top,second=fits[ordered[0]],fits[ordered[1]]
         lead=second.score-top.score
         augment=(second.terms.get('augment',FitTerm(0,'')).delta-top.terms.get('augment',FitTerm(0,'')).delta)
+        if guards is not None and augment>lead/2:
+            # Only here does comp_defining_margin decide the commitment.
+            guards['comp_defining']={'top':ordered[0],'second':ordered[1]}
         if lead>=stage_tunable(data,'comp_defining_margin',snapshot.round_id) and augment>lead/2:
             return ordered[0]
     if round_index(snapshot.round_id,data)>=round_index(str(tunable(data,'commit_latest_round')),data):
@@ -189,7 +201,9 @@ def _commit_trigger(snapshot,data,ordered,fits):
     return None
 
 
-def _choose_plan(snapshot,data,previous,fits):
+def _choose_plan(snapshot,data,previous,fits,guards=None):
+    if guards is not None:
+        guards.clear()
     eligible=[id for id,fit in fits.items() if fit.simulated]
     ordered=tuple(sorted(eligible or fits,key=lambda id:(fits[id].score,id)))
     cap=int(tunable(data,'open_candidate_count'))
@@ -208,7 +222,7 @@ def _choose_plan(snapshot,data,previous,fits):
     adopt=False
     new_phase=snapshot.round_id!=previous.planning_round
     if status=='open':
-        trigger=_commit_trigger(snapshot,data,ordered,fits)
+        trigger=_commit_trigger(snapshot,data,ordered,fits,guards)
         status='committed' if trigger or lock else 'open'
         target=trigger or lock or ordered[0]
     elif label and label!=target and not lock:
@@ -229,6 +243,9 @@ def _choose_plan(snapshot,data,previous,fits):
             margin=pivot_margin(snapshot,data,data.guides[target])
             if challenger==rejected:
                 margin+=stage_tunable(data,'pivot_reraise_extra',snapshot.round_id)
+            if guards is not None:
+                guards['pivot']={'target':target,'challenger':challenger,'reraise':challenger==rejected,
+                    'margin_key':'post_roll_down' if _past_main_roll_down(snapshot,data,data.guides[target]) else snapshot.round_id.split('-')[0]}
             if fits[target].score-fits[challenger].score>margin:
                 pivot_from=target; pivot_to=challenger; pivot_round=snapshot.round_id
                 if not lock:
@@ -338,7 +355,8 @@ def _step(snapshot,history,data,previous,hooks,*,seed=None,effects=None,rollouts
     for id in selected:
         backup=previous.backup if id==previous.target and previous.backup in fits else next((other for other in order if other!=id),None)
         score(id,backup)
-    plan=_choose_plan(snapshot,data,previous,fits)
+    guards={}
+    plan=_choose_plan(snapshot,data,previous,fits,guards)
     # The current Backup changes sale gold. Reconcile its target simulation and
     # rerank until the plan is consistent; repeated pairs are explicit unavailable
     # states rather than an arbitrary iteration or timing-dependent cutoff.
@@ -349,10 +367,10 @@ def _step(snapshot,history,data,previous,hooks,*,seed=None,effects=None,rollouts
             raise DataError('Comp and Backup sale priorities did not converge')
         seen.add(pair)
         score(plan.target,plan.backup)
-        plan=_choose_plan(snapshot,data,previous,fits)
+        plan=_choose_plan(snapshot,data,previous,fits,guards)
     plan=_line_choice(snapshot,data,previous,plan,results.get(plan.target,()))
     recommended=strongest_owned_board(board,int(read(snapshot,data,'level')),data,target=plan.target if plan.status=='committed' else None,round_id=snapshot.round_id,capacity=capacity)
-    context=EngineContext(snapshot,history,data,plan,fits,results,recommended,context.seed,opponents,workload,explicit_effects,_simulation)
+    context=EngineContext(snapshot,history,data,plan,fits,results,recommended,context.seed,opponents,workload,explicit_effects,_simulation,guards)
     return context
 
 
@@ -380,7 +398,7 @@ def _econ_advice(context):
     if current_level_target(chosen.line,snapshot.round_id,data,int(read(snapshot,data,'level')))>int(read(snapshot,data,'level')):
         action='Level now'
     projections={r.line.id:tuple(p.to_dict() for p in r.projections) for r in results}
-    options=tuple(ScoredOption(r.line.id,'line',r.line.to_dict(),r.expected_placement,r.standard_error,'line_expected_placement') for r in results)
+    options=tuple(ScoredOption(r.line.id,'line',r.line.to_dict() | {'after': {'seed': r.seed, 'rollout_placements': r.rollout_placements}},r.expected_placement,r.standard_error,'line_expected_placement') for r in results)
     best=min(results,key=lambda r:r.expected_placement)
     gap=chosen.expected_placement-best.expected_placement
     from .bench import roll_sale_indices
@@ -561,7 +579,7 @@ def evaluate(snapshot,history,data,mode,*,hooks=None,seed=None,effects=None,roll
             ranked=tuple(replace(a,confidence=min(a.confidence,float(tunable(data,'confidence_medium_min')))) for a in ranked)
         # A pivot is the first call for the new plan even if another action estimates greater gain.
         ranked=tuple(a for a in ranked if a.decision=='pivot')+tuple(a for a in ranked if a.decision!='pivot')
-        return EngineEvaluation(context.plan,context.comp_fits,context.line_results,context.recommended_board,ranked,context.workload,_simulation.workload() if _simulation else {})
+        return EngineEvaluation(context.plan,context.comp_fits,context.line_results,context.recommended_board,ranked,context.workload,_simulation.workload() if _simulation else {},context.guards)
     except (DataError,KeyError,ValueError,TypeError) as error:
         context=EngineContext(snapshot,history,data,plan,{}, {},owned_board(snapshot,data),snapshot_seed(snapshot,data) if seed is None else seed,_simulation=_simulation)
         return EngineEvaluation(plan,advice=rank_advice((paused(str(error),domain='econ'),)+_hook_advice(hooks,context)))
