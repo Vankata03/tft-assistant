@@ -1042,6 +1042,17 @@
           ],
           "title": "Model Hash"
         },
+        "next_planning": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LiveNextPlanningPreview"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "opponents": {
           "default": [],
           "items": {
@@ -1171,6 +1182,7 @@
         "ownership_valid_until",
         "opponents",
         "roll_tracker",
+        "next_planning",
         "confidence_medium_min",
         "entity_names",
         "warnings",
@@ -1297,6 +1309,137 @@
         "evidence_path"
       ],
       "title": "LiveLineDisplay",
+      "type": "object"
+    },
+    "LiveNextPlanningPreview": {
+      "additionalProperties": false,
+      "description": "Combat's preview of the next planning call: a scheduled point, never projected state.",
+      "properties": {
+        "available": {
+          "title": "Available",
+          "type": "boolean"
+        },
+        "comp_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Comp Id"
+        },
+        "evidence_path": {
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "title": "Evidence Path",
+          "type": "array"
+        },
+        "gold_floor": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Gold Floor"
+        },
+        "level": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Level"
+        },
+        "line_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Line Id"
+        },
+        "pinned": {
+          "title": "Pinned",
+          "type": "boolean"
+        },
+        "planning_round": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Planning Round"
+        },
+        "planning_snapshot_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Planning Snapshot Id"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reason"
+        },
+        "round_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Round Id"
+        }
+      },
+      "required": [
+        "available",
+        "reason",
+        "comp_id",
+        "line_id",
+        "pinned",
+        "planning_round",
+        "planning_snapshot_id",
+        "round_id",
+        "level",
+        "gold_floor",
+        "evidence_path"
+      ],
+      "title": "LiveNextPlanningPreview",
       "type": "object"
     },
     "LiveOptionDisplay": {
@@ -1448,6 +1591,18 @@
         "mode": {
           "$ref": "#/$defs/SessionMode"
         },
+        "next_planning_invalidated": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Next Planning Invalidated"
+        },
         "observed_phase": {
           "anyOf": [
             {
@@ -1546,6 +1701,7 @@
         "content",
         "pin",
         "invalidated",
+        "next_planning_invalidated",
         "roster_qualified",
         "ownership_qualified",
         "observed_phase"

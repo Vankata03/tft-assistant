@@ -6,7 +6,7 @@ from hashlib import sha256
 
 from tft_engine.evidence import EvidenceGraph, canonical_bytes
 from tft_engine.models import _encode
-from .surfaces import opponent_rows, roll_tracker
+from .surfaces import next_planning_preview, opponent_rows, roll_tracker
 from tft_engine.planning import evaluate, observed_phase, field_age
 
 
@@ -102,6 +102,7 @@ class LiveAdvisor:
             "ownership_valid_until": deadline(('board','bench','inventory_complete','level')),
             "opponents": opponent_rows(snapshot,history,data),
             "roll_tracker": roll_tracker(snapshot,data,result),
+            "next_planning": next_planning_preview(snapshot, history, data, result),
             "confidence_medium_min": float(data.tunable('confidence_medium_min')) if data else None,
             "entity_names": {id:entity.name for id,entity in data.entities.items()} if data else {},
             "warnings": list(data.warnings) if data else ['Pinned data unavailable'],

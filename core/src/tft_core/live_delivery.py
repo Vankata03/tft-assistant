@@ -44,6 +44,7 @@ class LiveDeliveryController:
         self.epoch = 0
         self.roster_qualified = None
         self.ownership_qualified = None
+        self._current_epoch = None
 
     def prepare(self, delivery):
         """Validate a bounded summary on the owner loop, without file I/O."""
@@ -98,6 +99,7 @@ class LiveDeliveryController:
                 self._shown = {key for key in self._shown if key[0] != removed}
                 self._invalidated_logged = {key for key in self._invalidated_logged if key[0] != removed}
         self.current = state
+        self._current_epoch = self.epoch
         self._invalidate_changed_fields()
         return state
 
@@ -110,6 +112,7 @@ class LiveDeliveryController:
         if mode.value != "live" or self.current is None or not self.sessions or self.current.content.game_id != self.sessions.active_game_id:
             return LiveState(mode=mode.value, status=self.status)
         return self.current.model_copy(update={"pin": self.pin, "invalidated": self.invalidated,
+                                               "next_planning_invalidated": self._next_planning_invalid(),
                                                "observed_phase": self.observed_phase,"roster_qualified":self.roster_qualified,"ownership_qualified":self.ownership_qualified})
 
     def clear(self, reason):
@@ -168,6 +171,28 @@ class LiveDeliveryController:
             self.clear("Live advice paused · capture or pinned data unavailable")
         else:
             self._invalidate_changed_fields()
+
+    def _next_planning_invalid(self):
+        """Combat's preview expires with its round, phase, pinned data and plan."""
+        preview = self.current.content.next_planning
+        if preview is None or not preview.available:
+            return None
+        if self.epoch != self._current_epoch:
+            return "plan changed"
+        if not self._observation_seen:
+            return None
+        state, data = self.observation, self.observed_data
+        if state is None or data is None:
+            return "capture unavailable"
+        if state.game_id != self.current.content.game_id or state.round_id != self.current.content.round_id:
+            return "round or game changed"
+        if data.snapshot_id != self.current.content.data_snapshot_id:
+            return "pinned data changed"
+        if self.observed_phase in ("planning", "roll_down"):
+            return "new planning evidence"
+        if self.observed_phase != "combat":
+            return "combat phase unread" if self.observed_phase == "unknown" else "combat ended"
+        return None
 
     def _invalidate_changed_fields(self):
         from tft_engine.models import _encode

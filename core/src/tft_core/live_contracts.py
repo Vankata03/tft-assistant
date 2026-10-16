@@ -1,7 +1,7 @@
 """Finite ranked display contracts; full distributions remain referenced evidence."""
 
 from typing import Literal
-from pydantic import AwareDatetime, Field, JsonValue
+from pydantic import AwareDatetime, Field, JsonValue, model_validator
 from tft_core.baseline.contracts import DisplayModel
 
 
@@ -63,6 +63,32 @@ class LiveFitDisplay(DisplayModel):
     evidence_path: tuple[str | int, ...]
 
 
+class LiveNextPlanningPreview(DisplayModel):
+    """Combat's preview of the next planning call: a scheduled point, never projected state."""
+    available: bool
+    reason: str | None
+    comp_id: str | None
+    line_id: str | None
+    pinned: bool
+    planning_round: str | None
+    planning_snapshot_id: str | None
+    round_id: str | None
+    level: int | None
+    gold_floor: float | None = Field(allow_inf_nan=False)
+    evidence_path: tuple[str | int, ...]
+
+    @model_validator(mode="after")
+    def qualified_point(self):
+        provenance = (self.comp_id, self.line_id, self.planning_round, self.planning_snapshot_id, self.round_id)
+        if self.available and (self.reason is not None or None in provenance
+                               or (self.level is None and self.gold_floor is None)):
+            raise ValueError("An available preview names its plan, provenance and scheduled point")
+        if not self.available and (not self.reason or self.pinned or any(value is not None for value in provenance)
+                                   or self.level is not None or self.gold_floor is not None):
+            raise ValueError("An unavailable preview names only its reason")
+        return self
+
+
 class LiveContent(DisplayModel):
     game_id: str
     snapshot_id: str
@@ -82,6 +108,7 @@ class LiveContent(DisplayModel):
     ownership_valid_until: AwareDatetime | None = None
     opponents: tuple[dict[str, JsonValue], ...] = ()
     roll_tracker: dict[str, JsonValue] | None = None
+    next_planning: LiveNextPlanningPreview | None = None
     confidence_medium_min: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
     entity_names: dict[str, str] = {}
     warnings: tuple[str, ...] = ()

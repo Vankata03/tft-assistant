@@ -154,6 +154,7 @@ class LiveState(_Message):
     content: LiveContent | None = None
     pin: dict[str, str] | None = None
     invalidated: dict[str, str] = {}
+    next_planning_invalidated: str | None = None
     roster_qualified: bool | None = None
     ownership_qualified: bool | None = None
     observed_phase: Literal['planning','roll_down','augment','carousel','combat','end','unknown'] | None = None

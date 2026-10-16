@@ -3,7 +3,7 @@ from collections.abc import Mapping
 from tft_data.models import DataError
 from tft_engine.lobby import alive_lobby
 from tft_engine.opponents import opponents_from_history, round_index
-from tft_engine.planning import read, required, owned_board
+from tft_engine.planning import read, required, owned_board, observed_phase, causal_history
 from tft_engine.power import estimate_strength, win_probability, static
 from tft_engine.shop_math import key_goals, hit_probability, owned_copies, canonical_id
 
@@ -113,3 +113,53 @@ def roll_tracker(snapshot, data, result):
             'in_shop':any(canonical_id(row['unit_id'],data)==id for row in shop),
             'hit_probability':hit_probability(id,max(0,goal-owned.get(id,0)),rolls,float(slots),int(read(snapshot,data,'level')),data,owned=owned)})
     return {'available':True,'gold_floor':floor,'rolls_left':rolls,'units':rows,'source':'qualified-own-ownership-and-Line-floor'}
+
+
+PLANNING_FIELDS = ('board', 'bench', 'gold', 'hp', 'level', 'xp', 'streak', 'lobby')
+UNAVAILABLE = {'comp_id': None, 'line_id': None, 'pinned': False, 'planning_round': None,
+               'planning_snapshot_id': None, 'round_id': None, 'level': None, 'gold_floor': None,
+               'evidence_path': ['plan', 'line']}
+
+
+def next_planning_preview(snapshot, history, data, result):
+    """Combat's one-chip preview of the next planning call.
+
+    It names the next scheduled level or roll-down point of the Line the Engine
+    selected in a qualified planning phase of this same round. It describes that
+    schedule only; future gold, HP and board state are never projected.
+    """
+    if data is None or observed_phase(snapshot, data) != 'combat':
+        return None
+    def unavailable(reason):
+        return UNAVAILABLE | {'available': False, 'reason': reason}
+    plan = result.plan
+    econ = next((row for row in result.advice if row.decision == 'econ'), None)
+    # The combat gate pauses econ naming the phase or the unread fields. Any
+    # other pause is an evaluation failure, so the folded plan is not certified.
+    if econ is None or not econ.payload.get('paused') or not econ.payload.get('missing'):
+        return unavailable('Planning evaluation unavailable')
+    try:
+        current = round_index(snapshot.round_id, data)
+        sources = [state for state in causal_history(snapshot, history, data).snapshots
+                   if state.round_id == snapshot.round_id and observed_phase(state, data) in ('planning', 'roll_down')
+                   and not required(state, data, PLANNING_FIELDS)]
+        if plan.line is None or plan.target is None or plan.planning_round != snapshot.round_id or not sources:
+            return unavailable("No qualified plan from this round's planning phase")
+        def pin_id(state):
+            pin = read(state, data, 'pinned_line')
+            return (pin.get('id') if isinstance(pin, Mapping) else str(pin)) if pin else None
+        pinned = pin_id(snapshot)
+        if pin_id(sources[-1]) != pinned or (pinned is not None and pinned != plan.line.id):
+            return unavailable('Pinned Line changed since planning')
+        points = sorted({id for id in (*plan.line.levels, *plan.line.rolls) if round_index(id, data) > current},
+                        key=lambda id: round_index(id, data))
+    except (DataError, KeyError, TypeError, ValueError) as error:
+        return unavailable(str(error))
+    if not points:
+        return unavailable('The planned Line schedules no later level or roll-down')
+    at = points[0]
+    return {'available': True, 'reason': None, 'comp_id': plan.target, 'line_id': plan.line.id,
+            'pinned': pinned is not None, 'planning_round': plan.planning_round,
+            'planning_snapshot_id': sources[-1].snapshot_id, 'round_id': at,
+            'level': plan.line.levels.get(at), 'gold_floor': plan.line.rolls.get(at),
+            'evidence_path': ['plan', 'line']}
