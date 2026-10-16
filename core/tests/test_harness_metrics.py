@@ -34,7 +34,8 @@ def test_expected_placement_excludes_partial_games_and_does_not_impute_missing_h
     assert metric['excluded']['fresh_complete_hp_rank_unavailable'] == 1
 
 
-def test_line_residual_joins_end_of_horizon_to_next_round_and_stays_out_of_gates(tmp_path):
+def line_residual_game(tmp_path, *, stale_origin=None):
+    tmp_path.mkdir(parents=True, exist_ok=True)
     import tomllib
     import tomli_w
     from tft_core.storage import SessionStore
@@ -58,8 +59,16 @@ def test_line_residual_joins_end_of_horizon_to_next_round_and_stays_out_of_gates
         at = NOW+timedelta(seconds=index)
         raw = log_snapshot(data, at=at, snapshot_id=f'round-{index}', gold=gold, hp=hp, level=level)
         raw['round_id'] = round_id
+        if index == 0 and stale_origin:
+            # Capture can explicitly reject a field whose last read is still young.
+            raw['stale_fields'] = [stale_origin]
         sessions.append_event('snapshot', raw, timestamp=at.isoformat())
     sessions.end_game(placement=4, timestamp=(at+timedelta(seconds=1)).isoformat())
+    return sessions, store
+
+
+def test_line_residual_joins_end_of_horizon_to_next_round_and_stays_out_of_gates(tmp_path):
+    sessions, store = line_residual_game(tmp_path)
     report = EvaluationHarness(sessions, store, repository=ROOT).evaluate(candidate={'fight_scale': 0})
     assert report.metrics['line_gold_mae']['value'] == 1
     assert report.metrics['line_level_mae']['value'] == 0
@@ -69,6 +78,30 @@ def test_line_residual_joins_end_of_horizon_to_next_round_and_stays_out_of_gates
     assert row['horizon_round_id'] == '4-1' and row['truth_round_id'] == '5-1'
     assert row['policy_status'] == 'unconfirmed'
     assert report.metrics['line_gold_mae']['status'] == 'report_only'
+
+
+@pytest.mark.parametrize('field', [
+    'board', 'bench', 'inventory_complete', 'gold', 'hp', 'level', 'xp', 'streak',
+    'lobby', 'lobby_complete',
+])
+def test_line_residual_excludes_stale_required_origin_with_fresh_control(tmp_path, field):
+    sessions, store = line_residual_game(tmp_path/'stale', stale_origin=field)
+    stale = EvaluationHarness(sessions, store, repository=ROOT).evaluate()
+    fresh_sessions, fresh_store = line_residual_game(tmp_path/'fresh')
+    fresh = EvaluationHarness(fresh_sessions, fresh_store, repository=ROOT).evaluate()
+    for metric in ('line_gold_mae', 'line_level_mae', 'line_hp_mae'):
+        assert fresh.metrics[metric]['eligible_rows'] == 1
+        assert stale.metrics[metric]['eligible_rows'] == 0
+        assert stale.metrics[metric]['excluded'][f'stale_origin_required_field:{field}'] == 1
+    assert not any(row['metric'].startswith('line_') for row in stale.examples)
+
+
+def test_line_residual_keeps_origin_with_unrelated_stale_optional_field(tmp_path):
+    sessions, store = line_residual_game(tmp_path, stale_origin='item_offers')
+    report = EvaluationHarness(sessions, store, repository=ROOT).evaluate()
+    for metric, expected in [('line_gold_mae', 1), ('line_level_mae', 0), ('line_hp_mae', 3)]:
+        assert report.metrics[metric]['eligible_rows'] == 1
+        assert report.metrics[metric]['value'] == expected
 
 
 def test_current_set_filter_is_independent_from_previous_patch_static_flag(tmp_path):
@@ -121,7 +154,7 @@ def test_hit_probability_does_not_treat_engine_target_or_pinned_line_as_confirme
     assert metric['excluded']['confirmed_player_goals_unavailable'] == 1
 
 
-def natural_shop_game(tmp_path, *, paid_roll=False):
+def natural_shop_game(tmp_path, *, paid_roll=False, stale_origin=None):
     import tomllib
     import tomli_w
     from tft_core.storage import SessionStore
@@ -154,6 +187,8 @@ def natural_shop_game(tmp_path, *, paid_roll=False):
             board=Board((Unit('unit', stars=stars),)), shop=shop, comp_lock='guide',
             remaining_effects=[], remaining_effects_complete=True, held_augments=[], held_augments_complete=True)
         raw['round_id'] = round_id
+        if index == 0 and stale_origin:
+            raw['stale_fields'] = [stale_origin]
         sessions.append_event('snapshot', raw, timestamp=at.isoformat())
     sessions.end_game(placement=4, timestamp=(at+timedelta(seconds=1)).isoformat())
     return sessions, store
@@ -170,6 +205,36 @@ def test_hit_log_loss_rebuilds_shop_chain_for_identifiable_natural_shop_policy(t
     assert row['naive_source'] == 'tft_engine.shop_math.hit_probability'
     assert row['policy_status'] == 'confirmed_no_paid_rolls'
     assert row['shops'] == 1 and row['slots'] == 5 and row['level'] == 10
+
+
+@pytest.mark.parametrize('field', ['board', 'gold', 'xp', 'lobby_complete'])
+def test_hit_log_loss_excludes_stale_required_selected_line_origin(tmp_path, field):
+    sessions, store = natural_shop_game(tmp_path, stale_origin=field)
+    report = EvaluationHarness(sessions, store, repository=ROOT).evaluate()
+    metric = report.metrics['hit_log_loss']
+    assert metric['eligible_rows'] == 0
+    assert metric['excluded'][f'stale_origin_required_field:{field}'] == 1
+    assert not any(row['metric'] == 'hit_log_loss' for row in report.examples)
+
+
+def test_expected_placement_excludes_stale_required_selected_line_origin(tmp_path):
+    sessions, store, data, _ = logged_game(tmp_path, finish=False, mode='baseline')
+    at = NOW+timedelta(seconds=1)
+    raw = log_snapshot(data, at=at, snapshot_id='stale-xp', gold=19)
+    raw['stale_fields'] = ['xp']
+    sessions.append_event('snapshot', raw, timestamp=at.isoformat())
+    # Keep exactly one of four rounds stale: placement must stay non-partial.
+    for index, round_id in enumerate(('4-1', '5-1', '6-1'), start=2):
+        at = NOW+timedelta(seconds=index)
+        raw = log_snapshot(data, at=at, snapshot_id=f'fresh-{round_id}')
+        raw['round_id'] = round_id
+        sessions.append_event('snapshot', raw, timestamp=at.isoformat())
+    sessions.end_game(placement=4, timestamp=(at+timedelta(seconds=1)).isoformat())
+    report = EvaluationHarness(sessions, store, repository=ROOT).evaluate()
+    metric = report.metrics['expected_placement_mae']
+    assert report.counts['partial_games'] == 0
+    assert metric['eligible_rows'] == 3
+    assert metric['excluded']['stale_origin_required_field:xp'] == 1
 
 
 def test_paid_roll_without_confirmed_stopping_floor_is_not_scored_as_a_hit(tmp_path):
