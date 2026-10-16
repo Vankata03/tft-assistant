@@ -630,15 +630,7 @@ footer {
   width: max-content;
   max-width: 300px;
 }
-.overlay-tag:hover .overlay-tooltip {
+/* Opened by useOverlayTooltips after a pointer dwell; tags themselves stay click-through. */
+.overlay-tag[data-tooltip='open'] .overlay-tooltip {
   display: block;
-  animation: tooltip-delay 0.4s step-end;
-}
-@keyframes tooltip-delay {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
 }

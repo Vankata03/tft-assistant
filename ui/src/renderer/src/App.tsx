@@ -5,6 +5,7 @@ import {ReviewReadyNotice} from './review/ReviewReadyNotice'
 import { Cockpit } from './Cockpit'
 import { BaselineOverlay } from './BaselineOverlay'
 import { localVoice, StageVoicePlayer } from './voice'
+import { useOverlayTooltips } from './overlayTooltips'
 import './cockpit.css'
 
 export { SessionModeSelector } from './ModeSelector'
@@ -71,6 +72,7 @@ export function App(): React.JSX.Element|null {
     return () => clearTimeout(timer)
   }, [cue?.id])
 
+  useOverlayTooltips(isOverlay)
   if(isOverlay)return <>{state.mode==='live'&&LiveShell?<Suspense fallback={null}><LiveShell state={state} surface="overlay"/></Suspense>:<BaselineOverlay state={state}/>}<ReviewReadyNotice state={state} overlay/></>
   if(isVoice)return state.mode==='live'&&LiveShell?<Suspense fallback={null}><LiveShell state={state} surface="voice"/></Suspense>:null
   const cockpit=reviewReplacesCockpit
