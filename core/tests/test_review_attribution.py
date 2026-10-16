@@ -377,6 +377,104 @@ def aggregate_shop(context):
         options=(ScoredOption('shop:0:unit', 'buy', {'slot': 0, 'unit_id': 'unit'}),)),)
 
 
+def two_purchase_shop(context):
+    from tft_engine import Advice, ScoredOption
+    buys = [{'slot': 0, 'unit_id': 'unit'}, {'slot': 1, 'unit_id': 'unit'}]
+    return (Advice('shop', 'Buy both', 'act_this_phase', .9, 'fixture', option_id='shop',
+        payload={'buys': buys}, options=tuple(
+            ScoredOption(f'shop:{row["slot"]}:unit', 'buy', row) for row in buys)),)
+
+
+@pytest.mark.parametrize(('shown_seconds', 'show_first', 'followed'), [
+    (.25, True, True),
+    (.3, True, True),
+    (.3, False, None),
+    (.4, False, None),
+    (1, False, None),
+    (1.5, False, None),
+])
+def test_shop_bundle_display_must_precede_first_purchase_to_attribute_following(
+    tmp_path, shown_seconds, show_first, followed
+):
+    from tft_engine import DomainHook
+    sessions, store, _, _ = logged_game(tmp_path, finish=False, mode='live')
+    hooks = (DomainHook('shop', (), advice=two_purchase_shop),)
+    decision = _decision_id(sessions, store, decision='shop', hooks=hooks)
+    log_delivery(sessions, decision_id=decision, option_id='shop', domain='shop',
+        payload={'buys': [{'slot': 0, 'unit_id': 'unit'}, {'slot': 1, 'unit_id': 'unit'}]})
+    if show_first:
+        log_shown(sessions, decision_id=decision, option_id='shop', at=NOW+timedelta(seconds=shown_seconds))
+    sessions.append_event('purchase', {'slot': 0, 'unit_id': 'unit', 'cost': 1, 'copies': 1},
+        timestamp=(NOW+timedelta(seconds=.3)).isoformat())
+    if not show_first:
+        log_shown(sessions, decision_id=decision, option_id='shop', at=NOW+timedelta(seconds=shown_seconds))
+    sessions.append_event('purchase', {'slot': 1, 'unit_id': 'unit', 'cost': 1, 'copies': 1},
+        timestamp=(NOW+timedelta(seconds=1)).isoformat())
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=2)).isoformat())
+    report = review(sessions, store, hooks)
+    point = next(row for row in report.timeline if row['category'] == 'shop')
+    assert point['shown']['status'] == ('followed' if followed else 'shown')
+    assert point['shown']['followed'] is followed
+    assert point['shown']['shown_at'] == (NOW+timedelta(seconds=shown_seconds)).isoformat()
+    if followed is None:
+        assert point['shown']['reason'] == 'display_not_confirmed_before_policy_onset'
+    assert point['player_choice']['observed_at'] == (NOW+timedelta(seconds=1)).isoformat()
+    assert report.summary['follow_rate']['eligible'] == (1 if followed else 0)
+
+
+@pytest.mark.parametrize(('shown_seconds', 'followed'), [(.2, True), (.25, True), (.4, None), (1.5, None), (20, None)])
+def test_observed_line_display_must_precede_confirmed_level_action_bounds(tmp_path, shown_seconds, followed):
+    from dataclasses import replace
+    from tft_engine import Line, ScoredOption, simulate_lines
+    from tft_review import ReplayProducer, ReviewPolicy
+    from tft_review.contracts import json_value
+    from tests.test_replay_contracts import log_snapshot
+
+    sessions, store, data, _ = logged_game(tmp_path, finish=False, mode='live')
+    original = ReplayProducer(sessions, store, repository=ROOT).produce('901')
+    context = original.contexts[0]
+    record = next(row for row in original.records if row.decision == 'econ')
+    line = Line('two-levels', levels={'3-3': 2, '3-4': 3})
+    result = simulate_lines(original.snapshot_for(context), original.history_for(context), data,
+        'guide', (line,), seed=context.seed, rollouts=4)[0]
+    log_delivery(sessions, decision_id=record.decision_id, option_id=line.id, domain='econ',
+        payload={'line': line.to_dict()}, at=NOW+timedelta(seconds=.1))
+    log_shown(sessions, decision_id=record.decision_id, option_id=line.id,
+        at=NOW+timedelta(seconds=shown_seconds))
+    rounds = list(data.value('round_order'))
+    for index, round_id in enumerate(rounds[rounds.index('3-3'):rounds.index('4-7')+1]):
+        at = NOW+timedelta(seconds=index+1)
+        if index < 2:
+            before_at = NOW+timedelta(seconds=.25 if index == 0 else 1.25)
+            sessions.append_event('level_up', {'before': {'level': index+1, 'xp': 0, 'xp_to_level': 2},
+                'after': {'level': index+2, 'xp': 0, 'xp_to_level': 6},
+                'before_read_at': before_at.isoformat(), 'after_read_at': at.isoformat(),
+                'confidence': .95, 'sources': {'level': 'external-fixture'}}, timestamp=at.isoformat())
+        sessions.append_event('snapshot', log_snapshot(data, at=at, snapshot_id=round_id, level=min(index+2, 3))
+            | {'round_id': round_id}, timestamp=at.isoformat())
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=21)).isoformat())
+    batch = ReplayProducer(sessions, store, repository=ROOT).produce('901')
+    record = next(row for row in batch.records if row.decision == 'econ' and row.log_seq == 1)
+    evaluation = json_value(batch.contexts[0].evaluation)
+    evaluation['plan']['line'] = line.to_dict()
+    evaluation['line_results']['guide'] = [result.to_dict()]
+    contexts = (replace(batch.contexts[0], evaluation=evaluation),) + batch.contexts[1:]
+    option = ScoredOption(line.id, 'line', line.to_dict(), result.expected_placement,
+        result.standard_error).to_dict()
+    record = replace(record, advice=json_value(record.advice) | {'option_id': line.id,
+        'payload': {'line': line.to_dict()}}, options=(option,))
+    report = ReviewPolicy(min_cost=.05).build(replace(batch, contexts=contexts, records=(record,)), data=data)
+    point = report.timeline[0]
+    assert point['player_choice'] is not None, dict(point['unavailable'])
+    assert point['shown']['followed'] is followed
+    assert point['shown']['status'] in (('followed', 'engine_error') if followed else ('shown',))
+    if followed is None:
+        assert point['shown']['reason'] == 'display_not_confirmed_before_policy_onset'
+        assert report.summary['follow_rate']['eligible'] == 0
+    assert point['cost'] is not None
+    assert point['player_choice']['observed_at'] == batch.contexts[-1].timestamp
+
+
 def test_shop_buy_bundle_is_followed_when_confirmed_purchases_match_shown_bundle(tmp_path):
     from tft_engine import DomainHook
     sessions, store, _, _ = logged_game(tmp_path, finish=False, mode='live')

@@ -22,6 +22,14 @@ Implement all referenced requirements. Verify through the approved public seams 
 
 ## Comments
 
+### 2026-10-16 — Policy action onset and display attribution correction
+
+The second independent review reproduced a shop bundle purchased at +0.3 and +1 seconds being credited as following advice first displayed at +0.4 seconds. Review now keeps the bundle's first confirmed purchase separate from its completion timestamp. A display after that onset remains recorded as shown, with unknown following and the reason `display_not_confirmed_before_policy_onset`; it does not enter the follow-rate denominator. Equal purchase/display timestamps use the logged sequence order. Single-action choice attribution is unchanged.
+
+Observed Lines apply the same rule using the earliest before-reading bound of their confirmed level-up actions. A display inside that capture interval cannot establish that the action followed it. No-action schedules retain their existing behavior, and paid-roll policies remain unavailable. Completion timestamps, original-snapshot valuation, historical seeds and logged events are preserved.
+
+The public log/replay/report regression failed with `followed` before the correction and passed afterward. A separate public typed-replay case using real Line simulations failed for displays overlapping or following confirmed actions, then passed after applying the onset bound. The attribution and observed-Line suites passed 34 tests, including displays before both purchases, between them, after both and at equal timestamps. These are fixture-level software checks; Windows and live-game behavior remain unqualified. Ticket 42 remains open.
+
 ### 2026-10-14 — Causal session-control projection checkpoint
 
 The public `project_session_controls` helper projects only earlier durable UI controls whose acceptance time is no later than the original capture. Replay, historical `history_prefix` and `batch.snapshot_for` share that projection. Raw contexts retain every original field and capture timestamp; the additive `evaluation_overlay` records the projected UI pin and its command provenance and rejects a fabricated overlay on roundtrip. Unpin, mode change, detach, gap, game end and matching explicit control reset clear the pin. Malformed game/data references, schedules, seeds, delivery revisions and non-Live acceptance fail visibly. The normal Line section exposes the accepted pin without claiming it proves the player's later policy.

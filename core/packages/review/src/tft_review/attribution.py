@@ -4,8 +4,10 @@ Live delivery logs each delivered revision (`advice_delivery`), each surface
 acknowledgement (`ui_show`) and each delivery that stopped applying before it
 was shown (`advice_too_late`, `advice_paused`). Review joins those events to the
 replayed decision by the Engine's semantic decision identity, falling back to
-the delivered domain and snapshot inside the replay's decision segment. Only an
-acknowledgement logged before the player's confirmed choice counts as shown.
+the delivered domain and snapshot inside the replay's decision segment. Follow
+attribution requires an acknowledgement before the player's choice started.
+Multi-action policies retain display evidence after their onset, but cannot be
+credited as following that display.
 """
 from datetime import datetime
 from collections.abc import Mapping
@@ -97,17 +99,22 @@ def shown_status(display, record, *, mode, window, segment_snapshots, player, co
         if display.row(event) is not None and _at(event['timestamp']) >= start
         and (stop is None or _at(event['timestamp']) < stop)]
     chosen_at = _at(player['observed_at']) if player and player.get('observed_at') else None
-    before = [event for event in shows if chosen_at is None or _at(event['timestamp']) <= chosen_at]
+    started_at = _at(player['observed_started_at']) if player and player.get('observed_started_at') else None
+    before = shows if started_at is not None else [event for event in shows
+        if chosen_at is None or _at(event['timestamp']) <= chosen_at]
     if before:
-        latest = max(before, key=lambda event: (_at(event['timestamp']), event['seq']))
+        causal = [event for event in before if started_at is None or
+            (_at(event['timestamp']), event['seq']) <= (started_at, player['observed_start_log_seq'])]
+        latest = max(causal or before, key=lambda event: (_at(event['timestamp']), event['seq']))
         option = latest['payload']['option_id']
-        followed = None if player is None else same_choice(option, display.row(latest), player)
+        followed = None if player is None or not causal else same_choice(option, display.row(latest), player)
         shown = {'shown_option_id': option, 'shown_at': latest['timestamp'],
             'delivery_revision': latest['payload']['delivery_revision'],
             'surfaces': sorted({event['payload']['surface'] for event in before
                 if event['payload']['option_id'] == option}), 'followed': followed}
         if followed is None:
-            return shown | {'status': 'shown', 'reason': 'player_choice_unavailable'}
+            reason = 'display_not_confirmed_before_policy_onset' if started_at is not None and not causal else 'player_choice_unavailable'
+            return shown | {'status': 'shown', 'reason': reason}
         if not followed:
             return shown | {'status': 'ignored'}
         harmful = cost is not None and cost < 0 and not close_call

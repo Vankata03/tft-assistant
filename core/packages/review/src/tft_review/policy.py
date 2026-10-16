@@ -121,10 +121,12 @@ def observed_option(record, batch):
         identity = lambda rows: sorted((row['slot'], row['unit_id']) for row in rows)
         followed = identity(buys) == identity(record.advice['payload']['buys'])
         latest = max(purchases, key=lambda event: event['seq'])
+        first = min(purchases, key=lambda event: (datetime.fromisoformat(event['timestamp']), event['seq']))
+        onset = {'observed_started_at': first['timestamp'], 'observed_start_log_seq': first['seq']} if len(purchases) > 1 else {}
         return {'option_id': record.advice['option_id'] if followed else 'observed-shop:'+digest(buys),
             'action': 'shop', 'payload': {'buys': buys}, 'expected_placement': None, 'standard_error': None,
             'observed_at': latest['timestamp'], 'observed_log_seq': latest['seq'],
-            'evidence': 'confirmed_purchase_events'}, None
+            'evidence': 'confirmed_purchase_events', **onset}, None
     if len(candidates) != 1:
         return None, 'confirmed_choice_unavailable_or_ambiguous'
     option, event = candidates[0]
@@ -238,9 +240,19 @@ class ReviewPolicy:
                     selected = dict(best_option)|{'payload':dict(best_option['payload'])|{'after':best}}
                     observed_end = player['payload']['observed_through_seq']
                     horizon = [row for row in batch.contexts if context.log_seq <= row.log_seq <= observed_end]
+                    actions = [event for event in batch.observations
+                        if event['seq'] in player['payload']['action_log_seqs']]
+                    # A level-up is only localized between its before and after
+                    # readings. Completion cannot establish when following began.
+                    onset = {}
+                    if actions:
+                        first = min(actions, key=lambda event: (
+                            datetime.fromisoformat(event['payload'].get('before_read_at', context.timestamp)), event['seq']))
+                        onset = {'observed_started_at': first['payload'].get('before_read_at', context.timestamp),
+                            'observed_start_log_seq': first['seq']}
                     player = dict(player)|{'observed_at': horizon[-1].timestamp,
                         'payload': dict(player['payload'])|{'horizon_rounds': sorted({row.snapshot['round_id'] for row in horizon}),
-                            'initial_level': context.snapshot['fields']['level']['value']}}
+                            'initial_level': context.snapshot['fields']['level']['value']}, **onset}
                     reason = None
                     policies[context.log_seq] = player
                 except (DataError,KeyError,ValueError,TypeError) as error:
