@@ -48,6 +48,15 @@ class ReviewService:
         self.producer = ReplayProducer(sessions, data_store, repository=repository,
             hooks=hooks, hook_version=hook_version, decision_segmentation='semantic')
 
+    def _outcome(self, game_id):
+        """Validated private final facts, or the reason review placement is unavailable."""
+        if not hasattr(self.sessions, 'read_outcome'):
+            return None, None
+        try:
+            return self.sessions.read_outcome(game_id), None
+        except ValueError:
+            return None, 'outcome_artifact_invalid'
+
     def job_identity(self, game_id):
         """Name one finished historical input and the actual running review code."""
         events = validate_events(self.sessions.read_events(game_id), game_id)
@@ -57,9 +66,9 @@ class ReviewService:
             self.producer.hooks, self.producer.hook_version)
         if not identity['finished']:
             raise ValueError('Review job requires a finished game log')
-        outcome = self.sessions.read_outcome(game_id) if hasattr(self.sessions, 'read_outcome') else None
+        outcome, reason = self._outcome(game_id)
         return {'job_id': digest({'game_id': str(game_id), 'identity': identity,
-                'outcome_hash': outcome['evidence_hash'] if outcome else None,
+                'outcome_hash': outcome['evidence_hash'] if outcome else reason,
                 'report_schema_version': 1}),
             'game_id': str(game_id), 'engine_version': identity['commit'],
             'data_snapshot_id': data.snapshot_id, 'log_hash': identity['log_hash'],
@@ -74,15 +83,11 @@ class ReviewService:
         if not batch.identity['finished']:
             raise ValueError('Post-game review requires a finished game log')
         data = self.data_store.get(batch.identity['data_snapshot_id'])
-        report = ReviewPolicy(min_cost=data.tunables['review_min_cost'].value).build(batch, data=data)
+        outcome, reason = self._outcome(game_id)
+        report = ReviewPolicy(min_cost=data.tunables['review_min_cost'].value).build(
+            batch, data=data, outcome=outcome, outcome_reason=reason)
         document = report.to_dict()
-        outcome = self.sessions.read_outcome(game_id) if hasattr(self.sessions, 'read_outcome') else None
-        if outcome:
-            document['evidence']['final_outcome'] = outcome
         document['summary'] = surface_summary(report)
-        if outcome:
-            document['summary']['placement'] = {'value': outcome['placement'], 'reason': None,
-                'source': outcome['source'], 'evidence_hash': outcome['evidence_hash']}
         graph = EvidenceGraph.factor(document)
         if self.job_identity(game_id) != job:
             raise ValueError('Review job identity changed during evaluation')
@@ -105,7 +110,7 @@ class ReviewService:
             raise ValueError('Review evidence identity mismatch')
         if graph.resolve(path=('game_id',)) != str(game_id):
             raise ValueError('Review belongs to another game')
-        outcome = self.sessions.read_outcome(game_id) if hasattr(self.sessions, 'read_outcome') else None
+        outcome, _ = self._outcome(game_id)
         try:
             stored_outcome_hash = graph.resolve(path=('evidence', 'final_outcome', 'evidence_hash'))
         except ValueError:

@@ -174,6 +174,21 @@ def decision_segment(batch, record):
     return {context.snapshot['snapshot_id'] for context in contexts}, (start, end)
 
 
+def public_outcome(outcome):
+    """Project validated final facts for review storage without account identifiers.
+
+    Riot PUUIDs stay in the private outcome artifact. The review keeps the
+    owner as `owner` and other players by final placement, which preserves
+    final boards and elimination order without exposing account identity.
+    """
+    alias = {row['participant_id']: 'owner' if row['participant_id'] == outcome['owner_id']
+        else f"placement-{row['placement']}" for row in outcome['participants']}
+    return {key: value for key, value in outcome.items() if key not in {'owner_id', 'participants', 'elimination_order'}} | {
+        'owner_id': 'owner',
+        'participants': [dict(row, participant_id=alias[row['participant_id']]) for row in outcome['participants']],
+        'elimination_order': [alias[value] for value in outcome['elimination_order']]}
+
+
 def mode_at(batch, seq):
     mode = batch.contexts[0].game_start['mode'] if batch.contexts else 'silent'
     for event in batch.observations:
@@ -250,7 +265,8 @@ class ReviewPolicy:
             raise ValueError('Review cost floor must be finite and nonnegative')
         self.min_cost = float(min_cost)
 
-    def build(self, batch, *, data=None):
+    def build(self, batch, *, data=None, outcome=None, outcome_reason=None):
+        """`outcome` is a validated final outcome; `outcome_reason` explains its absence."""
         timeline, moments, category_costs, attributed, policies = [], [], {}, [], {}
         display = DisplayLog(batch.observations)
         for record in batch.records:
@@ -321,13 +337,23 @@ class ReviewPolicy:
             and row['cost'] < 0 and not row['close_call']), key=lambda row: (row['cost'], row['log_seq']))
         differed = [row for row in moments if row['cost'] is None and row['differed']]
         end = next((event for event in reversed(batch.observations) if event['kind'] == 'game_end'), None)
-        placement = end['payload'].get('placement') if end else None
-        summary = {'placement': {'value': placement, 'reason': None if placement is not None else 'final_placement_unavailable'},
+        # Validated match truth wins; storage rejects a conflicting capture placement.
+        if outcome is not None:
+            placement = {'value': outcome['placement'], 'reason': None, 'source': outcome['source'],
+                'evidence_hash': outcome['evidence_hash']}
+        elif end and end['payload'].get('placement') is not None and outcome_reason is None:
+            placement = {'value': end['payload']['placement'], 'reason': None, 'source': 'game_end'}
+        else:
+            placement = {'value': None, 'reason': outcome_reason or 'final_placement_unavailable', 'source': None}
+        evidence = {'replay': replace(batch, records=tuple(attributed)).to_dict()}
+        if outcome is not None:
+            evidence['final_outcome'] = public_outcome(outcome)
+        summary = {'placement': placement,
             'category_costs': {kind: {'value': value, 'reason': None, 'label': 'estimated_signed_cost'}
                 for kind, value in category_costs.items()},
             'follow_rate': follow_rate([row['shown'] for row in timeline]),
             'top5': (harmful+differed)[:5]}
         detail = sections(batch, data, policies=policies, timeline=timeline)
         return ReviewReport(batch.game_id, summary, tuple(timeline), tuple(moments),
-            {'replay': replace(batch, records=tuple(attributed)).to_dict()},
+            evidence,
             surface=surface_sections(detail, timeline), **detail)

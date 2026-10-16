@@ -699,3 +699,100 @@ def test_board_call_shown_before_a_later_unchanged_read_attributes_following(tmp
     assert shown['status'] == 'followed'
     assert shown['followed'] is True
     assert points['positioning']['player_choice']['observed_started_at'] == (NOW+timedelta(seconds=.7)).isoformat()
+
+
+def _outcome_review(tmp_path, *, outcome=True):
+    """A finished, unlocked Baseline game whose Riot outcome uses distinctive PUUIDs."""
+    from tft_core.storage import SessionStore
+    from tft_review import ReviewService
+    from tests.test_outcomes import match_fixture
+    from tests.test_replay_contracts import historical_data, log_snapshot
+    store, data = historical_data(tmp_path)
+    sessions = SessionStore(tmp_path / 'logs', tmp_path / 'config', live_installed=True)
+    sessions.set_mode('baseline')
+    sessions.start_game('901', patch=data.patch, data_snapshot_id=data.snapshot_id, set_id='18', queue_id=1100,
+        model_version='reader-fixture-v1', engine_version='historical-engine', timestamp=NOW.isoformat())
+    sessions.append_event('snapshot', log_snapshot(data), timestamp=NOW.isoformat())
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=4)).isoformat())
+    if outcome:
+        match = match_fixture()
+        for row in match['info']['participants']:
+            row['puuid'] = f'PUUID-SECRET-{row["placement"]}'
+        sessions.record_outcome('901', match, owner_puuid='PUUID-SECRET-4')
+    service = ReviewService(sessions, store, repository=ROOT)
+    service.produce('901')
+    return sessions, service
+
+
+def _served_pages(service, path=(), seen=None):
+    """Every value reachable through the protected paged evidence route."""
+    seen = [] if seen is None else seen
+    cursor = 0
+    while cursor is not None:
+        page = service.detail('901', path=path, cursor=cursor, limit=128)
+        seen.append(page)
+        for item in page['items']:
+            if 'value' not in item and page['kind'] != 'string':
+                _served_pages(service, tuple(item['path']), seen)
+        cursor = page['next_cursor']
+    return seen
+
+
+def test_served_review_uses_validated_outcome_placement_and_never_exposes_puuids(tmp_path):
+    import json
+    sessions, service = _outcome_review(tmp_path)
+    summary = service.summary('901')
+    assert summary['placement']['value'] == 4
+    assert summary['placement']['source'] == 'riot_match'
+    served = [summary, service.games(), *_served_pages(service)]
+    stored = (sessions.root / 'reviews' / '901.json').read_text()
+    for text in (stored, *(json.dumps(value) for value in served)):
+        assert 'PUUID-SECRET' not in text
+    outcome = service.detail('901', path=('evidence', 'final_outcome', 'participants', 3, 'participant_id'))
+    assert outcome['items'][0]['value'] == 'owner'
+
+
+def test_missing_or_invalid_outcome_keeps_review_placement_unavailable_with_reason(tmp_path):
+    _, service = _outcome_review(tmp_path, outcome=False)
+    assert service.summary('901')['placement'] == {'value': None, 'reason': 'final_placement_unavailable', 'source': None}
+    invalid = tmp_path / 'invalid'
+    invalid.mkdir()
+    sessions, service = _outcome_review(invalid)
+    path = sessions.root / 'outcomes' / '901.json'
+    path.write_text(path.read_text().replace('"placement": 4', '"placement": 9', 1))
+    service.produce('901')
+    assert service.summary('901')['placement'] == {'value': None, 'reason': 'outcome_artifact_invalid', 'source': None}
+
+
+def test_locked_game_with_confirmed_outcome_exposes_no_placement_or_detail(tmp_path):
+    import json
+    import pytest
+    from tft_core.storage import SessionStore
+    from tft_core.review_transport import ReviewTransport
+    from tft_review import ReviewService
+    from tests.test_outcomes import match_fixture
+    from tests.test_replay_contracts import historical_data, log_snapshot
+    store, data = historical_data(tmp_path)
+    sessions = SessionStore(tmp_path / 'logs', tmp_path / 'config', live_installed=True)
+    sessions.set_mode('silent')
+    sessions.start_game('901', patch=data.patch, data_snapshot_id=data.snapshot_id, set_id='18', queue_id=1100,
+        model_version='reader-fixture-v1', engine_version='historical-engine', timestamp=NOW.isoformat())
+    sessions.append_event('snapshot', log_snapshot(data), timestamp=NOW.isoformat())
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=4)).isoformat())
+    sessions.record_outcome('901', match_fixture(), owner_puuid='owner')
+    service = ReviewService(sessions, store, repository=ROOT)
+    service.produce('901')
+    assert sessions.list_games()[0]['review_locked'] is True
+    summary = service.summary('901')
+    assert summary['locked'] is True and summary['placement']['value'] is None
+    row, = service.games()['games']
+    assert row['placement'] is None and row['category_costs'] == {} and row['total_estimated_cost'] is None
+    assert service.games()['aggregates']['last10']['categories'] == {}
+    transport = ReviewTransport(sessions, service)
+    with pytest.raises(ValueError, match='locked'):
+        transport.call('regenerate', '901')
+    with pytest.raises((ValueError, PermissionError)):
+        transport.call('page', '901', report_id=None, evidence_id=None, path=('evidence',), cursor=0, limit=8)
+    with pytest.raises(PermissionError):
+        service.detail('901', path=('evidence', 'final_outcome'))
+    assert '"placement": 4' not in json.dumps([summary, service.games()])
