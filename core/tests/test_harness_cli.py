@@ -1,4 +1,5 @@
 """Owner start-run workflow through the public CLI and real durable store."""
+import os
 import json
 
 from tests.test_harness_baseline import external_matches
@@ -122,3 +123,113 @@ def test_git_private_roots_are_rejected_before_external_api_access(tmp_path, mon
     assert main(arguments(), riot_client=NoAccess()) == 2
     assert not (repository/'config').exists()
     assert 'outside Git repositories' in capsys.readouterr().out
+
+
+def test_eval_cli_reads_committed_tunables_and_writes_private_aggregate_report(tmp_path, monkeypatch, capsys):
+    from tests.test_harness import combat_logs
+    from tests.test_harness_tunables_io import committed_repository
+    from tft_core.harness_cli import main
+    (tmp_path/'games').mkdir()
+    (tmp_path/'accepted').mkdir()
+    sessions, store = combat_logs(tmp_path/'games', results=('win','loss'))
+    repository = committed_repository(tmp_path/'accepted')
+    monkeypatch.setenv('TFT_ASSISTANT_DATA_ROOT', str(sessions.root))
+    monkeypatch.setenv('TFT_ASSISTANT_CONFIG_ROOT', str(tmp_path/'games'/'config'))
+    output = tmp_path/'reports'
+    assert main(['eval', '--repository', str(repository), '--snapshots', str(store.root),
+        '--output', str(output), '--bootstrap-draws', '20']) == 0
+    report = next(output.glob('*.md')).read_text()
+    if os.name == 'posix':
+        assert next(output.glob('*.md')).stat().st_mode & 0o077 == 0
+    assert 'Git blob' in report and 'Calibration' in report and 'Exclusions' in report
+    assert '"901"' not in report and '"902"' not in report
+    assert str(sessions.root) not in report
+    assert 'historical effective tunables' not in report
+
+
+def test_fit_cli_writes_unaccepted_toml_with_holdout_diagnostics(tmp_path, monkeypatch):
+    import tomllib
+    from tests.test_harness import combat_logs
+    from tests.test_harness_tunables_io import committed_repository
+    from tft_core.harness_cli import main
+    (tmp_path/'games').mkdir()
+    (tmp_path/'accepted').mkdir()
+    sessions, store = combat_logs(tmp_path/'games', results=('win','win','loss','win','loss'))
+    repository = committed_repository(tmp_path/'accepted')
+    monkeypatch.setenv('TFT_ASSISTANT_DATA_ROOT', str(sessions.root))
+    monkeypatch.setenv('TFT_ASSISTANT_CONFIG_ROOT', str(sessions.config_root))
+    search = tmp_path/'search.json'
+    search.write_text('{"fight_scale":[0.5,1,2]}')
+    output = tmp_path/'reports'
+    before = (repository/'data/18.2/tunables.toml').read_bytes()
+    assert main(['fit', '--repository', str(repository), '--snapshots', str(store.root),
+        '--output', str(output), '--search', str(search), '--bootstrap-draws', '20']) == 0
+    candidate = tomllib.loads(next(output.glob('*.toml')).read_text())
+    assert candidate['fields']['fight_scale']['family'] == '1'
+    assert 'Fit diagnostics' in next(output.glob('*.md')).read_text()
+    assert (repository/'data/18.2/tunables.toml').read_bytes() == before
+
+
+def test_priors_cli_uses_qualified_public_counts_and_preserves_source(tmp_path, monkeypatch):
+    import tomllib
+    import tomli_w
+    from tests.test_harness import combat_logs
+    from tests.test_harness_priors import evidence, cohort, binomial
+    from tests.test_harness_tunables_io import committed_repository
+    from tests.test_replay_contracts import NOW
+    from tft_core.harness_cli import main
+    (tmp_path/'games').mkdir()
+    (tmp_path/'accepted').mkdir()
+    sessions, store = combat_logs(tmp_path/'games', results=('win','loss'))
+    for name in ('static.toml', 'tunables.toml'):
+        path = tmp_path/'games/patch'/name
+        document = tomllib.loads(path.read_text())
+        document['patch'] = '18.2'
+        path.write_text(tomli_w.dumps(document))
+    assert store.refresh(tmp_path/'games/patch', now=NOW).snapshot.patch == '18.2'
+    repository = committed_repository(tmp_path/'accepted')
+    monkeypatch.setenv('TFT_ASSISTANT_DATA_ROOT', str(sessions.root))
+    monkeypatch.setenv('TFT_ASSISTANT_CONFIG_ROOT', str(sessions.config_root))
+    source = tmp_path/'public.json'
+    source.write_text(json.dumps(evidence(cohort([binomial('unit','unit',600)], patch='18.2'))))
+    output = tmp_path/'reports'
+    assert main(['fit', '--priors', '--repository', str(repository), '--snapshots', str(store.root),
+        '--output', str(output), '--prior-evidence', str(source), '--bootstrap-draws', '20']) == 0
+    candidate = tomllib.loads(next(output.glob('*.toml')).read_text())
+    fitted = candidate['fields']['cost_star_baseline']
+    assert fitted['source'] == 'public-statistics' and fitted['family'] == '3'
+    assert candidate['harness_candidate']['provenance']['cohorts'][0]['citation'].startswith('https://tactics.tools/')
+    assert str(source) not in next(output.glob('*.toml')).read_text()
+
+
+def test_cli_eval_actually_reports_widened_candidates(tmp_path, monkeypatch):
+    from tests.test_harness import combat_logs
+    from tests.test_harness_tunables_io import committed_repository
+    from tft_core.harness_cli import main
+    (tmp_path/'games').mkdir()
+    (tmp_path/'accepted').mkdir()
+    sessions,store = combat_logs(tmp_path/'games',results=('win','loss'))
+    repository = committed_repository(tmp_path/'accepted')
+    monkeypatch.setenv('TFT_ASSISTANT_DATA_ROOT',str(sessions.root))
+    monkeypatch.setenv('TFT_ASSISTANT_CONFIG_ROOT',str(sessions.config_root))
+    output=tmp_path/'reports'
+    assert main(['eval','--repository',str(repository),'--snapshots',str(store.root),
+        '--output',str(output),'--bootstrap-draws','20']) == 0
+    assert 'widened_candidates' in next(output.glob('*.md')).read_text()
+
+
+def test_report_code_identity_is_running_source_separate_from_accepted_checkout(tmp_path, monkeypatch):
+    from tests.test_harness import combat_logs
+    from tests.test_harness_tunables_io import committed_repository, git
+    from tests.test_replay_contracts import ROOT
+    from tft_core.harness_cli import main
+    (tmp_path/'games').mkdir()
+    (tmp_path/'accepted').mkdir()
+    sessions,store = combat_logs(tmp_path/'games',results=('win','loss'))
+    repository = committed_repository(tmp_path/'accepted')
+    monkeypatch.setenv('TFT_ASSISTANT_DATA_ROOT',str(sessions.root))
+    monkeypatch.setenv('TFT_ASSISTANT_CONFIG_ROOT',str(sessions.config_root))
+    output=tmp_path/'reports'
+    assert main(['eval','--repository',str(repository),'--snapshots',str(store.root),
+        '--output',str(output),'--bootstrap-draws','20']) == 0
+    assert git(ROOT,'rev-parse','HEAD') in next(output.glob('*.md')).read_text()

@@ -1,8 +1,13 @@
 """Offline family-2 margins from declared paired and model-gap uncertainty.
 
-The caller supplies differences on a shared Engine rollout tape and draws of
-that same guard difference under family-1 parameter uncertainty. This module
-does not fit models, manufacture missing draws or publish accepted tunables.
+Guards are read from replayed Engine evidence in each target's own units:
+placement guards pair two options or comps on the same seed tape (Lines,
+Wisps, pivots, comp-defining leads, reviewed player choices); power and share
+guards are exact Engine values (kept-board and shop power gaps, threat shares)
+with no Monte Carlo term. Model error is the spread of each guard across
+replays under family-1 parameter draws. This module does not fit models,
+manufacture missing draws or publish accepted tunables; values go to a
+candidate tunables file.
 """
 from dataclasses import dataclass
 from math import hypot, isfinite, sqrt
@@ -10,6 +15,8 @@ from statistics import stdev
 
 from tft_data import DataError, TaggedValue
 from tft_data.config import TUNABLE_FAMILIES
+
+from .overlay import TunableOverlay
 
 _GUARD_UNITS = {
     'pivot_margin_by_stage': 'placement', 'pivot_reraise_extra': 'placement',
@@ -41,6 +48,9 @@ class MarginInput:
     model_gap_draws: tuple[float, ...] | None
     rollout_citation: str
     model_citation: str
+    # Exact deterministic guards (board power, threat share) have no Monte
+    # Carlo term; their standard error is the family-1 model spread alone.
+    deterministic: bool = False
 
     def __post_init__(self):
         if not isinstance(self.target, str) or TUNABLE_FAMILIES.get(self.target) != '2':
@@ -58,6 +68,8 @@ class MarginInput:
             raise DataError('Margin floor must be nonnegative')
         if type(self.costly_or_sticky) is not bool:
             raise DataError('Margin requires an explicit costly/sticky classification')
+        if type(self.deterministic) is not bool or (self.deterministic and self.rollout_differences is not None):
+            raise DataError('A deterministic guard has no rollout vector')
         for name, citation_name in (('rollout_differences', 'rollout_citation'), ('model_gap_draws', 'model_citation')):
             values = getattr(self, name)
             citation = getattr(self, citation_name)
@@ -87,7 +99,9 @@ def estimate_margin(inputs: MarginInput) -> MarginEstimate:
     """Return an unaccepted per-kind/stage margin in the declared guard units."""
     z = 2 if inputs.costly_or_sticky else 1
     reason = None
-    if inputs.rollout_differences is None:
+    if inputs.deterministic:
+        pass
+    elif inputs.rollout_differences is None:
         reason = 'paired_rollout_uncertainty_unavailable'
     elif len(inputs.rollout_differences) < 2:
         reason = 'insufficient_paired_rollouts'
@@ -95,12 +109,17 @@ def estimate_margin(inputs: MarginInput) -> MarginEstimate:
         reason = 'model_gap_uncertainty_unavailable'
     elif len(inputs.model_gap_draws) < 2:
         reason = 'insufficient_model_gap_draws'
+    if reason is None and inputs.model_gap_draws is None:
+        reason = 'model_gap_uncertainty_unavailable'
+    elif reason is None and len(inputs.model_gap_draws) < 2:
+        reason = 'insufficient_model_gap_draws'
     if reason:
         return MarginEstimate(inputs.target, inputs.stage, inputs.kind, inputs.units,
             inputs.floor.value, z, None, None, reason,
             tuple(value for value in (inputs.floor.citation, inputs.rollout_citation, inputs.model_citation) if value))
     try:
-        mc_error = stdev(inputs.rollout_differences) / sqrt(len(inputs.rollout_differences))
+        mc_error = 0.0 if inputs.deterministic else (
+            stdev(inputs.rollout_differences) / sqrt(len(inputs.rollout_differences)))
         model_error = stdev(inputs.model_gap_draws)
         value = _finite_number(z * hypot(mc_error, model_error))
     except OverflowError as error:
@@ -109,3 +128,522 @@ def estimate_margin(inputs: MarginInput) -> MarginEstimate:
         max(inputs.floor.value, value), z,
         mc_error, model_error, None,
         (inputs.floor.citation, inputs.rollout_citation, inputs.model_citation))
+
+
+@dataclass(frozen=True)
+class PairedGuard:
+    """One guarded difference at a replayed decision, in the target's units.
+
+    ``differences`` is the per-rollout difference on the shared seed tape.
+    A deterministic guard (board power, threat share) has no tape and carries
+    its exact ``value``; a guard whose tape is unavailable has neither and is
+    counted as unavailable rather than dropped.
+    """
+    game_id: str
+    log_seq: int
+    occurrence: int
+    decision_id: str
+    kind: str
+    stage: str
+    best_option: str
+    runner_up: str
+    differences: tuple[float, ...] | None
+    units: str = 'placement'
+    value: float | None = None
+    base_key: str | None = None
+
+    @property
+    def key(self):
+        # Decision ids digest the valuation; logged points and options pair draws.
+        return (self.game_id, self.log_seq, self.kind, self.occurrence, self.best_option, self.runner_up)
+
+    @property
+    def deterministic(self):
+        return self.differences is None and self.value is not None
+
+    @property
+    def mean(self):
+        if self.differences:
+            return sum(self.differences)/len(self.differences)
+        return self.value
+
+
+def _finite_vector(values):
+    if not values or any(isinstance(value, bool) or not isinstance(value, (int, float))
+                         or not isfinite(value) for value in values):
+        return None
+    return tuple(float(value) for value in values)
+
+
+def _finite(value):
+    return None if isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value) else float(value)
+
+
+def _rollouts(option, seed):
+    after = option.get('payload', {}).get('after')
+    if not after or after.get('seed') != seed:
+        return None
+    return _finite_vector(after.get('rollout_placements'))
+
+
+def _stage(round_id):
+    return str(round_id).split('-')[0]
+
+
+def paired_guards(batches, *, kind):
+    """Paired placement differences (runner-up minus best) for one decision kind.
+
+    The best option is the Engine's advised option; the runner-up is the other
+    option with the lowest expected placement on the same seed tape. Decisions
+    without two comparable same-seed rollout vectors are omitted.
+    """
+    guards = []
+    for batch in batches:
+        rounds = {context.log_seq: context.snapshot['round_id'] for context in batch.contexts}
+        occurrences = {}
+        for record in batch.records:
+            if record.decision != kind or record.log_seq not in rounds:
+                continue
+            occurrence = occurrences.get(record.log_seq, 0)
+            occurrences[record.log_seq] = occurrence+1
+            options = {option['option_id']: option for option in record.options}
+            best = options.get(record.advice.get('option_id'))
+            best_rollouts = _rollouts(best, record.seed) if best else None
+            if best_rollouts is None:
+                continue
+            rivals = sorted(((option.get('expected_placement'), option_id, rollouts)
+                for option_id, option in options.items() if option_id != best['option_id']
+                for rollouts in (_rollouts(option, record.seed),)
+                if rollouts is not None and len(rollouts) == len(best_rollouts)
+                and isinstance(option.get('expected_placement'), (int, float))), key=lambda row: (row[0], row[1]))
+            if not rivals:
+                continue
+            _, runner_up, rollouts = rivals[0]
+            guards.append(PairedGuard(batch.game_id, record.log_seq, occurrence, record.decision_id, kind,
+                _stage(rounds[record.log_seq]), best['option_id'], runner_up,
+                tuple(other-chosen for other, chosen in zip(rollouts, best_rollouts))))
+    return tuple(guards)
+
+
+def _comp_tape(evaluation, comp_id, seed):
+    """Per-rollout comp fit score: the best Line's tape plus the exact domain terms."""
+    fit = evaluation.get('comp_fits', {}).get(comp_id)
+    rows = evaluation.get('line_results', {}).get(comp_id)
+    if not fit or not fit.get('simulated') or not rows:
+        return None
+    # The Engine's simulation term is its first minimal expected-placement Line.
+    best = min(rows, key=lambda row: row['expected_placement'])
+    tape = _finite_vector(best.get('rollout_placements')) if best.get('seed') == seed else None
+    score, expected = _finite(fit.get('score')), _finite(best.get('expected_placement'))
+    if tape is None or score is None or expected is None:
+        return None
+    return tuple(value+score-expected for value in tape)
+
+
+_PLAN_GUARDS = {'pivot': ('pivot', 'target', 'challenger'),
+    'pivot_reraise': ('pivot', 'target', 'challenger'),
+    'comp_defining': ('comp_defining', 'second', 'top')}
+
+
+def plan_guards(batches, *, kind):
+    """Comp-fit differences the Game plan compared, from the Engine's own guard evidence.
+
+    ``pivot`` is the committed target's score minus its challenger's, keyed by
+    the pivot margin's stage or ``post_roll_down``; ``pivot_reraise`` is the
+    same comparison against the rejected comp, keyed by stage with the pivot
+    margin key as ``base_key``. ``comp_defining`` is the Open plan's runner-up
+    minus its leader, only where the augment term decides commitment. Both comp
+    tapes share the evaluation's seed, so domain terms cancel in the noise.
+    """
+    name, left_name, right_name = _PLAN_GUARDS[kind]
+    guards = []
+    for batch in batches:
+        for context in batch.contexts:
+            evaluation = context.evaluation or {}
+            guard = evaluation.get('guards', {}).get(name)
+            if not guard or (name == 'pivot' and bool(guard['reraise']) != (kind == 'pivot_reraise')):
+                continue
+            left, right = guard[left_name], guard[right_name]
+            left_tape, right_tape = (_comp_tape(evaluation, comp, context.seed) for comp in (left, right))
+            stage = _stage(context.snapshot['round_id'])
+            differences = (tuple(a-b for a, b in zip(left_tape, right_tape))
+                if left_tape and right_tape and len(left_tape) == len(right_tape) else None)
+            guards.append(PairedGuard(batch.game_id, context.log_seq, 0,
+                f"{context.snapshot.get('snapshot_id')}:{kind}", kind,
+                guard['margin_key'] if kind == 'pivot' else stage, left, right, differences,
+                base_key=guard.get('margin_key') if kind == 'pivot_reraise' else None))
+    return tuple(guards)
+
+
+def transition_guards(batches):
+    """Kept-board power minus the recommended board's, for each advised swap.
+
+    The Engine keeps the current board when this exceeds ``transition_tolerance``.
+    Power is deterministic, so only family-1 model error enters the margin.
+    """
+    guards = []
+    for batch in batches:
+        rounds = {context.log_seq: context.snapshot['round_id'] for context in batch.contexts}
+        for record in batch.records:
+            numbers = record.advice.get('numbers', {})
+            if record.decision != 'transition' or record.advice.get('option_id') != 'transition':
+                continue
+            kept, power = _finite(numbers.get('current_power')), _finite(numbers.get('power'))
+            if kept is None or power is None or record.log_seq not in rounds:
+                continue
+            payload = record.advice.get('payload', {})
+            swap = repr((tuple(payload.get('swap_out', ())), tuple(payload.get('swap_in', ()))))
+            guards.append(PairedGuard(batch.game_id, record.log_seq, 0, record.decision_id, 'transition',
+                _stage(rounds[record.log_seq]), swap, 'kept_board', None, 'power', kept-power))
+    return tuple(guards)
+
+
+def shop_guards(batches):
+    """Board-power gains of shop units that only the power threshold can make eligible."""
+    guards = []
+    for batch in batches:
+        rounds = {context.log_seq: context.snapshot['round_id'] for context in batch.contexts}
+        for record in batch.records:
+            if record.decision != 'shop' or record.log_seq not in rounds:
+                continue
+            for option in record.options:
+                payload = option.get('payload', {})
+                gain = _finite(payload.get('power_gain'))
+                # Key, backup-key and pair reasons are decided before the threshold.
+                if option.get('action') != 'buy' or payload.get('eligible_reason') not in ('power', None) or gain is None:
+                    continue
+                guards.append(PairedGuard(batch.game_id, record.log_seq, 0, record.decision_id, 'shop',
+                    _stage(rounds[record.log_seq]), option['option_id'], 'current_board', None, 'power', gain))
+    return tuple(guards)
+
+
+def share_guards(batches):
+    """Threat shares that the positioning hysteresis compared against its thresholds."""
+    guards = []
+    for batch in batches:
+        rounds = {context.log_seq: context.snapshot['round_id'] for context in batch.contexts}
+        for record in batch.records:
+            payload = record.advice.get('payload', {})
+            if record.decision != 'positioning' or payload.get('threats_available') is not True or record.log_seq not in rounds:
+                continue
+            for tag, share in sorted(payload.get('threat_shares', {}).items()):
+                share = _finite(share)
+                if share is None:
+                    continue
+                guards.append(PairedGuard(batch.game_id, record.log_seq, 0, record.decision_id, 'positioning',
+                    _stage(rounds[record.log_seq]), str(tag), 'threat_share', None, 'share', share))
+    return tuple(guards)
+
+
+def review_guards(batches, data_store):
+    """Player-minus-Engine placement gaps that ``review_min_cost`` screens as close calls.
+
+    Each batch is attributed by the review policy against ``data_store``. Only
+    differing observed choices with a valued cost count; the paired tape is the
+    two choices' same-seed rollouts, else the gap is counted as unavailable.
+    """
+    from tft_review.policy import ReviewPolicy
+    guards = []
+    for batch in batches:
+        if not batch.records:
+            continue
+        data = data_store.get(batch.records[0].data_snapshot_id)
+        report = ReviewPolicy(min_cost=0).build(batch, data=data)
+        contexts = {context.log_seq: context for context in batch.contexts}
+        occurrences = {}
+        for row in report.timeline:
+            engine, player = row['engine_choice'], row['player_choice']
+            if row['cost'] is None or not row['differed'] or engine is None or player is None:
+                continue
+            context = contexts[row['log_seq']]
+            occurrence = occurrences.get((row['log_seq'], row['category']), 0)
+            occurrences[(row['log_seq'], row['category'])] = occurrence+1
+            left, right = _rollouts(player, context.seed), _rollouts(engine, context.seed)
+            differences = (tuple(a-b for a, b in zip(left, right))
+                if left and right and len(left) == len(right) else None)
+            guards.append(PairedGuard(batch.game_id, row['log_seq'], occurrence, row['engine_decision_id'],
+                'review:'+row['category'], _stage(row['round_id']), engine['option_id'], player['option_id'],
+                differences))
+    return tuple(guards)
+
+
+def replay_draws(harness, draws, game_ids=None):
+    """Replay finished games once per declared family-1 parameter draw.
+
+    An empty draw replays the historical tunables. Seeds and logged decision
+    points are those of the original log, so guards pair across draws.
+    """
+    from tft_review import ReplayProducer
+    from .overlay import TunableOverlay
+
+    if any(TUNABLE_FAMILIES.get(name) != '1' for draw in draws for name in draw):
+        raise ValueError('Margin model draws vary family 1 parameters only')
+    selected = None if game_ids is None else set(map(str, game_ids))
+    games = [game['game_id'] for game in harness.sessions.list_games()
+        if game['finished'] and (selected is None or game['game_id'] in selected)]
+    result = []
+    for draw in draws:
+        store = TunableOverlay(harness.data_store, draw) if draw else harness.data_store
+        producer = ReplayProducer(harness.sessions, store, repository=harness.repository,
+            hooks=harness.hooks, hook_version='margin-draw:'+store.identity if draw else 'default')
+        result.append(tuple(producer.produce(game_id) for game_id in games))
+    return result
+
+
+class StageMargins(dict):
+    """Per-stage family-2 margins with their evidence; ``tunable_value`` is the file value."""
+
+    def tunable_value(self):
+        return {stage: row['value'] for stage, row in sorted(self.items(), key=lambda item: item[0])}
+
+
+def stage_margins(guards, draw_guards, *, target, floor, costly_or_sticky, rollout_citation, model_citation):
+    """Fixed per-stage margins from shared-tape and family-1 model uncertainty.
+
+    Each decision's margin comes from ``estimate_margin``. A stage's value is
+    the root mean square of its decisions' unfloored margins, never below the
+    sourced floor. Decisions whose uncertainty is unavailable are counted by
+    reason and leave the stage at its floor when none remain. Guards must be in
+    the target's units; deterministic guards contribute model error only.
+    """
+    from collections import Counter
+
+    units = _GUARD_UNITS.get(target)
+    for guard in guards:
+        if guard.units != units:
+            raise DataError(f'{target} margins need {units} guards, not {guard.units} guards')
+    by_draw = [{guard.key: guard.mean for guard in draw if guard.mean is not None} for draw in draw_guards]
+    grouped = {}
+    for guard in guards:
+        model = tuple(draw[guard.key] for draw in by_draw if guard.key in draw)
+        estimate = estimate_margin(MarginInput(target, guard.stage, guard.kind, units, floor,
+            costly_or_sticky, guard.differences, model, rollout_citation, model_citation,
+            deterministic=guard.deterministic))
+        grouped.setdefault(guard.stage, []).append(estimate)
+    result = StageMargins()
+    for stage, estimates in grouped.items():
+        available = [estimate for estimate in estimates if estimate.reason is None]
+        reasons = Counter(estimate.reason for estimate in estimates if estimate.reason)
+        value = floor.value
+        unfloored = None
+        if available:
+            margins = [estimate.z*hypot(estimate.mc_standard_error, estimate.model_standard_deviation)
+                for estimate in available]
+            unfloored = _finite_number(sqrt(sum(item*item for item in margins)/len(margins)))
+            value = max(floor.value, unfloored)
+        result[stage] = {'value': value, 'unfloored': unfloored, 'z': estimates[0].z,
+            'decisions': len(estimates), 'available': len(available), 'reasons': dict(reasons),
+            'units': units, 'aggregation': 'root mean square of per-decision margins; sourced floor',
+            'citations': (floor.citation, rollout_citation, model_citation)}
+    return result
+
+
+def pooled(guards):
+    """The same guards under one ``all`` key, for targets the Engine reads as a scalar."""
+    from dataclasses import replace
+    return tuple(replace(guard, stage='all') for guard in guards)
+
+
+def reraise_extra(guards, draw_guards, *, floor, pivot_table, rollout_citation, model_citation):
+    """Re-raise extra per stage: the re-raise guard's own margin beyond the pivot margin.
+
+    A return to the rejected comp must clear z = 2 standard errors of that
+    comparison. The pivot margin already applied at each decision (its stage,
+    or ``post_roll_down`` after the Guide deadline) is subtracted; the result
+    never falls below the sourced extra floor.
+    """
+    from dataclasses import replace
+
+    def base(key):
+        if not isinstance(pivot_table, dict):
+            return float(pivot_table)
+        value = float(pivot_table.get(key, pivot_table.get('default', 0)) if key != 'post_roll_down'
+            else pivot_table.get('post_roll_down', pivot_table.get('default', 0)))
+        return value
+
+    def applied(guard):
+        stage = base(guard.stage)
+        return max(stage, base('post_roll_down')) if guard.base_key == 'post_roll_down' else stage
+
+    totals = stage_margins(guards, draw_guards, target='pivot_reraise_extra', floor=replace(floor, value=0),
+        costly_or_sticky=True, rollout_citation=rollout_citation, model_citation=model_citation)
+    result = StageMargins()
+    for stage, row in totals.items():
+        bases = [applied(guard) for guard in guards if guard.stage == stage]
+        mean_base = sum(bases)/len(bases)
+        value = floor.value if row['unfloored'] is None else max(floor.value, row['unfloored']-mean_base)
+        result[stage] = row | {'value': value, 'reraise_margin': row['unfloored'], 'pivot_margin_applied': mean_base,
+            'aggregation': 'root mean square re-raise margin minus the applied pivot margin; sourced floor',
+            'citations': (floor.citation, rollout_citation, model_citation)}
+    return result
+
+
+def share_band(row, *, on_floor, off_floor):
+    """Hysteresis thresholds whose band half-width is at least z threat-share errors.
+
+    The sourced thresholds fix the band's centre and minimum width; measured
+    share uncertainty can only widen it, clipped to the share's 0..1 range.
+    """
+    on, off = float(on_floor.value), float(off_floor.value)
+    if not 0 <= off <= on <= 1:
+        raise DataError('Threat share floors require 0 <= off <= on <= 1')
+    centre, half = (on+off)/2, (on-off)/2
+    if row['unfloored'] is None or row['unfloored'] <= half:
+        return on, off
+    return min(1.0, centre+row['unfloored']), max(0.0, centre-row['unfloored'])
+
+
+_STAGE_TARGETS = (
+    ('line_margin', 'econ', False), ('wisp_buy_margin', 'wisp', False),
+    ('pivot_margin_by_stage', 'pivot', True), ('comp_defining_margin', 'comp_defining', True),
+    ('transition_tolerance', 'transition', False), ('board_power_buy_min', 'shop', False),
+)
+
+
+def _extract(kind, batches):
+    if kind in ('econ', 'wisp'):
+        return paired_guards(batches, kind=kind)
+    if kind in _PLAN_GUARDS:
+        return plan_guards(batches, kind=kind)
+    return {'transition': transition_guards, 'shop': shop_guards, 'positioning': share_guards}[kind](batches)
+
+
+def _floor(original, stage, target):
+    if not isinstance(original, dict):
+        return original
+    value = original.get(stage)
+    if value is None and target == 'pivot_margin_by_stage':
+        # The Engine reads a missing pivot stage from ``default``.
+        value = original.get('default')
+    return value
+
+
+def fit_margins(harness, parameters, *, metric='fight_log_loss', draws=8, seed=0,
+        max_evaluations=64, fixed=None):
+    """Produce family-2 candidates from actual Engine tapes and bootstrap refits.
+
+    A missing compatible guard or source floor is explicitly carried; no
+    sensitivity vector, fabricated rollout or absent model error becomes a fit.
+    """
+    from dataclasses import replace
+    from .fitting import model_uncertainty, current_set_games
+    from .evaluation import chronological_split
+    from tft_data.models import plain
+    carried = {name: 'compatible_paired_guard_unavailable' for name, family in TUNABLE_FAMILIES.items()
+        if family == '2'}
+    if harness.sessions.run:
+        return {'fields': {}, 'carried': {name: 'margins_frozen_during_live_run' for name in carried},
+            'diagnostics': {}}
+    _, games = current_set_games(harness)
+    training, holdout = chronological_split([game for game in games if game['finished']])
+    if len(training) < 2 or not holdout:
+        return {'fields': {}, 'carried': {name: 'insufficient_training_games_for_model_uncertainty'
+            for name in carried}, 'diagnostics': {}}
+    uncertainty = model_uncertainty(harness, parameters, metric=metric, draws=draws,
+        seed=seed, max_evaluations=max_evaluations, fixed=fixed)
+    draw_stores = [None]+[TunableOverlay(harness.data_store, draw) for draw in uncertainty['parameters']]
+    replayed = replay_draws(harness, [{}]+uncertainty['parameters'], training)
+    current = getattr(harness.data_store, 'current', None)
+    if current is None:
+        first = next(game for game in games if game['game_id'] in training)
+        current = harness.data_store.get(first['data_snapshot_id'])
+    else:
+        current = harness.data_store.get(current.snapshot_id)
+    fields, diagnostics = {}, {}
+    carried['comp_defining_margin'] = 'comp_commit_paired_guard_unavailable'
+    drawn = ', '.join(sorted(parameters))
+    model_citation = f'Training-game bootstrap refits of {drawn}; draws={draws}, seed={seed}'
+    tape_citation = 'Original logged seed; actual paired Engine rollout placements'
+    exact_citation = 'Exact deterministic Engine evidence; no Monte Carlo term'
+    all_stages = {_stage(round_id) for round_id in current.value('round_order')}
+
+    def sourced(target):
+        floor = current.tunables.get(target)
+        if floor is None or not floor.citation:
+            carried[target] = 'sourced_floor_unavailable'
+            return None
+        return floor
+
+    def settle(target, guards, result):
+        diagnostics[target] = result
+        if not any(row['available'] for row in result.values()):
+            if guards:
+                carried[target] = 'guard_uncertainty_unavailable'
+            return False
+        carried.pop(target, None)
+        return True
+
+    produced = {}
+    for target, kind, sticky in _STAGE_TARGETS:
+        guards = _extract(kind, replayed[0])
+        if not guards:
+            continue
+        floor = sourced(target)
+        if floor is None:
+            continue
+        original = plain(floor.value)
+        result = StageMargins()
+        for stage in sorted({guard.stage for guard in guards}):
+            value = _floor(original, stage, target)
+            if value is None:
+                continue
+            result.update(stage_margins([guard for guard in guards if guard.stage == stage],
+                [_extract(kind, batch) for batch in replayed[1:]], target=target,
+                floor=replace(floor, value=value), costly_or_sticky=sticky,
+                rollout_citation=exact_citation if all(guard.deterministic for guard in guards) else tape_citation,
+                model_citation=model_citation))
+        if settle(target, guards, result):
+            # All historical stages remain valid when the Engine reads a table.
+            table = dict(original) if isinstance(original, dict) else {stage: original for stage in all_stages}
+            table.update({stage: row['value'] for stage, row in result.items() if row['available']})
+            fields[target] = produced[target] = table
+
+    guards = plan_guards(replayed[0], kind='pivot_reraise')
+    floor = sourced('pivot_reraise_extra') if guards else None
+    if floor is not None:
+        pivot_floor = current.tunables.get('pivot_margin_by_stage')
+        pivot_table = produced.get('pivot_margin_by_stage', plain(pivot_floor.value) if pivot_floor else None)
+        original = plain(floor.value)
+        if pivot_table is not None:
+            result = StageMargins()
+            for stage in sorted({guard.stage for guard in guards}):
+                value = _floor(original, stage, 'pivot_reraise_extra')
+                if value is None:
+                    continue
+                result.update(reraise_extra([guard for guard in guards if guard.stage == stage],
+                    [plan_guards(batch, kind='pivot_reraise') for batch in replayed[1:]],
+                    floor=replace(floor, value=value), pivot_table=pivot_table,
+                    rollout_citation=tape_citation, model_citation=model_citation))
+            if settle('pivot_reraise_extra', guards, result):
+                table = dict(original) if isinstance(original, dict) else {stage: original for stage in all_stages}
+                table.update({stage: row['value'] for stage, row in result.items() if row['available']})
+                fields['pivot_reraise_extra'] = table
+
+    guards = pooled(share_guards(replayed[0]))
+    on_floor, off_floor = (sourced(name) if guards else None for name in ('threat_share_on', 'threat_share_off'))
+    if on_floor is not None and off_floor is not None:
+        # Threat shares are exact; the floor is zero so the band, not a floor, bounds them.
+        result = stage_margins(guards, [pooled(share_guards(batch)) for batch in replayed[1:]],
+            target='threat_share_on', floor=replace(on_floor, value=0), costly_or_sticky=False,
+            rollout_citation=exact_citation, model_citation=model_citation)
+        on, off = share_band(result['all'], on_floor=on_floor, off_floor=off_floor)
+        result['all'] = result['all'] | {'value': on, 'off_value': off,
+            'aggregation': 'sourced hysteresis centre; half-width max(sourced, z * RMS share error)'}
+        if settle('threat_share_on', guards, result):
+            diagnostics['threat_share_off'] = result
+            carried.pop('threat_share_off', None)
+            fields['threat_share_on'], fields['threat_share_off'] = on, off
+        elif guards:
+            carried['threat_share_off'] = carried['threat_share_on']
+
+    guards = pooled(review_guards(replayed[0], harness.data_store))
+    floor = sourced('review_min_cost') if guards else None
+    if floor is not None and not isinstance(plain(floor.value), dict):
+        result = stage_margins(guards, [pooled(review_guards(batches, store))
+            for batches, store in zip(replayed[1:], draw_stores[1:])],
+            target='review_min_cost', floor=floor, costly_or_sticky=False,
+            rollout_citation=tape_citation, model_citation=model_citation)
+        if settle('review_min_cost', guards, result):
+            fields['review_min_cost'] = result['all']['value']
+    return {'fields': fields, 'carried': carried, 'diagnostics': diagnostics,
+        'model': {key: value for key, value in uncertainty.items() if key != 'parameters'}}

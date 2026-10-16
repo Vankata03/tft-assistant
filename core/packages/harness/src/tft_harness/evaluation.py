@@ -62,12 +62,12 @@ class EvaluationHarness:
         return hand_set_checks(self, game_ids, limit=limit)
 
     def fit(self, parameter_grid, *, metric='fight_log_loss', bootstrap_seed=0, bootstrap_draws=2000,
-            max_candidates=256):
+            max_candidates=256, **options):
         if metric not in FITTED_METRICS:
             raise ValueError('Report-only metrics cannot be fitted')
         from .fitting import fit
         return fit(self,parameter_grid,metric=metric,bootstrap_seed=bootstrap_seed,
-            bootstrap_draws=bootstrap_draws,max_candidates=max_candidates)
+            bootstrap_draws=bootstrap_draws,max_candidates=max_candidates, **options)
 
     def evaluate(self, game_ids=None, *, candidate=None, bootstrap_seed=0, bootstrap_draws=2000):
         accepted, rows = self._evaluate(game_ids, self.data_store)
