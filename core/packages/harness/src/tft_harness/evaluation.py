@@ -11,6 +11,7 @@ from .report import HarnessReport
 from .measurement import mean_by_game
 from .measurement import paired_game_comparison
 from .overlay import TunableOverlay
+from .metrics import FITTED_METRICS, REPORT_METRICS, placement_rows, line_rows, hit_rows, opponent_board_rows
 
 
 def chronological_split(games):
@@ -23,15 +24,47 @@ def chronological_split(games):
 
 
 class EvaluationHarness:
-    def __init__(self, sessions, data_store, *, repository, hooks=None):
+    def __init__(self, sessions, data_store, *, repository, hooks=None, current_set=None):
         self.sessions, self.data_store, self.repository, self.hooks = sessions, data_store, repository, hooks
+        current = getattr(data_store, 'current', None)
+        self.current_set = str(current_set if current_set is not None else current.set_number) if current_set is not None or current else None
 
     def advice_diff(self, candidate, game_ids=None, *, limit=20):
         from .diagnostics import advice_diff
         return advice_diff(self, candidate, game_ids, limit=limit)
 
+    def _games(self, game_ids=None, *, filter_set=True):
+        selected = None if game_ids is None else set(map(str, game_ids))
+        games = [game for game in self.sessions.list_games()
+            if selected is None or game['game_id'] in selected]
+        if not filter_set or self.current_set is None:
+            return games
+        result = []
+        for game in games:
+            set_id = game.get('set_id')
+            if set_id is None:
+                try:
+                    set_id = self.data_store.get(game['data_snapshot_id']).set_number
+                except (DataError, ValueError, OSError):
+                    # Retain missing pins for the existing explicit data exclusion.
+                    result.append(game)
+                    continue
+            if str(set_id) == self.current_set:
+                result.append(game)
+        return result
+
+    def flip_rates(self, game_ids=None, *, candidate=None, limit=20):
+        from .flips import flip_rates
+        return flip_rates(self, game_ids, candidate=candidate, limit=limit)
+
+    def hand_set_checks(self, game_ids=None, *, limit=20):
+        from .checks import hand_set_checks
+        return hand_set_checks(self, game_ids, limit=limit)
+
     def fit(self, parameter_grid, *, metric='fight_log_loss', bootstrap_seed=0, bootstrap_draws=2000,
             max_candidates=256):
+        if metric not in FITTED_METRICS:
+            raise ValueError('Report-only metrics cannot be fitted')
         from .fitting import fit
         return fit(self,parameter_grid,metric=metric,bootstrap_seed=bootstrap_seed,
             bootstrap_draws=bootstrap_draws,max_candidates=max_candidates)
@@ -45,7 +78,7 @@ class EvaluationHarness:
         proposed, proposed_rows = self._evaluate(game_ids, overlay, hook_version='candidate:'+overlay.identity)
         holdout = set(accepted.provenance['holdout_game_ids'])
         gates = {}
-        for metric in accepted.metrics:
+        for metric in FITTED_METRICS:
             original = [row for row in rows if row['metric'] == metric and row['game_id'] in holdout]
             changed = [row for row in proposed_rows if row['metric'] == metric and row['game_id'] in holdout]
             identity = lambda row: (row['game_id'], row['observation_seq'])
@@ -54,6 +87,11 @@ class EvaluationHarness:
             if old.keys() != new.keys():
                 gates[metric] = {'status': 'unavailable', 'reason': 'candidate_changed_eligible_truth',
                     'accepted_rows': len(old), 'candidate_rows': len(new)}
+                continue
+            if any(old[key]['seed'] != new[key]['seed'] for key in old):
+                raise ValueError('Candidate cannot preserve original replay seeds; evaluation gates unavailable')
+            if any(old[key]['truth'] != new[key]['truth'] for key in old):
+                gates[metric] = {'status': 'unavailable', 'reason': 'candidate_changed_eligible_truth'}
                 continue
             against = paired_game_comparison([(row['game_id'], new[key]['loss'], row['loss'])
                 for key, row in old.items()], seed=bootstrap_seed, draws=bootstrap_draws)
@@ -73,19 +111,32 @@ class EvaluationHarness:
                 'interval_convention': 'percentile95; nearest-rank2.5/97.5',
                 'no_regression': regression, 'beats_naive': beats_naive,
                 'candidate_minus_accepted': against, 'candidate_minus_naive': naive}
+        if holdout:
+            flips = self.flip_rates(holdout, candidate=candidate)
+            gates.update({'flip_rate:'+domain: dict(value['gate'])|{'sample_unit': 'game', 'scope': 'chronological_holdout'}
+                for domain, value in flips['domains'].items()})
+        else:
+            gates.update({'flip_rate:'+domain: {'status': 'unavailable', 'reason': 'insufficient_holdout_games'}
+                for domain in proposed.metrics['flip_rates']})
         return replace(proposed, gates=gates, provenance=dict(proposed.provenance)|{
             'candidate': candidate, 'candidate_id': overlay.identity,
             'comparison_reference': 'historical effective tunables; immutable static/source pins retained',
             'gate_policy': 'no significant regression versus accepted; upper95 loss difference below zero versus naive'})
 
     def _evaluate(self, game_ids, data_store, *, hook_version='default'):
-        games = [game for game in self.sessions.list_games()
-            if game_ids is None or game['game_id'] in set(map(str, game_ids))]
+        games = self._games(game_ids)
         training, holdout = chronological_split([game for game in games if game['finished']])
         producer = ReplayProducer(self.sessions, data_store, repository=self.repository,
             hooks=self.hooks, hook_version=hook_version, decision_segmentation='semantic')
         rows, exclusions, manifest, examples = [], Counter(), [], []
+        diagnostic_reports, check_reports, flip_games = [], [], {}
+        from .diagnostics import report_diagnostics, combine_diagnostics
+        from .checks import observational_checks, combine_checks
+        from .flips import measure_flips, summarize_flips
+        from tft_engine.registry import default_hooks
+        hooks = default_hooks() if self.hooks is None else tuple(self.hooks)
         counts = Counter(total_games=len(games), finished_games=sum(game['finished'] for game in games),
+            excluded_other_set_games=len(self._games(game_ids, filter_set=False))-len(games), previous_patch_games=0,
             train_games=len(training), holdout_games=len(holdout),
             locked_games=sum(game['review_locked'] for game in games), known_rounds=0, gap_rounds=0, partial_games=0)
         for game in games:
@@ -96,25 +147,63 @@ class EvaluationHarness:
                 counts['missing_or_corrupt_data_games'] += 1
                 manifest.append({'game_id': game['game_id'], 'eligible': False, 'reason': str(error)})
                 continue
+            outcome, outcome_reason = self._outcome(game['game_id'])
+            if outcome_reason:
+                counts[outcome_reason+'_games'] += 1
             known_rounds = {context.snapshot['round_id'] for context in batch.contexts}
             gap_rounds = {context.snapshot['round_id'] for context in batch.contexts
                 if 'capture_gap' in context.unavailable or any(reason.startswith('stale_field:') for reason in context.unavailable)}
             gap_share = len(gap_rounds)/len(known_rounds) if known_rounds else None
             partial = gap_share is None or gap_share > .25
+            previous_patch = batch.observations[0]['payload'].get('previous_patch', False) is True
+            counts['previous_patch_games'] += previous_patch
             counts['known_rounds'] += len(known_rounds)
             counts['gap_rounds'] += len(gap_rounds)
             counts['partial_games'] += partial
             manifest.append({'game_id': game['game_id'], 'date': game['date'], 'finished': game['finished'],
                 'highest_mode': game['mode'], 'review_locked': game['review_locked'], 'patch': game['patch'],
                 'set_id': game['set_id'], 'data_snapshot_id': data.snapshot_id, 'partial': partial,
+                'previous_patch': previous_patch,
+                'replay_identity': dict(batch.identity),
                 'gap_share': gap_share, 'split': 'holdout' if game['game_id'] in holdout else 'train',
-                'truth_sources': ['capture_log'], 'eligible': True})
+                'truth_sources': ['capture_log']+(['riot_match'] if outcome else []),
+                'outcome_status': outcome_reason or 'confirmed', 'eligible': True})
             game_rows, game_excluded = self._fight_rows(batch, data)
             sighting_rows, sighting_excluded = self._sighting_rows(batch, data)
             game_rows.extend(sighting_rows)
             game_excluded.update(sighting_excluded)
+            placement, placement_excluded = placement_rows(batch, data, partial=partial, outcome=outcome)
+            game_rows.extend(placement)
+            game_excluded.update(placement_excluded)
+            lines, line_excluded = line_rows(batch, data)
+            game_rows.extend(lines)
+            game_excluded.update(line_excluded)
+            boards, board_excluded = opponent_board_rows(batch, data, outcome)
+            game_rows.extend(boards)
+            game_excluded.update(board_excluded)
+            hits, hit_excluded = hit_rows(batch, data)
+            game_rows.extend(hits)
+            game_excluded.update(hit_excluded)
+            for row in game_rows:
+                row['previous_patch'] = previous_patch
             rows.extend(game_rows)
             exclusions.update(game_excluded)
+            from tft_review import ReviewPolicy
+            from .metrics import placement_truth
+            review = ReviewPolicy(min_cost=float(data.tunables['review_min_cost'].value)).build(batch, data=data)
+            try:
+                saved = self.sessions.read_review(game['game_id'])
+                tags = saved.get('tags', {}) if saved else None
+            except (PermissionError, ValueError, OSError):
+                tags = None
+            diagnostic_game = {'batch': batch, 'data': data, 'review': review,
+                'placement': placement_truth(batch, outcome)[0], 'tags': tags, 'outcome': outcome}
+            diagnostic_reports.append((batch.game_id, report_diagnostics(game_rows, (diagnostic_game,), {
+                'gap_rounds': len(gap_rounds), 'known_rounds': len(known_rounds)})))
+            check_reports.append((batch.game_id, observational_checks((diagnostic_game,), game_rows)))
+            measured, _ = measure_flips(batch, data, hooks)
+            for domain, value in measured.items():
+                flip_games.setdefault(domain, []).append((batch.game_id, value))
             if not game['review_locked']:
                 examples.extend(row for row in game_rows)
         stage_wins = {}
@@ -126,7 +215,7 @@ class EvaluationHarness:
                 outcomes = stage_wins.get(row['stage'], [])
                 row['naive_prediction'] = sum(outcomes)/len(outcomes) if outcomes else None
         metrics = {}
-        for name in ('fight_brier', 'fight_log_loss', 'damage_mae', 'next_sighting_log_loss'):
+        for name in FITTED_METRICS+REPORT_METRICS:
             selected = [row for row in rows if row['metric'] == name]
             losses = [row['loss'] for row in selected]
             naive = [(row['game_id'], self._naive_loss(row))
@@ -141,14 +230,43 @@ class EvaluationHarness:
                 'naive': {'value': mean_by_game(naive),
                     'eligible_rows': len(naive), 'hard_misses': naive_hard_misses,
                     'reason': 'infinite_log_loss' if naive_hard_misses else None if naive else 'no_training_baseline'}}
-        gates = {name: {'status': 'unavailable', 'reason': 'insufficient_holdout_games'} for name in metrics}
+            if name in REPORT_METRICS:
+                metrics[name]['status'] = 'report_only'
+        gates = {name: {'status': 'unavailable', 'reason': 'insufficient_holdout_games'} for name in FITTED_METRICS}
+        metrics['report_only'] = combine_diagnostics(rows, diagnostic_reports, counts)
+        metrics['hand_set_checks'] = combine_checks(check_reports, rows)
+        # Field age is reported inside the capture-gap report, never as a gate.
+        metrics['hand_set_checks']['field_age'] = {name: metrics['report_only'][name]
+            for name in ('stale_fields', 'gap_share', 'gap_rounds', 'known_rounds')}
+        metrics['flip_rates'] = {domain: summarize_flips(values) for domain, values in flip_games.items()}
+        metrics['previous_patch_split'] = {label: {name: {
+            'value': mean_by_game((row['game_id'], row['loss']) for row in rows
+                if row['metric'] == name and row['previous_patch'] is flag),
+            'eligible_rows': sum(row['metric'] == name and row['previous_patch'] is flag for row in rows)}
+            for name in FITTED_METRICS+REPORT_METRICS}
+            for label, flag in (('current_patch_static', False), ('previous_patch_static', True))}
         return HarnessReport(metrics, gates, counts, tuple(examples), tuple(manifest), {
+            'current_set': self.current_set,
+            'set_filter': 'current set only; missing legacy set metadata uses historical data pin',
             'chronological_policy': 'oldest80/newest20; holdout_count=ceil(N*.2); timestamp,numeric_id tie-break',
             'training_game_ids': training, 'holdout_game_ids': holdout,
             'evaluation_scope': 'all eligible rows; gates use holdout only',
             'metric_weighting': 'equal games; mean eligible rows within each game',
             'outcome_policy': 'win/loss Bernoulli; draw is explicitly excluded',
+            'placement_naive': 'fresh positively complete alive lobby; average rank for tied HP',
+            'report_only_policy': 'only FITTED_METRICS enter fitting/generic loss gates; flips have their own nonincrease gate',
             'sighting_naive': 'same joint support; persistence disabled'}), rows
+
+    def _outcome(self, game_id):
+        """Late match truth lives outside the log; absent or invalid truth is never inferred."""
+        reader = getattr(self.sessions, 'read_outcome', None)
+        if reader is None:
+            return None, 'outcome_store_unavailable'
+        try:
+            outcome = reader(game_id)
+        except (ValueError, OSError):
+            return None, 'outcome_invalid'
+        return (outcome, None) if outcome is not None else (None, 'outcome_unavailable')
 
     @classmethod
     def _naive_loss(cls, row):
@@ -160,7 +278,7 @@ class EvaluationHarness:
     def _loss(metric, prediction, truth):
         if metric == 'fight_brier':
             return (prediction-truth)**2
-        if metric in ('fight_log_loss', 'next_sighting_log_loss'):
+        if metric in ('fight_log_loss', 'next_sighting_log_loss', 'hit_log_loss'):
             probability = prediction if truth else 1-prediction
             return -log(probability) if probability > 0 else None
         return abs(prediction-truth)
@@ -264,6 +382,9 @@ class EvaluationHarness:
                         'loss': self._loss(metric, probability, truth), 'naive_prediction': None,
                         'data_snapshot_id': data.snapshot_id, 'seed': context.seed,
                         'own_power': forecast['own_power'], 'opponent_power': forecast['opponent_power'],
+                        'confidence': forecast['confidence'],
+                        'confidence_band': ('high' if forecast['confidence'] >= data.tunables['confidence_high_min'].value else
+                            'medium' if forecast['confidence'] >= data.tunables['confidence_medium_min'].value else 'low'),
                         'opponent_warning': forecast['opponent_warning']})
                 if truth == 0 and type(outcome.get('hp_lost')) in (int, float) and outcome['hp_lost'] >= 0:
                     base = forecast['naive_damage']
