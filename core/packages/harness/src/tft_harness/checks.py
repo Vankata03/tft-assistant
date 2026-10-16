@@ -20,8 +20,9 @@ def confidence_checks(rows):
         samples = {band: aggregate(bands[band]) for band in ('low', 'medium', 'high')}
         values = [samples[band]['value'] for band in ('low', 'medium', 'high')]
         available = all(value is not None for value in values)
+        # The spec requires accuracy to improve band over band; flat is not better.
         metrics[metric] = {'bands': samples, 'ordering': {
-            'status': ('pass' if values[0] >= values[1] >= values[2] else 'fail') if available else 'unavailable',
+            'status': ('pass' if values[0] > values[1] > values[2] else 'fail') if available else 'unavailable',
             'reason': None if available else 'missing_band_or_nonfinite_loss'}}
     available = bool(metrics) and all(row['ordering']['status'] != 'unavailable' for row in metrics.values())
     return {'by_metric': metrics, 'ordering': {'status': (

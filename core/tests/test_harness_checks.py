@@ -54,7 +54,8 @@ def test_owner_classifier_uses_qualified_end_phase_board_from_own_game_log(tmp_p
     assert 'classifier' not in report.gates
 
 
-def test_confidence_check_reports_flat_accuracy_across_three_real_source_bands(tmp_path):
+def test_confidence_check_fails_flat_accuracy_across_three_banded_games(tmp_path):
+    """Bands come from each game's pinned thresholds; equal loss is not an improvement."""
     import tomllib
     import tomli_w
     from tft_core.storage import SessionStore
@@ -65,17 +66,18 @@ def test_confidence_check_reports_flat_accuracy_across_three_real_source_bands(t
     config = tomllib.loads(path.read_text())
     config['fields']['round_types']['value']['3-2'] = 'combat'
     path.write_text(tomli_w.dumps(config))
+    tunables_path = tmp_path/'patch'/'tunables.toml'
     sessions = SessionStore(tmp_path/'logs', tmp_path/'config', live_installed=True)
     sessions.set_mode('silent')
-    entities_path = tmp_path/'patch'/'entities.json'
-    entities = json.loads(entities_path.read_text())
-    for index, sample_count in enumerate((1, 3, 99)):
-        values = entities['entities'][0]['values']
-        values['top4_rate_1'] = {'value': .75, 'source': 'owner'}
-        values['sample_count_1'] = {'value': sample_count, 'source': 'owner'}
-        entities_path.write_text(json.dumps(entities))
+    # A trait-less sighting has zero inferred confidence, so thresholds at zero
+    # place the same forecast in the medium or high band.
+    for index, (medium, high) in enumerate(((.5, .8), (0, .8), (0, 0))):
+        tunables = tomllib.loads(tunables_path.read_text())
+        tunables['fields']['confidence_medium_min']['value'] = medium
+        tunables['fields']['confidence_high_min']['value'] = high
+        tunables_path.write_text(tomli_w.dumps(tunables))
         at = NOW+timedelta(days=index)
-        refreshed = store.refresh(entities_path.parent, now=at+timedelta(seconds=1), sources=(GuideFeed(),))
+        refreshed = store.refresh(tunables_path.parent, now=at+timedelta(seconds=1), sources=(GuideFeed(),))
         assert refreshed.error is None
         data = refreshed.snapshot
         game_id = str(901+index)
@@ -94,4 +96,4 @@ def test_confidence_check_reports_flat_accuracy_across_three_real_source_bands(t
     checks = report.metrics['hand_set_checks']['confidence_bands']['by_metric']['fight_brier']
     assert {name: row['value'] for name, row in checks['bands'].items()} == {'low': .25, 'medium': .25, 'high': .25}
     assert checks['ordering']['status'] == 'fail'
-    assert report.examples == ()
+    assert 'hand_set_checks' not in report.gates
