@@ -722,3 +722,71 @@ def test_active_forms_preserve_double_trait_grants_and_share_one_shop_pool():
     assert strength(owned,2,data)==strength(Board(owned.units,owned.bench,{'avatar':1,'fire':2}),2,data)
     assert result.recommended_board.units[0].unit_id=='lux_fire'
     assert strength(owned,2,data)>0
+
+
+def test_optional_growth_correction_is_neutral_when_absent_and_applied_once_to_cached_curves():
+    from tft_engine import growth_curve, growth_curve_lookup
+    data = patch()
+    raw = growth_curve(data)
+    corrected = replace(data,tunables=dict(data.tunables)|{
+        'opponent_growth_correction_by_stage':tag({'3':1.5})})
+    assert growth_curve_lookup('3-2',corrected) == pytest.approx(1.5*raw['3-2'])
+    assert growth_curve(corrected) == raw
+    cached = replace(corrected,tunables=dict(corrected.tunables)|{'opponent_growth_curve':tag(raw)})
+    assert growth_curve_lookup('3-2',cached) == pytest.approx(1.5*raw['3-2'])
+    assert growth_curve_lookup('4-1',corrected) == growth_curve_lookup('4-1',data)
+
+
+@pytest.mark.parametrize('value',[0,-1,float('inf'),True,'1.5'])
+def test_growth_correction_rejects_invalid_stage_multipliers(value):
+    from tft_engine import growth_curve_lookup
+    from tft_data.models import DataError
+    data = patch()
+    changed = replace(data,tunables=dict(data.tunables)|{'opponent_growth_correction_by_stage':tag({'3':value})})
+    with pytest.raises(DataError,match='growth correction'):
+        growth_curve_lookup('3-2',changed)
+
+
+def test_evaluation_exposes_the_committed_pivot_guard_and_its_reraise_state():
+    from tft_engine import evaluate, DomainHook, FitTerm
+    data=patch()
+    initial=snapshot('2-2',board=Board((Unit('a',2),)),bench=(),gold=0)
+    steady=snapshot('2-3',board=Board((Unit('a',2),)),bench=(),gold=0)
+    report=evaluate(steady,GameHistory((initial,)),data,'review')
+    assert report.plan.status=='committed' and report.plan.target=='A'
+    # The guard names the compared comps; their fits and tapes are already in the evaluation.
+    assert report.guards['pivot']=={'target':'A','challenger':'B','reraise':False,'margin_key':'2'}
+    assert 'comp_defining' not in report.guards
+    hook=DomainHook('augment',(),fit=lambda comp,ctx:FitTerm(-4 if comp=='B' and ctx.snapshot.field('augments') else 0,'augment_fit'))
+    pivot=snapshot('2-3',board=Board((Unit('a',2),)),bench=(),gold=0,augments=('buff',))
+    ignored=snapshot('2-4',board=Board((Unit('a',2),)),bench=(),gold=0,augments=('buff',))
+    adopted=evaluate(ignored,GameHistory((initial,pivot)),data,'review',hooks=(hook,))
+    # Adopting the player's comp skips the pivot comparison, so no guard is claimed.
+    assert adopted.plan.rejected_target=='B' and 'pivot' not in adopted.guards
+    again=snapshot('2-5',board=Board((Unit('a',2),)),bench=(),gold=0,augments=('buff',))
+    reraised=evaluate(again,GameHistory((initial,pivot,ignored)),data,'review',hooks=(hook,))
+    assert reraised.guards['pivot']=={'target':'A','challenger':'B','reraise':True,'margin_key':'2'}
+    late=evaluate(snapshot('3-2',board=Board((Unit('a',2),)),bench=(),gold=0),GameHistory((initial,)),data,'review')
+    # Guide A's main roll-down is 3-1, so the post-roll-down margin applies.
+    assert late.guards['pivot']['margin_key']=='post_roll_down'
+
+
+def test_evaluation_exposes_comp_defining_guards_only_when_the_augment_term_decides():
+    from tft_engine import evaluate, DomainHook, FitTerm
+    data=patch()
+    early=snapshot('2-1',board=Board((Unit('a'),)),bench=(),level=3,gold=0)
+    plain=evaluate(early,GameHistory(),data,'review')
+    assert plain.plan.status=='open' and 'comp_defining' not in plain.guards
+    hook=DomainHook('augment',(),fit=lambda comp,ctx:FitTerm(-4 if comp=='B' else 0,'augment_fit'))
+    defined=evaluate(early,GameHistory(),data,'review',hooks=(hook,))
+    assert defined.guards['comp_defining']=={'top':'B','second':'A'}
+    assert defined.plan.status=='committed' and defined.plan.target=='B'
+
+
+def test_transition_advice_reports_the_current_board_power_it_is_compared_against():
+    from tft_engine import evaluate
+    owned=Board((Unit('c',3),),(Unit('a',2),))
+    late=snapshot('3-1',board=owned,bench=owned.bench,level=1,comp_lock='A')
+    transition=next(a for a in evaluate(late,GameHistory(),patch(),'live').advice if a.decision=='transition')
+    # The forced deadline swaps the stronger 3-star c out for the target's a.
+    assert transition.numbers['current_power']>transition.numbers['power']

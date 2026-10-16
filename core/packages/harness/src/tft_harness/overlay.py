@@ -6,13 +6,15 @@ from tft_review.identity import digest
 
 
 class TunableOverlay:
-    def __init__(self, historical_store, fields, *, citation='unaccepted harness candidate'):
+    def __init__(self, historical_store, fields, *, citation='unaccepted harness candidate', tagged_fields=None):
         self.historical_store = historical_store
         raw = {name: {'value': json_value(value), 'source': 'owner', 'citation': citation,
             'family': TUNABLE_FAMILIES.get(name)} for name, value in fields.items()}
         if set(raw)-set(TUNABLE_FAMILIES):
             raise ValueError('Candidate contains unknown tunables')
         self.fields = tagged(raw, 'harness candidate', families=TUNABLE_FAMILIES)
+        self.fields = dict(tagged_fields or {}) | self.fields
+        self.current = getattr(historical_store, 'current', None)
         self.identity = digest(self.fields)
 
     def get(self, snapshot_id):

@@ -722,3 +722,21 @@ def test_current_offer_tier_cannot_invent_the_tier_of_an_unknown_held_augment():
     advice=tuple(a for a in evaluate(state,GameHistory(),data,'review').advice if a.decision=='augment')
     assert advice and all(a.urgency=='information' for a in advice)
     assert any(a.payload.get('operation')=='tiers' for a in advice)
+
+
+def test_suppressed_unchanged_positioning_retains_independent_threat_share_evidence():
+    from datetime import timedelta
+    data=item_patch()
+    data=replace(data,positioning={'a':tuple(1 if i==0 else 0 for i in range(28))},
+        static=dict(data.static)|{'rules_flags':tag(dict(data.value('rules_flags'))|{'recent_opponent_exclusion_count':0})},
+        tunables=dict(data.tunables)|{'board_settle_seconds':tag(2),'threat_share_on':tag(.5),'threat_share_off':tag(.3)})
+    old=snapshot(board=Board((Unit('a',position=1),)),bench=(),level=1,gold=0,comp_lock='A',
+        board_settled_since='2026-01-01T00:00:00+00:00')
+    assert any(a.payload.get('operation')=='layout' for a in evaluate(old,GameHistory(),data,'review').advice)
+    current=replace(old,captured_at=old.captured_at+timedelta(seconds=10),
+        fields={name:replace(value,read_at=value.read_at+timedelta(seconds=10)) for name,value in old.fields.items()})
+    result=evaluate(current,GameHistory((old,)),data,'review')
+    assert not any(a.payload.get('operation')=='layout' for a in result.advice)
+    assert result.guards['threat_shares']=={'backline_access':0.,'aoe':0.}
+    unsettled=replace(current,fields={name:value for name,value in current.fields.items() if name!='board_settled_since'})
+    assert 'threat_shares' not in evaluate(unsettled,GameHistory((old,)),data,'review').guards

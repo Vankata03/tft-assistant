@@ -49,6 +49,7 @@ TUNABLE_FAMILIES = {
             "terminal_hp_weight",
             "terminal_gold_weight",
             "opponent_star_mix",
+            "opponent_growth_correction_by_stage",
             "emblem_count_prior",
             "size_level_prior",
             "sighting_persistence_weight",
@@ -163,7 +164,8 @@ def load_patch(path):
         if static["set_number"] == 18 or name != "wisp_buy_margin"
     }
     values = tagged(tunables.get("fields"), "tunables", families=families)
-    missing = set(families) - values.keys()
+    # Historical snapshots predate this optional neutral family-1 correction.
+    missing = set(families) - values.keys() - {"opponent_growth_correction_by_stage"}
     if missing:
         raise DataError(f"Missing tunables: {sorted(missing)}")
     parsed = {}

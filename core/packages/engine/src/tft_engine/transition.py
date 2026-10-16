@@ -111,7 +111,9 @@ def transition_advice(snapshot,recommended,plan,data):
     if old or new:
         current=Board(current.units,tuple(read(snapshot,data,'bench')),current.trait_counts)
         steps=CapacityModel(data).transition(current,recommended,int(read(snapshot,data,'level')),evidence)
-        advice.append(Advice('transition','Swap owned units','act_this_phase',value.confidence,'strongest_owned_board',{'power':value.power},('board','bench','round'),decision_id=f'{snapshot.snapshot_id}:transition',option_id='transition',payload={'swap_out':[u.unit_id for u in old],'swap_in':[u.unit_id for u in new],'board':recommended.to_dict(),'steps':steps},validity_state=validity))
+        # The kept board's power is what transition_tolerance compared the swap against.
+        kept=estimate_strength(current,int(read(snapshot,data,'level')),data,capacity=evidence)
+        advice.append(Advice('transition','Swap owned units','act_this_phase',value.confidence,'strongest_owned_board',{'power':value.power,'current_power':kept.power},('board','bench','round'),decision_id=f'{snapshot.snapshot_id}:transition',option_id='transition',payload={'swap_out':[u.unit_id for u in old],'swap_in':[u.unit_id for u in new],'board':recommended.to_dict(),'steps':steps},validity_state=validity))
     from .bench import bench_priority, roll_sale_indices
     priorities=bench_priority(recommended,data,target=plan.target,backup=plan.backup,recommended=recommended)
     capacity=int(static(data,'bench_size'))

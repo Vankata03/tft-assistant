@@ -78,7 +78,7 @@ def test_review_cli_records_final_capacity_and_consumer_dependencies_without_fil
     assert main(['prepare-review','test.1','--set','18','--review-dir',str(destination),
         '--cdragon-file',str(dragon),'--ddragon-file',str(bundle)])==0
     requirements=json.loads((destination/'requirements.json').read_text())
-    assert len(requirements['static'])==25 and len(requirements['tunables'])==59
+    assert len(requirements['static'])==25 and len(requirements['tunables'])==60
     coverage=json.loads((destination/'unit-capacity-coverage.json').read_text())
     assert len(coverage['rows'])==2
     assert all(row['team_slot_cost'] is None for row in coverage['rows'])
