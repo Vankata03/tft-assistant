@@ -31,6 +31,14 @@ def placement_truth(batch, outcome=None):
 
 
 def selected_line(context):
+    # simulate_lines requires these inputs, including required()'s completeness
+    # certificates. Capture's explicit stale markers can invalidate even young
+    # reads; every metric consuming this selected prediction must honor them.
+    required_fields = ('board', 'bench', 'inventory_complete', 'gold', 'hp', 'level',
+        'xp', 'streak', 'lobby', 'lobby_complete')
+    for field in required_fields:
+        if f'stale_field:{field}' in context.unavailable:
+            raise DataError(f'stale_origin_required_field:{field}')
     result = context.evaluation
     if not result or not result.get('plan', {}).get('line'):
         raise DataError('selected_line_unavailable')
