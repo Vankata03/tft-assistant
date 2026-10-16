@@ -102,3 +102,64 @@ def test_margin_never_emits_nonfinite_uncertainty():
         (0, 0), (-1e308, 1e308), 'Shared tape', 'Family-1 bootstrap')
     with pytest.raises(DataError):
         estimate_margin(inputs)
+
+
+def scale_dependent_choices(context):
+    """Two options on one shared rollout tape; the gap moves with family-1 fight_scale."""
+    from tft_engine import Advice, ScoredOption
+    scale = float(context.data.tunable('fight_scale'))
+    best = [2, 4, 3, 5]
+    other = [3+.5*scale, 4+.5*scale, 4, 6]
+    return (Advice('augment', 'Pick A', 'act_this_phase', .9, 'fixture-model',
+        decision_id=context.snapshot.snapshot_id+':augment', option_id='a',
+        options=(ScoredOption('a', 'pick', {'augment_id': 'A', 'slot': 0,
+                     'after': {'seed': context.seed, 'rollout_placements': best}}, sum(best)/4, 99),
+                 ScoredOption('b', 'pick', {'augment_id': 'B', 'slot': 1,
+                     'after': {'seed': context.seed, 'rollout_placements': other}}, sum(other)/4, 99))),)
+
+
+def margin_harness(tmp_path):
+    from tft_engine import DomainHook
+    from tft_harness import EvaluationHarness
+    from tests.test_replay_contracts import ROOT, logged_game
+
+    sessions, store, _, _ = logged_game(tmp_path, mode='baseline')
+    return EvaluationHarness(sessions, store, repository=ROOT,
+        hooks=(DomainHook('augment', (), advice=scale_dependent_choices),))
+
+
+def test_stage_margins_combine_shared_tape_error_with_family1_draw_spread(tmp_path):
+    from tft_harness.margins import paired_guards, replay_draws, stage_margins
+
+    harness = margin_harness(tmp_path)
+    guards = paired_guards(replay_draws(harness, [{}])[0], kind='augment')
+    assert [(guard.stage, guard.best_option, guard.runner_up) for guard in guards] == [('3', 'a', 'b')]
+    assert guards[0].differences == (1.5, .5, 1, 1)
+    draws = replay_draws(harness, [{'fight_scale': value} for value in (1, 2, 3)])
+    result = stage_margins(guards, [paired_guards(batches, kind='augment') for batches in draws],
+        target='comp_defining_margin', floor=TaggedValue(.1, 'default', 'Starting floor', '2'),
+        costly_or_sticky=True, rollout_citation='Engine shared seed tape',
+        model_citation='Declared family-1 fight_scale draws 1, 2, 3')
+    # Shared-tape SE: stdev(1.5,.5,1,1)/2 = .2041; draw means 1, 1.25, 1.5 have SD .25.
+    assert result['3']['value'] == pytest.approx(2*((.5/3)/4+.0625)**.5)
+    assert result['3']['decisions'] == 1 and result['3']['available'] == 1
+    assert result['3']['z'] == 2 and result['3']['reasons'] == {}
+    assert result.tunable_value() == {'3': pytest.approx(.6454972243679028)}
+
+
+def test_stage_margins_keep_the_floor_when_draws_cannot_measure_model_error(tmp_path):
+    from tft_harness.margins import paired_guards, replay_draws, stage_margins
+
+    harness = margin_harness(tmp_path)
+    guards = paired_guards(replay_draws(harness, [{}])[0], kind='augment')
+    result = stage_margins(guards, [paired_guards(replay_draws(harness, [{'fight_scale': 2}])[0], kind='augment')],
+        target='comp_defining_margin', floor=TaggedValue(.1, 'default', 'Starting floor', '2'),
+        costly_or_sticky=True, rollout_citation='tape', model_citation='one draw')
+    assert result['3']['value'] == .1
+    assert result['3']['reasons'] == {'insufficient_model_gap_draws': 1}
+    with pytest.raises(DataError, match='placement'):
+        stage_margins(guards, [], target='transition_tolerance',
+            floor=TaggedValue(2, 'owner', 'Power floor', '2'), costly_or_sticky=False,
+            rollout_citation='tape', model_citation='draws')
+    with pytest.raises(ValueError, match='family 1'):
+        replay_draws(harness, [{'line_margin': 1}])

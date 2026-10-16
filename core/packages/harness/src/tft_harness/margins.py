@@ -1,8 +1,10 @@
 """Offline family-2 margins from declared paired and model-gap uncertainty.
 
-The caller supplies differences on a shared Engine rollout tape and draws of
-that same guard difference under family-1 parameter uncertainty. This module
-does not fit models, manufacture missing draws or publish accepted tunables.
+Paired guards are read from replayed Engine records: the advised option
+against its runner-up on the same seed tape. Model error is the spread of that
+guard difference across replays under declared family-1 parameter draws. This
+module does not fit models, manufacture missing draws or publish accepted
+tunables; per-stage values go to a candidate tunables file.
 """
 from dataclasses import dataclass
 from math import hypot, isfinite, sqrt
@@ -109,3 +111,137 @@ def estimate_margin(inputs: MarginInput) -> MarginEstimate:
         max(inputs.floor.value, value), z,
         mc_error, model_error, None,
         (inputs.floor.citation, inputs.rollout_citation, inputs.model_citation))
+
+
+@dataclass(frozen=True)
+class PairedGuard:
+    """One decision's best option against its runner-up on the shared rollout tape."""
+    game_id: str
+    log_seq: int
+    occurrence: int
+    decision_id: str
+    kind: str
+    stage: str
+    best_option: str
+    runner_up: str
+    differences: tuple[float, ...]
+
+    @property
+    def key(self):
+        # Decision ids digest the valuation; logged points and options pair draws.
+        return (self.game_id, self.log_seq, self.kind, self.occurrence, self.best_option, self.runner_up)
+
+    @property
+    def mean(self):
+        return sum(self.differences)/len(self.differences)
+
+
+def _rollouts(option, seed):
+    after = option.get('payload', {}).get('after')
+    if not after or after.get('seed') != seed:
+        return None
+    values = after.get('rollout_placements')
+    if not values or any(isinstance(value, bool) or not isinstance(value, (int, float))
+                         or not isfinite(value) for value in values):
+        return None
+    return tuple(float(value) for value in values)
+
+
+def paired_guards(batches, *, kind):
+    """Paired placement differences (runner-up minus best) for one decision kind.
+
+    The best option is the Engine's advised option; the runner-up is the other
+    option with the lowest expected placement on the same seed tape. Decisions
+    without two comparable same-seed rollout vectors are omitted.
+    """
+    guards = []
+    for batch in batches:
+        rounds = {context.log_seq: context.snapshot['round_id'] for context in batch.contexts}
+        occurrences = {}
+        for record in batch.records:
+            if record.decision != kind or record.log_seq not in rounds:
+                continue
+            occurrence = occurrences.get(record.log_seq, 0)
+            occurrences[record.log_seq] = occurrence+1
+            options = {option['option_id']: option for option in record.options}
+            best = options.get(record.advice.get('option_id'))
+            best_rollouts = _rollouts(best, record.seed) if best else None
+            if best_rollouts is None:
+                continue
+            rivals = sorted(((option.get('expected_placement'), option_id, rollouts)
+                for option_id, option in options.items() if option_id != best['option_id']
+                for rollouts in (_rollouts(option, record.seed),)
+                if rollouts is not None and len(rollouts) == len(best_rollouts)
+                and isinstance(option.get('expected_placement'), (int, float))), key=lambda row: (row[0], row[1]))
+            if not rivals:
+                continue
+            _, runner_up, rollouts = rivals[0]
+            guards.append(PairedGuard(batch.game_id, record.log_seq, occurrence, record.decision_id, kind,
+                str(rounds[record.log_seq]).split('-')[0], best['option_id'], runner_up,
+                tuple(other-chosen for other, chosen in zip(rollouts, best_rollouts))))
+    return tuple(guards)
+
+
+def replay_draws(harness, draws, game_ids=None):
+    """Replay finished games once per declared family-1 parameter draw.
+
+    An empty draw replays the historical tunables. Seeds and logged decision
+    points are those of the original log, so guards pair across draws.
+    """
+    from tft_review import ReplayProducer
+    from .overlay import TunableOverlay
+
+    if any(TUNABLE_FAMILIES.get(name) != '1' for draw in draws for name in draw):
+        raise ValueError('Margin model draws vary family 1 parameters only')
+    selected = None if game_ids is None else set(map(str, game_ids))
+    games = [game['game_id'] for game in harness.sessions.list_games()
+        if game['finished'] and (selected is None or game['game_id'] in selected)]
+    result = []
+    for draw in draws:
+        store = TunableOverlay(harness.data_store, draw) if draw else harness.data_store
+        producer = ReplayProducer(harness.sessions, store, repository=harness.repository,
+            hooks=harness.hooks, hook_version='margin-draw:'+store.identity if draw else 'default')
+        result.append(tuple(producer.produce(game_id) for game_id in games))
+    return result
+
+
+class StageMargins(dict):
+    """Per-stage family-2 margins with their evidence; ``tunable_value`` is the file value."""
+
+    def tunable_value(self):
+        return {stage: row['value'] for stage, row in sorted(self.items(), key=lambda item: item[0])}
+
+
+def stage_margins(guards, draw_guards, *, target, floor, costly_or_sticky, rollout_citation, model_citation):
+    """Fixed per-stage margins from shared-tape and family-1 model uncertainty.
+
+    Each decision's margin comes from ``estimate_margin``. A stage's value is
+    the root mean square of its decisions' unfloored margins, never below the
+    sourced floor. Decisions whose uncertainty is unavailable are counted by
+    reason and leave the stage at its floor when none remain.
+    """
+    from collections import Counter
+
+    if _GUARD_UNITS.get(target) != 'placement':
+        raise DataError('Rollout-placement margins apply to placement-unit targets only')
+    by_draw = [{guard.key: guard.mean for guard in draw} for draw in draw_guards]
+    grouped = {}
+    for guard in guards:
+        model = tuple(draw[guard.key] for draw in by_draw if guard.key in draw)
+        estimate = estimate_margin(MarginInput(target, guard.stage, guard.kind, 'placement', floor,
+            costly_or_sticky, guard.differences, model, rollout_citation, model_citation))
+        grouped.setdefault(guard.stage, []).append(estimate)
+    result = StageMargins()
+    for stage, estimates in grouped.items():
+        available = [estimate for estimate in estimates if estimate.reason is None]
+        reasons = Counter(estimate.reason for estimate in estimates if estimate.reason)
+        value = floor.value
+        if available:
+            unfloored = [estimate.z*hypot(estimate.mc_standard_error, estimate.model_standard_deviation)
+                for estimate in available]
+            value = max(floor.value, _finite_number(sqrt(sum(item*item for item in unfloored)/len(unfloored))))
+        result[stage] = {'value': value, 'z': estimates[0].z, 'decisions': len(estimates),
+            'available': len(available), 'reasons': dict(reasons), 'units': 'placement',
+            'aggregation': 'root mean square of per-decision margins; sourced floor',
+            'citations': (floor.citation, rollout_citation, model_citation)}
+    return result
