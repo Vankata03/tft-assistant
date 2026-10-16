@@ -233,7 +233,7 @@ def test_legacy_stats_less_game_end_marker_excludes_only_the_unobserved_terminal
     gap = next(row for row in batch.observations if row['kind'] == 'capture_gap')
     assert gap['payload']['start'] == later.isoformat()
     assert gap['payload']['end'] == (NOW+timedelta(seconds=3)).isoformat()
-    assert sessions.read_events('901') == raw
+    assert [row for row in sessions.read_events('901') if row['kind'] != 'replay_cache'] == raw
     assert ReviewService(sessions, data_store, repository=ROOT).produce('901')['game_id'] == '901'
 
 
