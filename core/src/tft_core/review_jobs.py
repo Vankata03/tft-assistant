@@ -14,9 +14,12 @@ import sys
 import threading
 from uuid import uuid4
 from datetime import UTC, datetime
+from time import time
+from hashlib import sha256
 
 from tft_core.engine_runtime import LatestEngineWorker
 from tft_core.review_lease import OwnedReviewChildren, JobMutex, atomic_record
+from tft_core.outcomes import OutcomeCollector
 
 
 def _write(path, value):
@@ -24,7 +27,8 @@ def _write(path, value):
 
 class ReviewJobs:
     def __init__(self, sessions, data_store, service, repository, *, ready=None,
-                 hard_timeout=600, latency_budget=30, error=None):
+                 hard_timeout=600, latency_budget=30, error=None,
+                 outcome_retry_seconds=30, outcome_timeout=30):
         self.sessions, self.data_store, self.service = sessions, data_store, service
         self.repository = Path(repository)
         self.root = sessions.root / 'review-jobs'
@@ -35,6 +39,11 @@ class ReviewJobs:
         self.ready, self.hard_timeout = ready, hard_timeout
         self.latency_budget = latency_budget
         self.error = error
+        self.outcomes = OutcomeCollector(sessions)
+        self.outcome_retry_seconds = outcome_retry_seconds
+        # Optional external truth gets its own short watchdog so a slow API or
+        # a persisted server cooldown cannot hold the review for hard_timeout.
+        self.outcome_timeout = min(outcome_timeout, hard_timeout)
         self.status = 'Review worker waiting for a finalized game'
         self._wake = asyncio.Event()
         self._closed = False
@@ -44,6 +53,7 @@ class ReviewJobs:
         self._requests_lock = threading.Lock()
         self._task = None
         self._process = None
+        self._launches = set()
         self._future = None
         self._identity = LatestEngineWorker(self._identify, self._identified)
         self.children = OwnedReviewChildren(self.root / 'leases')
@@ -119,7 +129,10 @@ class ReviewJobs:
     async def _run(self):
         await self._recover()
         while not self._closed:
-            await self._wake.wait()
+            try:
+                await asyncio.wait_for(self._wake.wait(), self.outcome_retry_seconds)
+            except TimeoutError:
+                pass
             self._wake.clear()
             # Persisted requests form the durable backlog. No list/task/callback
             # is allocated for every completed game; only one request is selected.
@@ -127,7 +140,7 @@ class ReviewJobs:
                 selected = None
                 for path in self.requests.glob('*.json'):
                     request = json.loads(path.read_text())
-                    if request['state'] == 'queued':
+                    if request['state'] == 'queued' and request.get('outcome_retry_at', 0) <= time():
                         selected = (path, request)
                         break
                 if selected is None:
@@ -142,11 +155,32 @@ class ReviewJobs:
                     request['reason'] = self.status
                     if self.error:
                         self.error('review_unavailable', self.status)
+                # Preserve an on-demand request accepted while this job ran. Server
+                # worker threads enqueue under the same lock as this handled write.
+                outcome = self.outcomes.status(request['game_id'])
+                notify = None
                 with self._requests_lock:
                     latest = json.loads(path.read_text())
-                    if latest.get('request_nonce') == request.get('request_nonce'):
-                        request['state'] = 'handled'
-                        _write(path, request)
+                    if latest.get('request_nonce') != request.get('request_nonce'):
+                        continue
+                    request['state'] = 'handled'
+                    if outcome is not None:
+                        request['outcome_state'] = outcome['state']
+                        request.pop('outcome_reason', None)
+                        request['outcome_attempts'] = request.get('outcome_attempts', 0) + 1
+                        if outcome['state'] == 'pending' and request['outcome_attempts'] < 10:
+                            request.update(state='queued', regenerate=False,
+                                outcome_retry_at=time() + self.outcome_retry_seconds)
+                        if outcome['state'] != 'confirmed':
+                            reason = outcome['reason']
+                            if outcome['state'] == 'pending' and request['state'] == 'handled':
+                                reason = 'Outcome retry limit reached; check owner match API and regenerate review to retry'
+                            request['outcome_reason'] = reason
+                            if outcome.get('configured'):
+                                notify = reason
+                    _write(path, request)
+                if notify and self.error:
+                    self.error('outcome_unavailable', notify)
 
     async def _recover(self):
         reconciled = await self.children.reconcile()
@@ -178,7 +212,47 @@ class ReviewJobs:
             chunks.append(chunk)
         return b''.join(chunks)
 
+    async def _launch_child(self, command, environment, flags):
+        revoked = False
+        async def spawn():
+            process = await asyncio.create_subprocess_exec(*command, env=environment,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, creationflags=flags)
+            if revoked:
+                stopped = await self._stop_process(process)
+                if stopped:
+                    self.children.reaped(command[command.index('--job-id') + 1], command, stopped[0])
+                raise asyncio.CancelledError()
+            self._process = process
+            self.children.launch_state(command, 'active')
+            return process
+        launch = asyncio.create_task(spawn())
+        self._launches.add(launch)
+        def finished(task):
+            self._launches.discard(task)
+            if not task.cancelled():
+                task.exception()
+        launch.add_done_callback(finished)
+        try:
+            await asyncio.shield(launch)
+        except asyncio.CancelledError:
+            revoked = True
+            self.children.launch_state(command, 'revoked')
+            launch.cancel()
+            _, pending = await asyncio.wait({launch}, timeout=.15)
+            if pending:
+                job_id = command[command.index('--job-id') + 1]
+                self._blocked.add(job_id)
+                self.children.launch_state(command, 'blocked')
+                if self.error:
+                    self.error('review_launch_blocked', 'Process startup cancellation remains unconfirmed; late child admission is blocked')
+            raise
+
     async def _produce(self, game_id, *, regenerate=False):
+        await self._collect_outcome(game_id)
+        if self._closed:
+            return
+        # Collection can change the historical review identity. Compute it only
+        # after the owned preflight has exited and its final facts are durable.
         identity = await self._job_identity(game_id)
         job_id = identity['job_id']
         if not isinstance(job_id, str) or len(job_id) != 64 or any(c not in '0123456789abcdef' for c in job_id):
@@ -200,12 +274,10 @@ class ReviewJobs:
             command = self.children.command(self._command(game_id, job_id), game_id, job_id)
             environment = dict(os.environ)
             environment.pop('TFT_CORE_TOKEN', None)
-            self._process = await asyncio.create_subprocess_exec(*command, env=environment,
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-                creationflags=flags)
-            reads = [asyncio.create_task(self._read_bounded(self._process.stdout, 65536)),
-                     asyncio.create_task(self._read_bounded(self._process.stderr, 262144))]
             async with asyncio.timeout(self.hard_timeout):
+                await self._launch_child(command, environment, flags)
+                reads = [asyncio.create_task(self._read_bounded(self._process.stdout, 65536)),
+                         asyncio.create_task(self._read_bounded(self._process.stderr, 262144))]
                 output, diagnostic = await asyncio.gather(*reads)
                 exit_code = await self._process.wait()
             receipt = json.loads(output)
@@ -268,10 +340,71 @@ class ReviewJobs:
                 finally:
                     reservation.close()
 
+    async def _collect_outcome(self, game_id):
+        configured = (self.sessions.config_root/'outcome-source.json').exists() or self.sessions.run is not None
+        confirmed = self.sessions.read_outcome(game_id) is not None
+        if confirmed or not configured:
+            previous = self.outcomes.status(game_id) or {}
+            _write(self.sessions.root/'outcome-status'/f'{game_id}.json', {
+                'game_id': game_id, 'attempts': previous.get('attempts', 0) + 1,
+                'configured': configured, 'state': 'confirmed' if confirmed else 'unavailable',
+                'reason': None if confirmed else 'Configure private outcome-source.json with owner_puuid, platform and region, or start the EUNE run'})
+            return
+        job_id = sha256(f'outcome:{self.sessions.root.resolve()}:{game_id}'.encode()).hexdigest()
+        if job_id in self._blocked:
+            raise ValueError('Outcome child ownership is blocked')
+        reservation = JobMutex(self.children.root, 'schedule-' + job_id)
+        if not reservation.acquire():
+            raise ValueError('Another core owns this outcome collection')
+        reads = []
+        command = None
+        try:
+            command = self.children.command(self._command(game_id, job_id) + ['--collect-outcome'], game_id, job_id)
+            environment = dict(os.environ)
+            environment.pop('TFT_CORE_TOKEN', None)
+            flags = (subprocess.BELOW_NORMAL_PRIORITY_CLASS | subprocess.CREATE_NO_WINDOW) if os.name == 'nt' else 0
+            async with asyncio.timeout(self.outcome_timeout):
+                await self._launch_child(command, environment, flags)
+                reads = [asyncio.create_task(self._read_bounded(self._process.stdout, 65536)),
+                         asyncio.create_task(self._read_bounded(self._process.stderr, 262144))]
+                output, diagnostic = await asyncio.gather(*reads)
+                exit_code = await self._process.wait()
+            receipt = json.loads(output)
+            if (exit_code or receipt.get('status') != 'outcome_collected'
+                or receipt.get('game_id') != game_id or receipt.get('job_id') != job_id):
+                raise ValueError('Outcome worker did not return a checked collection receipt')
+        except Exception as error:
+            # Stop/reap before publishing retry status. No detached worker can
+            # subsequently replace it or publish truth after shutdown returns.
+            stopped = await self._stop_child()
+            if stopped and command and self.children.record_path(job_id).exists():
+                self.children.reaped(job_id, command, stopped[0])
+            previous = self.outcomes.status(game_id) or {}
+            _write(self.sessions.root/'outcome-status'/f'{game_id}.json', {
+                'game_id': game_id, 'attempts': previous.get('attempts', 0) + 1,
+                'configured': (self.sessions.config_root/'outcome-source.json').exists() or self.sessions.run is not None,
+                'state': 'pending', 'reason': f'Outcome collection {type(error).__name__}; retry pending'})
+        finally:
+            try:
+                stopped = await self._stop_child()
+                if stopped and command and self.children.record_path(job_id).exists():
+                    self.children.reaped(job_id, command, stopped[0])
+            finally:
+                for task in reads:
+                    task.cancel()
+                await asyncio.gather(*reads, return_exceptions=True)
+                reservation.close()
+
     async def _stop_child(self):
-        process, self._process = self._process, None
+        process = self._process
         if process is None:
             return None
+        stopped = await self._stop_process(process)
+        if stopped:
+            self._process = None
+        return stopped
+
+    async def _stop_process(self, process):
         if process.returncode is not None:
             return (process.returncode,)
         try:
@@ -301,8 +434,11 @@ class ReviewJobs:
         if self._task:
             self._task.cancel()
             await asyncio.gather(self._task, return_exceptions=True)
+        launches = set(self._launches)
+        if launches:
+            await asyncio.wait(launches, timeout=.3)
         stopped = await self._identity.shutdown(timeout=.25)
         if not stopped:
             self.status = 'Review identity shutdown timed out; no result was published'
         self.children.close_owner()
-        return stopped and self._child_shutdown_complete
+        return stopped and self._child_shutdown_complete and not self._launches

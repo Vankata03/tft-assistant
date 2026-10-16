@@ -826,9 +826,9 @@ class CaptureRuntime:
                             self._worker_generation += 1
                             self.pinned_data = None
                             self._last_positive_at = None
-                            self._begin(update.game_id)
+                            self._begin(update.game_id, queue_id=update.queue_id)
                     elif self.worker is None:
-                        self._begin(update.game_id)
+                        self._begin(update.game_id, queue_id=update.queue_id)
                     if (
                         update.game_mode == "TFT"
                         and update.game_id == self.sessions.active_game_id
@@ -941,7 +941,7 @@ class CaptureRuntime:
         self.status = message if finalized else self.status + "; " + message
         return finalized
 
-    def _begin(self, game_id):
+    def _begin(self, game_id, *, queue_id=None):
         if not self.settings:
             return
         events = self.sessions.read_events(game_id)
@@ -975,6 +975,7 @@ class CaptureRuntime:
             previous_patch=data.patch != self.settings.expected_patch,
             engine_version=self._engine_version,
             set_id=str(data.set_number),
+            queue_id=queue_id,
         )
         original = self.sessions.read_events(game_id)[0]["payload"]
         self.pinned_data = data

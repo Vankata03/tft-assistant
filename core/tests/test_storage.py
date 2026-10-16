@@ -1,5 +1,4 @@
 from tests.test_harness_baseline import baseline_fixture
-from pathlib import Path
 
 import pytest
 
@@ -62,7 +61,7 @@ def test_run_freezes_baseline_unlocks_reviews_and_numbers_same_set_live_games(tm
     with pytest.raises(ValueError, match="already"):
         session.start_run(baseline, set_id="18")
     for i in range(11):
-        session.start_game(str(200+i), set_id="18", timestamp="2026-10-07T12:00:00Z")
+        session.start_game(str(200+i), set_id="18", queue_id=1100, timestamp="2026-10-07T12:00:00Z")
         session.end_game(placement=4)
     session.start_game("400", set_id="19", timestamp="2026-12-02T12:00:00Z")
     session.end_game(placement=4)
@@ -86,7 +85,7 @@ def test_lossless_keyframes_media_cap_keep_logs_and_pinned_run_media(tmp_path):
     old_frame = session.write_keyframe(image, reason="shop_after_roll")
     session.end_game()
     session.start_run(baseline_fixture(sessions=session, at="2026-10-06T12:00:00Z"), set_id="18", timestamp="2026-10-06T12:00:00Z")
-    session.start_game("502", set_id="18", timestamp="2026-10-07T12:00:00Z")
+    session.start_game("502", set_id="18", queue_id=1100, timestamp="2026-10-07T12:00:00Z")
     pinned_frame = session.write_keyframe(image, reason="augment_offer")
     session.end_game()
     decoded = Image.open(BytesIO(session.read_media("502", pinned_frame)))
