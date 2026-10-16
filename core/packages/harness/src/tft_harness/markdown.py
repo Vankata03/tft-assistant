@@ -8,7 +8,7 @@ from tft_review.contracts import json_value
 
 
 _OMIT = {'examples', 'manifest', 'largest_changes', 'changed_points', 'rows',
-    'target', 'conditioning', 'training_game_ids', 'holdout_game_ids',
+    'target', 'conditioning', 'carried_citation', 'training_game_ids', 'holdout_game_ids',
     'eligible_game_ids', 'candidates', 'citation', 'citations'}
 
 

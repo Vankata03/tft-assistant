@@ -168,7 +168,7 @@ def _finite(value):
     return False
 
 
-def write_candidate(committed, updates, destination, *, citation, generated_at=None, notes=(), sources=None, provenance=None):
+def write_candidate(committed, updates, destination, *, citation, generated_at=None, notes=(), sources=None, provenance=None, citations=None):
     """Write a whole candidate copy of ``committed`` with ``updates`` applied.
 
     Only fitted families (1, 2 and 3) can change. Each changed field records
@@ -194,7 +194,7 @@ def write_candidate(committed, updates, destination, *, citation, generated_at=N
     document['fields'] = dict(document['fields'])
     for name, value in sorted(updates.items()):
         document['fields'][name] = {'value': plain(value), 'source': (sources or {}).get(name, 'owner'),
-            'citation': citation, 'family': families[name]}
+            'citation': (citations or {}).get(name, citation), 'family': families[name]}
     tagged(document['fields'], 'candidate tunables', families=families)
     producer = (provenance or {}).get('runtime_code') or producer_identity()
     document['harness_candidate'] = {'accepted_file_commit': committed.commit, 'accepted_blob': committed.blob,

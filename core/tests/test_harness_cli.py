@@ -204,7 +204,14 @@ def test_priors_cli_uses_qualified_public_counts_and_preserves_source(tmp_path, 
         '--output', str(output), '--prior-evidence', str(source), '--bootstrap-draws', '20']) == 0
     candidate = tomllib.loads(next(output.glob('*.toml')).read_text())
     fitted = candidate['fields']['cost_star_baseline']
-    assert fitted['source'] == 'public-statistics' and fitted['family'] == '3'
+    assert fitted['source'] == 'owner' and fitted['family'] == '3'
+    assert 'Mixed-origin table' in fitted['citation']
+    cells = candidate['harness_candidate']['provenance']['table_cells']['cost_star_baseline']
+    assert cells['fitted_cells'] == [['1', '1']]
+    assert ['3', '2'] in cells['carried_cells']
+    assert cells['carried_source'] == 'owner'
+    report = next(output.glob('*.md')).read_text()
+    assert '"fitted_cells"' in report and '"carried_cells"' in report
     assert candidate['harness_candidate']['provenance']['cohorts'][0]['citation'].startswith('https://tactics.tools/')
     assert str(source) not in next(output.glob('*.toml')).read_text()
 
@@ -289,6 +296,7 @@ def test_aggregate_report_scrubs_every_path_form_but_keeps_its_own_reference_sta
     from tests.test_harness_tunables_io import committed_repository
     from tft_core.harness_cli import main
     from tft_harness.markdown import aggregate_only
+    assert aggregate_only({'carried_citation': '/private/owner/notes'}) == {}
     omitted = 'details omitted from aggregate artifact'
     for leaked in ('games/NA1_901/events.jsonl', 'see logs\\games\\901', 'C:\\Users\\owner\\x',
             '/private/var/x', '~/logs/x', 'error at "/tmp/x"'):

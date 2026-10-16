@@ -393,3 +393,19 @@ def test_harness_excludes_delayed_targets_inside_retrospectively_recorded_gaps(t
     assert after[:len(original)] == original
     assert all(row['kind'] == 'replay_cache' for row in after[len(original):])
     assert store.get(data.snapshot_id) == data
+
+
+@pytest.mark.parametrize('qualification', [None, {}, {'population': 'target_selected'}])
+def test_public_statistics_support_requires_population_qualification(tmp_path, qualification):
+    from tft_review.sighting_forecast import forecast_sighting
+    from tft_review.contracts import json_value
+    data = support_data(tmp_path)
+    original = data.static['opponent_joint_support']
+    raw = json_value(original.value)
+    if qualification is not None:
+        raw['population_qualification'] = qualification
+    data = replace(data, static=dict(data.static)|{'opponent_joint_support':
+        TaggedValue(raw, 'public-statistics', original.citation)})
+    result = forecast_sighting(TraitSighting('rival', '3-2', 1, {'fire': 1}), data)
+    assert result.probability is None
+    assert result.reason == 'joint_sighting_support_population_unqualified'

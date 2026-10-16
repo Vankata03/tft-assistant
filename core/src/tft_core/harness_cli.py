@@ -93,9 +93,14 @@ def _offline(args):
             checks=checks, producer=producer)
         if updates:
             runtime = producer
-            sources = {name: 'public-statistics' for name in updates} if priors else None
+            cells = priors.diagnostics.get('table_cells', {}) if priors else {}
+            sources = {name: ('owner' if cells.get(name, {}).get('carried_cells')
+                else 'public-statistics') for name in updates} if priors else None
             write_candidate(reference, updates, output, citation='Offline harness candidate; qualification and gates in private report',
-                sources=sources, provenance=({'method': 'qualified public empirical Bayes and temporal holdout',
+                sources=sources, citations={name: 'Mixed-origin table, unaccepted candidate, not owner confirmation: fitted cells use qualified public statistics; '
+                    'remaining cells retain accepted provenance recorded in harness_candidate.provenance.table_cells'
+                    for name, detail in cells.items() if detail['carried_cells']},
+                provenance=({'table_cells': cells, 'method': 'qualified public empirical Bayes and temporal holdout',
                     'cohorts': priors.diagnostics.get('public_cohorts', []), 'runtime_code': runtime} if priors else
                     {'method': fitted.solver['method'], 'metric': args.metric,
                      'family2_method': 'actual paired Engine tapes and training-game bootstrap refits',
