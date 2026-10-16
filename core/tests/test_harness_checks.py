@@ -52,3 +52,46 @@ def test_owner_classifier_uses_qualified_end_phase_board_from_own_game_log(tmp_p
     assert check['by_stage']['3']['value'] == 1
     assert check['truth_sources'] == ('own_terminal_capture',)
     assert 'classifier' not in report.gates
+
+
+def test_confidence_check_reports_flat_accuracy_across_three_real_source_bands(tmp_path):
+    import tomllib
+    import tomli_w
+    from tft_core.storage import SessionStore
+    from tests.test_replay_contracts import historical_data, GuideFeed
+
+    store, _ = historical_data(tmp_path)
+    path = tmp_path/'patch'/'static.toml'
+    config = tomllib.loads(path.read_text())
+    config['fields']['round_types']['value']['3-2'] = 'combat'
+    path.write_text(tomli_w.dumps(config))
+    sessions = SessionStore(tmp_path/'logs', tmp_path/'config', live_installed=True)
+    sessions.set_mode('silent')
+    entities_path = tmp_path/'patch'/'entities.json'
+    entities = json.loads(entities_path.read_text())
+    for index, sample_count in enumerate((1, 3, 99)):
+        values = entities['entities'][0]['values']
+        values['top4_rate_1'] = {'value': .75, 'source': 'owner'}
+        values['sample_count_1'] = {'value': sample_count, 'source': 'owner'}
+        entities_path.write_text(json.dumps(entities))
+        at = NOW+timedelta(days=index)
+        refreshed = store.refresh(entities_path.parent, now=at+timedelta(seconds=1), sources=(GuideFeed(),))
+        assert refreshed.error is None
+        data = refreshed.snapshot
+        game_id = str(901+index)
+        sessions.start_game(game_id, set_id='18', patch=data.patch, data_snapshot_id=data.snapshot_id,
+            timestamp=at.isoformat())
+        sessions.append_event('sighting', {'opponent_id': 'rival', 'round_id': '3-2',
+            'level': 1, 'traits': {}, 'hidden_traits': 0}, timestamp=at.isoformat())
+        raw = log_snapshot(data, at=at)|{'game_id': game_id}
+        sessions.append_event('snapshot', raw, timestamp=at.isoformat())
+        sessions.append_event('fight_start', {'round_id': '3-2', 'opponent_id': 'rival'},
+            timestamp=(at+timedelta(seconds=1)).isoformat())
+        sessions.append_event('fight_result', {'round_id': '3-2', 'opponent_id': 'rival', 'result': 'loss', 'hp_lost': 5},
+            timestamp=(at+timedelta(seconds=2)).isoformat())
+        sessions.end_game(placement=4, timestamp=(at+timedelta(seconds=3)).isoformat())
+    report = EvaluationHarness(sessions, store, repository=ROOT).evaluate()
+    checks = report.metrics['hand_set_checks']['confidence_bands']['by_metric']['fight_brier']
+    assert {name: row['value'] for name, row in checks['bands'].items()} == {'low': .25, 'medium': .25, 'high': .25}
+    assert checks['ordering']['status'] == 'fail'
+    assert report.examples == ()
