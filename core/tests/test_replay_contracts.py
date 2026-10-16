@@ -191,7 +191,7 @@ def test_replay_uses_historical_data_and_preserves_stale_fields_and_gap_boundari
     assert [row for row in batch.observations if row['kind'] == 'capture_gap'][0]['payload']['reason'] == 'window_unavailable'
 
 
-@pytest.mark.parametrize('bad', ['wrong_game', 'changed_pin', 'future_field', 'naive_event', 'missing_fields', 'reversed_gap', 'bool_version'])
+@pytest.mark.parametrize('bad', ['wrong_game', 'changed_pin', 'future_field', 'naive_event', 'missing_fields', 'reversed_gap', 'unbounded_gap', 'bool_version'])
 def test_committed_malformed_replay_records_fail_visibly(tmp_path, bad):
     from tft_review import ReplayProducer
     sessions, data_store, data, _ = logged_game(tmp_path, finish=False)
@@ -204,6 +204,8 @@ def test_committed_malformed_replay_records_fail_visibly(tmp_path, bad):
     elif bad == 'missing_fields': payload = {'game_id': '901'}
     elif bad == 'reversed_gap':
         kind, payload = 'capture_gap', {'start': (NOW+timedelta(seconds=2)).isoformat(), 'end': NOW.isoformat(), 'reason': 'test'}
+    elif bad == 'unbounded_gap':
+        kind, payload = 'capture_gap', {'reason': 'window_unavailable'}
     sessions.append_event(kind, payload, timestamp=timestamp)
     if bad == 'bool_version':
         events = sessions.read_events('901')
@@ -211,6 +213,28 @@ def test_committed_malformed_replay_records_fail_visibly(tmp_path, bad):
         sessions.log_path('901').write_text(''.join(json.dumps(row)+'\n' for row in events))
     with pytest.raises(ValueError, match='[Rr]eplay'):
         ReplayProducer(sessions, data_store, repository=ROOT).produce('901')
+
+
+def test_legacy_stats_less_game_end_marker_excludes_only_the_unobserved_terminal_span(tmp_path):
+    """Older logs recorded a game that left without stats as an interval-less gap."""
+    from tft_review import ReplayProducer, ReviewService
+    sessions, data_store, data, _ = logged_game(tmp_path, finish=False, mode='baseline')
+    later = NOW+timedelta(seconds=1)
+    sessions.append_event('snapshot', log_snapshot(data, at=later, snapshot_id='later'), timestamp=later.isoformat())
+    sessions.append_event('capture_gap', {'reason': 'game_ended_without_stats'},
+        timestamp=(NOW+timedelta(seconds=3)).isoformat())
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=4)).isoformat())
+    raw = sessions.read_events('901')
+
+    batch = ReplayProducer(sessions, data_store, repository=ROOT).produce('901')
+
+    assert batch.contexts[0].unavailable == () and batch.contexts[0].evaluation is not None
+    assert batch.contexts[1].unavailable == ('capture_gap',) and batch.contexts[1].evaluation is None
+    gap = next(row for row in batch.observations if row['kind'] == 'capture_gap')
+    assert gap['payload']['start'] == later.isoformat()
+    assert gap['payload']['end'] == (NOW+timedelta(seconds=3)).isoformat()
+    assert [row for row in sessions.read_events('901') if row['kind'] != 'replay_cache'] == raw
+    assert ReviewService(sessions, data_store, repository=ROOT).produce('901')['game_id'] == '901'
 
 
 @pytest.mark.parametrize('missing', [True, False])
