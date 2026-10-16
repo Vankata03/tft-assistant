@@ -250,8 +250,10 @@ class SessionStore:
 
     def start_game(self, game_id: str | int, *, patch: str | None = None, data_snapshot_id: str | None = None,
                    model_version: str | None = None, previous_patch: bool = False, engine_version: str = "",
-                   set_id: str | None = None, timestamp: str | None = None) -> None:
+                   set_id: str | None = None, queue_id: int | None = None, timestamp: str | None = None) -> None:
         with self._lock:
+            if queue_id is not None and (type(queue_id) is not int or queue_id <= 0):
+                raise ValueError('queue_id must be a positive integer or unknown')
             game_id = _game_id(game_id)
             if self.active_game_id == game_id:
                 return
@@ -285,7 +287,8 @@ class SessionStore:
             else:
                 self._append(game_id, "game_start", {"game_id": game_id, "mode": self.mode.value, "patch": patch,
                     "data_snapshot_id": data_snapshot_id, "model_version": model_version,
-                    "previous_patch": previous_patch, "engine_version": engine_version, "set_id": str(set_id) if set_id is not None else None}, timestamp)
+                    "previous_patch": previous_patch, "engine_version": engine_version, "queue_id": queue_id,
+                    "set_id": str(set_id) if set_id is not None else None}, timestamp)
                 if torn_tail:
                     self._append(game_id, "capture_gap", {"reason": "incomplete_first_event", "start": None,
                                                          "end": timestamp or utc_now()}, timestamp)
@@ -327,7 +330,7 @@ class SessionStore:
         with self._lock:
             if self.active_game_id is None:
                 return
-            if placement is not None and not 1 <= placement <= 8:
+            if placement is not None and (type(placement) is not int or not 1 <= placement <= 8):
                 raise ValueError("placement must be 1 through 8")
             self._append(self.active_game_id, "game_end", {"placement": placement}, timestamp)
             self.active_game_id = None
@@ -336,7 +339,7 @@ class SessionStore:
             self.enforce_media_cap()
 
     def rebuild_index(self) -> None:
-        """Recreate the disposable index only from logs and the frozen run."""
+        """Recreate the disposable index from logs, outcomes and the frozen run."""
         with self._lock:
             games = []
             replay_entries = []
@@ -353,15 +356,28 @@ class SessionStore:
                 modes = [SessionMode(metadata["mode"])] + [SessionMode(e["payload"]["mode"]) for e in events if e["kind"] == "mode_change"]
                 highest = max(modes, key=_MODE_RANK.__getitem__)
                 end = next((e for e in reversed(events) if e["kind"] == "game_end"), None)
+                placement = end['payload'].get('placement') if end else None
+                # The index is disposable and gates capture start. An invalid
+                # private artifact stays unavailable here and fails on read_outcome.
+                outcome_reason = None
+                try:
+                    outcome = self.read_outcome(path.parent.name)
+                    if outcome is not None and placement not in {None, outcome['placement']}:
+                        raise ValueError('Outcome placement conflicts with finalized capture')
+                except ValueError:
+                    outcome, outcome_reason = None, 'outcome_artifact_invalid'
+                if outcome is not None:
+                    placement = outcome['placement']
                 games.append({"game_id": path.parent.name, "date": start["timestamp"], "patch": metadata.get("patch"),
-                    "set_id": metadata.get("set_id"), "placement": end["payload"].get("placement") if end else None,
+                    "set_id": metadata.get("set_id"), "queue_id": metadata.get('queue_id') or (outcome['queue_id'] if outcome else None),
+                    "placement": placement, "outcome_reason": outcome_reason,
                     "mode": highest.value, "review_locked": highest is SessionMode.SILENT and run is None,
                     "pinned": False, "block": None, "run_number": None, "engine_version": metadata.get("engine_version", ""),
                     "data_snapshot_id": metadata.get("data_snapshot_id"), "finished": end is not None})
             games.sort(key=lambda g: (g["date"], int(g["game_id"])))
             number = 0
             for game in games:
-                if (run and game["mode"] == "live" and
+                if (run and game["mode"] == "live" and game['queue_id'] == 1100 and
                     datetime.fromisoformat(game["date"].replace("Z", "+00:00")) >= datetime.fromisoformat(run["started_at"].replace("Z", "+00:00"))
                     and game["set_id"] == run["set_id"] and number < 50):
                     game["pinned"] = True
@@ -385,6 +401,50 @@ class SessionStore:
     def list_games(self) -> list[dict]:
         with self._lock, closing(sqlite3.connect(self.root / "index.sqlite3")) as connection:
             return [json.loads(row[0]) for row in connection.execute("SELECT record FROM games ORDER BY game_id")]
+
+    def record_outcome(self, game_id, match, *, owner_puuid, platform='eun1'):
+        """Persist validated late truth separately; never rewrite capture events."""
+        from .outcomes import qualify_outcome
+        game_id = _game_id(game_id)
+        with self._lock:
+            events = self.read_events(game_id)
+            if not events or not any(event['kind'] == 'game_end' for event in events):
+                raise ValueError('Outcome requires a finalized capture log')
+            metadata = events[0]['payload']
+            try:
+                set_number = int(metadata.get('set_id'))
+            except (TypeError, ValueError):
+                raise ValueError('Outcome requires the original captured set identity') from None
+            outcome = qualify_outcome(match, game_id=game_id, owner_puuid=owner_puuid,
+                platform=platform, set_number=set_number, queue_id=metadata.get('queue_id'))
+            end = next(event for event in reversed(events) if event['kind'] == 'game_end')
+            if end['payload'].get('placement') not in {None, outcome['placement']}:
+                raise ValueError('Outcome placement conflicts with finalized capture')
+            existing = self.read_outcome(game_id)
+            if existing is not None and existing != outcome:
+                raise ValueError('Confirmed outcome conflicts with existing truth; reconcile sources explicitly')
+            _atomic_json(self.root/'outcomes'/f'{game_id}.json', outcome)
+            self.rebuild_index()
+            return outcome
+
+    def read_outcome(self, game_id):
+        """Read private final facts for offline consumers; UI review locks remain separate."""
+        from .outcomes import validate_outcome
+        game_id = _game_id(game_id)
+        with self._lock:
+            path = self.root/'outcomes'/f'{game_id}.json'
+            if not path.exists():
+                return None
+            events = self.read_events(game_id)
+            if not events or not any(event['kind'] == 'game_end' for event in events):
+                raise ValueError('Outcome requires a finalized capture log')
+            metadata = events[0]['payload']
+            try:
+                set_number = int(metadata.get('set_id'))
+            except (TypeError, ValueError):
+                raise ValueError('Outcome requires the original captured set identity') from None
+            return validate_outcome(json.loads(path.read_text()), game_id=game_id,
+                set_number=set_number, queue_id=metadata.get('queue_id'))
 
     def start_run(self, baseline: dict, *, set_id: str, timestamp: str | None = None) -> dict:
         """Freeze the API-refreshed 50-game baseline; there is no review override."""
