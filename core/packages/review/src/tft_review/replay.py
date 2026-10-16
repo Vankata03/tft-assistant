@@ -3,6 +3,7 @@ from pathlib import Path
 from datetime import datetime
 
 from tft_engine import GameSnapshot, TraitSighting, evaluate, snapshot_seed
+from tft_engine.planning import PlanningHistory
 
 from .contracts import ReplayBatch, ReplayContext, ReplayRecord, frozen_json, history_prefix, json_value
 from .identity import replay_identity
@@ -88,6 +89,10 @@ class ReplayProducer:
         contexts, records = [], []
         previous_fingerprint, evaluation_log_seq = None, None
         controls = SessionControlLog(events)
+        history_fold = PlanningHistory() if identity['hooks_cacheable'] else None
+        gap_intervals = [(row,
+            aware_timestamp(row['payload']['start']) if row['payload']['start'] is not None else None,
+            aware_timestamp(row['payload']['end'])) for row in events if row['kind'] == 'capture_gap']
         for event in events:
             if event['kind'] != 'snapshot':
                 continue
@@ -96,17 +101,17 @@ class ReplayProducer:
             seed = snapshot_seed(snapshot, data)
             # Later crash annotations may invalidate capture evidence. They never
             # become causal Engine information or reset an earlier history prefix.
-            gaps = [row for row in events if row['kind'] == 'capture_gap'
-                and (row['payload']['start'] is None or datetime.fromisoformat(row['payload']['start']) <= snapshot.captured_at)
-                and snapshot.captured_at < datetime.fromisoformat(row['payload']['end'])]
+            gaps = [row for row, start, end in gap_intervals
+                if (start is None or start <= snapshot.captured_at) and snapshot.captured_at < end]
             in_gap = bool(gaps)
             history = history_prefix(events, through_seq=event['seq']-1,
                 captured_at=event['payload']['captured_at'], controls=controls)
-            fingerprint = semantic_fingerprint(snapshot, data, events, event['seq']-1, hooks=self.hooks)
+            fingerprint = (semantic_fingerprint(snapshot, data, events, event['seq']-1, hooks=self.hooks)
+                if self.decision_segmentation == 'semantic' else None)
             duplicate = (not in_gap and self.decision_segmentation == 'semantic'
                 and fingerprint == previous_fingerprint)
             result = None if in_gap or duplicate else evaluate(snapshot, history, data,
-                'review', hooks=self.hooks, seed=seed)
+                'review', hooks=self.hooks, seed=seed, history_fold=history_fold)
             context = ReplayContext(str(game_id), event['seq'], event['timestamp'], event['payload'],
                 metadata, data.snapshot_id, identity, seed, event['seq']-1, json_value(result),
                 unavailable=(('capture_gap',) if in_gap else ('semantic_duplicate',) if duplicate else ()) + tuple(
