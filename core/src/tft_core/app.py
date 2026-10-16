@@ -97,6 +97,8 @@ async def run(
     reviews = ReviewJobs(sessions, data_store, review, repository,
                          ready=server.publish_review_ready, error=server.publish_runtime_error) if review else None
 
+    server.review.enqueue = reviews.enqueue if reviews else None
+
     async def update(gameflow):
         previous = runtime.completed_game
         await runtime.update(gameflow)

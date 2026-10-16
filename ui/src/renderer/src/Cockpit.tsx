@@ -536,10 +536,12 @@ export function Cockpit({
         <section className="status-only" role="status">
           <span className="status-dot" />
           <h2>
-            {state.mode === 'silent'
-              ? 'Silent game · logging'
-              : state.core !== 'running'
-                ? describeCore(state.core)
+            {state.core !== 'running'
+              ? describeCore(state.core)
+              : state.mode === 'silent'
+                ? state.gameflow?.clientRunning && ['InProgress','Reconnect','PreEndOfGame'].includes(state.gameflow.phase??'')
+                  ? 'Silent game · capture status below'
+                  : 'Silent mode · waiting for a game'
                 : state.mode === 'live'
                   ? 'Live surface unavailable'
                   : 'Baseline data unavailable'}

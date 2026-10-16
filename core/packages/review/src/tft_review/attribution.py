@@ -8,6 +8,7 @@ the delivered domain and snapshot inside the replay's decision segment. Only an
 acknowledgement logged before the player's confirmed choice counts as shown.
 """
 from datetime import datetime
+from collections.abc import Mapping
 
 
 def _at(value):
@@ -52,14 +53,23 @@ def _same_line(shown_row, player):
     """A followed Line repeats the shown schedule over the observed horizon."""
     line = (shown_row or {}).get('payload', {}).get('line')
     horizon = player['payload'].get('horizon_rounds')
-    if not isinstance(line, dict) or not horizon:
+    if not isinstance(line, Mapping) or not horizon:
         return None
-    advised = {round_id: level for round_id, level in line.get('levels', {}).items() if round_id in horizon}
+    initial = player['payload'].get('initial_level', 0)
+    advised = {round_id: level for round_id, level in line.get('levels', {}).items()
+        if round_id in horizon and level > initial}
     advised_rolls = {round_id: gold for round_id, gold in line.get('rolls', {}).items() if round_id in horizon}
     return advised == dict(player['payload'].get('levels', {})) and advised_rolls == dict(player['payload'].get('rolls', {}))
 
 
 def same_choice(shown_option, shown_row, player):
+    if player.get('action') == 'shop':
+        shown = (shown_row or {}).get('payload', {}).get('buys')
+        actual = player['payload'].get('buys')
+        if shown is None or actual is None:
+            return None
+        identity = lambda rows: sorted((row['slot'], row['unit_id']) for row in rows)
+        return identity(shown) == identity(actual)
     if player['option_id'] == shown_option:
         return True
     if player.get('action') == 'line':

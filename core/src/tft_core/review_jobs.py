@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from uuid import uuid4
 from datetime import UTC, datetime
 
 from tft_core.engine_runtime import LatestEngineWorker
@@ -37,6 +38,7 @@ class ReviewJobs:
         self._wake = asyncio.Event()
         self._closed = False
         self._child_shutdown_complete = True
+        self._loop = None
         self._task = None
         self._process = None
         self._future = None
@@ -52,6 +54,7 @@ class ReviewJobs:
                 '--repository', str(self.repository), '--expected-job-id', job_id]
 
     def start(self):
+        self._loop = asyncio.get_running_loop()
         self.records.mkdir(parents=True, exist_ok=True)
         self.requests.mkdir(parents=True, exist_ok=True)
         self.children.register_owner()
@@ -68,7 +71,7 @@ class ReviewJobs:
         if self.error:
             self.error("review_supervisor_failed", self.status)
 
-    def enqueue(self, game_id):
+    def enqueue(self, game_id, *, regenerate=False):
         game_id = str(game_id)
         if not game_id.isdecimal() or int(game_id) <= 0:
             raise ValueError('Review requires a positive game ID')
@@ -77,8 +80,12 @@ class ReviewJobs:
             raise ValueError('Review requires successful capture finalization and game_end')
         if self._closed or (self._task is not None and self._task.done()):
             raise RuntimeError('Review supervisor is closed or stopped')
-        _write(self.requests / f'{game_id}.json', {'game_id': game_id, 'state': 'queued'})
-        self._wake.set()
+        _write(self.requests / f'{game_id}.json', {'game_id': game_id, 'state': 'queued',
+            'regenerate': regenerate, 'request_nonce': uuid4().hex})
+        if self._loop:
+            self._loop.call_soon_threadsafe(self._wake.set)
+        else:
+            self._wake.set()
 
     def jobs(self):
         return [json.loads(path.read_text()) for path in self.records.glob('*.json')]
@@ -119,7 +126,7 @@ class ReviewJobs:
                     break
                 path, request = selected
                 try:
-                    await self._produce(request['game_id'])
+                    await self._produce(request['game_id'], regenerate=request.get('regenerate', False))
                 except asyncio.CancelledError:
                     raise
                 except Exception as error:
@@ -127,8 +134,10 @@ class ReviewJobs:
                     request['reason'] = self.status
                     if self.error:
                         self.error('review_unavailable', self.status)
-                request['state'] = 'handled'
-                _write(path, request)
+                latest = json.loads(path.read_text())
+                if latest.get('request_nonce') == request.get('request_nonce'):
+                    request['state'] = 'handled'
+                    _write(path, request)
 
     async def _recover(self):
         reconciled = await self.children.reconcile()
@@ -160,7 +169,7 @@ class ReviewJobs:
             chunks.append(chunk)
         return b''.join(chunks)
 
-    async def _produce(self, game_id):
+    async def _produce(self, game_id, *, regenerate=False):
         identity = await self._job_identity(game_id)
         job_id = identity['job_id']
         if not isinstance(job_id, str) or len(job_id) != 64 or any(c not in '0123456789abcdef' for c in job_id):
@@ -168,7 +177,7 @@ class ReviewJobs:
         path = self.records / f'{job_id}.json'
         if job_id in self._blocked:
             raise ValueError('Review child ownership is blocked; no duplicate evaluator was launched')
-        if path.exists() and json.loads(path.read_text())['state'] in {'completed', 'unavailable'}:
+        if not regenerate and path.exists() and json.loads(path.read_text())['state'] in {'completed', 'unavailable'}:
             return
         reservation = JobMutex(self.children.root, 'schedule-' + job_id)
         if not reservation.acquire():

@@ -18,13 +18,13 @@ def _decision_id(sessions, store, decision='augment', hooks=None):
 
 
 def log_delivery(sessions, *, decision_id, option_id, domain='augment', snapshot_id='original',
-        at=NOW+timedelta(seconds=.2), revision='sha256:'+'1'*64):
+        at=NOW+timedelta(seconds=.2), revision='sha256:'+'1'*64, payload=None):
     """The advice_delivery event format written by LiveDeliveryController.activate."""
     return sessions.append_event('advice_delivery', {'schema_version': 1, 'delivery_revision': revision,
         'game_id': '901', 'snapshot_id': snapshot_id, 'data_snapshot_id': None, 'model_hash': None,
         'captured_at': NOW.isoformat(), 'evaluated_at': at.isoformat(), 'evidence_id': 'sha256:'+'2'*64,
         'summary': {'game_id': '901', 'snapshot_id': snapshot_id, 'advice': [{'decision_id': decision_id,
-            'option_id': option_id, 'domain': domain, 'action': 'Pick', 'payload': {}}]}},
+            'option_id': option_id, 'domain': domain, 'action': 'Pick', 'payload': payload or {}}]}},
         timestamp=at.isoformat())
 
 
@@ -138,3 +138,186 @@ def test_silent_and_baseline_decisions_keep_their_mode_status(tmp_path):
     log_pick(sessions, 'B', 1)
     sessions.end_game(timestamp=(NOW+timedelta(seconds=2)).isoformat())
     assert augment_moment(review(sessions, store))['shown'] == {'status': 'no_advice_in_silent_mode'}
+
+
+def purchase_choices(context):
+    from tft_engine import Advice, ScoredOption
+    return tuple(Advice(domain, 'Buy', 'act_this_phase', .9, 'fixture',
+        option_id=f'{domain}:buy', options=(ScoredOption(f'{domain}:buy', 'buy', payload, 3.0),))
+        for domain, payload in (('wisp', {'slot': 4, 'wisp_id': 'W'}),
+            ('shop', {'slot': 0, 'unit_id': 'unit'})))
+
+
+def test_confirmed_wisp_and_shop_purchases_attribute_without_nonexistent_evidence_fields(tmp_path):
+    from tft_engine import DomainHook
+    sessions, store, _, _ = logged_game(tmp_path, finish=False, mode='baseline')
+    sessions.append_event('wisp_purchase', {'slot': 4, 'wisp_id': 'W', 'cost': 3},
+        timestamp=(NOW+timedelta(seconds=1)).isoformat())
+    sessions.append_event('purchase', {'slot': 0, 'unit_id': 'unit', 'cost': 1, 'copies': 1},
+        timestamp=(NOW+timedelta(seconds=1)).isoformat())
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=2)).isoformat())
+    report = review(sessions, store, (DomainHook('purchases', (), advice=purchase_choices),))
+    points = {row['category']: row for row in report.timeline}
+    assert points['wisp']['player_choice']['option_id'] == 'wisp:buy'
+    assert points['shop']['player_choice']['option_id'] == 'shop:buy'
+
+
+def board_calls(context):
+    from tft_engine import Advice, ScoredOption
+    return (Advice('transition', 'Swap', 'act_this_phase', .9, 'fixture', option_id='transition',
+        payload={'board': {'units': [{'unit_id': 'unit', 'stars': 1, 'items': [], 'position': 1}], 'bench': [], 'trait_counts': {}}}),
+        Advice('pivot', 'Pivot', 'act_this_phase', .9, 'fixture', option_id='new-comp',
+            payload={'target': 'new-comp', 'from': 'guide'},
+            options=(ScoredOption('new-comp', 'comp', {'comp_id': 'new-comp'}, 3.0),
+                ScoredOption('guide', 'comp', {'comp_id': 'guide'}, 4.0))),
+        Advice('positioning', 'Move', 'act_this_phase', .9, 'fixture', option_id='layout',
+            payload={'layout': [{'unit_index': 0, 'unit_id': 'unit', 'cell': 1}]}))
+
+
+def test_observed_transition_pivot_and_prefight_positioning_are_linked_to_logged_fight(tmp_path):
+    from tft_engine import Board, Unit, DomainHook
+    from tests.test_replay_contracts import log_snapshot
+    sessions, store, data, _ = logged_game(tmp_path, finish=False, mode='live')
+    hooks = (DomainHook('board-calls', (), advice=board_calls),)
+    at = NOW+timedelta(seconds=1)
+    sessions.append_event('snapshot', log_snapshot(data, at=at, snapshot_id='moved',
+        board=Board((Unit('unit', position=1),)), comp_lock='new-comp'), timestamp=at.isoformat())
+    sessions.append_event('fight_start', {'round_id': '3-2', 'opponent_id': 'rival'},
+        timestamp=(NOW+timedelta(seconds=1.1)).isoformat())
+    sessions.append_event('fight_result', {'round_id': '3-2', 'opponent_id': 'rival', 'result': 'loss', 'hp_lost': 5},
+        timestamp=(NOW+timedelta(seconds=2)).isoformat())
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=3)).isoformat())
+    report = review(sessions, store, hooks)
+    points = {row['category']: row for row in report.timeline if row['log_seq'] == 1}
+    assert points['transition']['player_choice']['option_id'] == 'transition'
+    assert points['pivot']['player_choice']['option_id'] == 'new-comp'
+    assert len(report.surface['positioning']) == 1
+    note = report.surface['positioning'][0]
+    assert note['followed'] is True
+    assert note['result'] == 'loss'
+    assert note['fight_path'] == ('surface', 'fights', 0)
+    assert report.plan_timeline[0]['called_status'] == 'taken_without_call'
+
+
+def test_pinned_line_is_scored_beside_engine_recommendation_in_normal_surface(tmp_path):
+    from tests.test_session_controls import pin_payload
+    from tests.test_replay_contracts import log_snapshot
+    from tft_review import ReplayProducer, ReviewPolicy
+    sessions, store, data, _ = logged_game(tmp_path, finish=False, mode='live')
+    sessions.append_event('line_pin', pin_payload(data), timestamp=(NOW+timedelta(seconds=.1)).isoformat())
+    at = NOW+timedelta(seconds=.2)
+    sessions.append_event('snapshot', log_snapshot(data, at=at, snapshot_id='pinned'), timestamp=at.isoformat())
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=1)).isoformat())
+    batch = ReplayProducer(sessions, store, repository=ROOT).produce('901')
+    report = ReviewPolicy(min_cost=.05).build(batch, data=data)
+    line = report.surface['lines'][1]
+    assert line['pinned']['line_id'] == 'kept-line'
+    assert line['pin_cost'] == line['recommended']['expected_placement'] - line['pinned']['expected_placement']
+    assert line['pin_cost'] <= 0
+
+
+def changing_choice_ids(context):
+    from tft_engine import Advice, ScoredOption
+    suffix = context.snapshot.snapshot_id
+    return (Advice('augment', 'Pick A', 'act_this_phase', .9, 'fixture', option_id='a:'+suffix,
+        options=(ScoredOption('a:'+suffix, 'pick', {'augment_id': 'A', 'slot': 0}, 3),
+            ScoredOption('b:'+suffix, 'pick', {'augment_id': 'B', 'slot': 1}, 4))),)
+
+
+def test_semantically_same_deviation_groups_when_scored_option_id_changes(tmp_path):
+    from tft_engine import DomainHook
+    from tests.test_replay_contracts import log_snapshot
+    sessions, store, data, _ = logged_game(tmp_path, finish=False, mode='baseline')
+    log_pick(sessions, 'B', 1)
+    at = NOW+timedelta(seconds=2)
+    sessions.append_event('snapshot', log_snapshot(data, at=at, snapshot_id='next', gold=17), timestamp=at.isoformat())
+    log_pick(sessions, 'B', 1, at=NOW+timedelta(seconds=3))
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=4)).isoformat())
+    report = review(sessions, store, (DomainHook('augment', (), advice=changing_choice_ids),))
+    moments = [row for row in report.moments if row['category'] == 'augment']
+    assert len(moments) == 1
+    assert len(moments[0]['members']) == 2
+    assert moments[0]['cost'] == -2
+
+
+def test_saved_tags_return_in_summary_and_survive_regeneration_and_cross_game_costs(tmp_path):
+    from tft_engine import DomainHook
+    from tft_review import ReviewService
+    sessions, store, _, _ = logged_game(tmp_path, finish=False, mode='baseline')
+    log_pick(sessions, 'B', 1)
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=2)).isoformat())
+    service = ReviewService(sessions, store, repository=ROOT, hooks=_hook())
+    summary = service.produce('901')
+    moment_id = summary['top5'][0]['moment_id']
+    service.tag('901', moment_id, 'disagree')
+    assert service.summary('901')['top5'][0]['tag'] == 'disagree'
+    assert service.produce('901')['top5'][0]['tag'] == 'disagree'
+    view = service.games()
+    row = view['games'][0]
+    assert abs(row['total_estimated_cost'] + 1.1) < 1e-10
+    assert row['worst_category'] == 'augment'
+    assert view['aggregates']['last10']['categories']['augment']['games'] == 1
+    assert abs(view['aggregates']['last10']['categories']['augment']['value'] + 1.1) < 1e-10
+    assert view['aggregates']['live_run']['games'] == 0
+
+
+def aggregate_shop(context):
+    from tft_engine import Advice, ScoredOption
+    return (Advice('shop', 'Buy highlighted', 'act_this_phase', .9, 'fixture', option_id='shop',
+        payload={'buys': [{'slot': 0, 'unit_id': 'unit'}]},
+        options=(ScoredOption('shop:0:unit', 'buy', {'slot': 0, 'unit_id': 'unit'}),)),)
+
+
+def test_shop_buy_bundle_is_followed_when_confirmed_purchases_match_shown_bundle(tmp_path):
+    from tft_engine import DomainHook
+    sessions, store, _, _ = logged_game(tmp_path, finish=False, mode='live')
+    hooks = (DomainHook('shop', (), advice=aggregate_shop),)
+    decision = _decision_id(sessions, store, decision='shop', hooks=hooks)
+    log_delivery(sessions, decision_id=decision, option_id='shop', domain='shop',
+        payload={'buys': [{'slot': 0, 'unit_id': 'unit'}]})
+    log_shown(sessions, decision_id=decision, option_id='shop')
+    sessions.append_event('purchase', {'slot': 0, 'unit_id': 'unit', 'cost': 1, 'copies': 1},
+        timestamp=(NOW+timedelta(seconds=1)).isoformat())
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=2)).isoformat())
+    point = next(row for row in review(sessions, store, hooks).timeline if row['category'] == 'shop')
+    assert point['differed'] is False
+    assert point['shown']['followed'] is True, dict(point['unavailable'])
+
+
+def test_shop_bundle_does_not_hide_an_additional_unscored_purchase(tmp_path):
+    from tft_engine import DomainHook
+    sessions, store, _, _ = logged_game(tmp_path, finish=False, mode='live')
+    hooks = (DomainHook('shop', (), advice=aggregate_shop),)
+    decision = _decision_id(sessions, store, decision='shop', hooks=hooks)
+    log_delivery(sessions, decision_id=decision, option_id='shop', domain='shop',
+        payload={'buys': [{'slot': 0, 'unit_id': 'unit'}]})
+    log_shown(sessions, decision_id=decision, option_id='shop')
+    for slot in (0, 1):
+        sessions.append_event('purchase', {'slot': slot, 'unit_id': 'unit', 'cost': 1, 'copies': 1},
+            timestamp=(NOW+timedelta(seconds=1)).isoformat())
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=2)).isoformat())
+    point = next(row for row in review(sessions, store, hooks).timeline if row['category'] == 'shop')
+    assert point['shown']['followed'] is False
+    assert point['shown']['status'] == 'ignored'
+    assert len(point['player_choice']['payload']['buys']) == 2
+
+
+def test_confirmed_unchanged_level_schedule_can_follow_shown_line_without_inventing_rolls(tmp_path):
+    from tests.test_replay_contracts import log_snapshot
+    from tft_review import ReplayProducer, ReviewPolicy
+    sessions, store, data, _ = logged_game(tmp_path, finish=False, mode='live')
+    batch = ReplayProducer(sessions, store, repository=ROOT).produce('901')
+    econ = next(row for row in batch.records if row.decision == 'econ')
+    log_delivery(sessions, decision_id=econ.decision_id, option_id=econ.advice['option_id'], domain='econ', payload=econ.to_dict()['advice']['payload'])
+    log_shown(sessions, decision_id=econ.decision_id, option_id=econ.advice['option_id'])
+    at = NOW+timedelta(seconds=1)
+    sessions.append_event('snapshot', log_snapshot(data, at=at, snapshot_id='confirmed-hold'), timestamp=at.isoformat())
+    rounds = list(data.value('round_order'))
+    for index, round_id in enumerate(rounds[rounds.index('3-2')+1:rounds.index('4-7')+1]):
+        at = NOW+timedelta(seconds=index+2)
+        sessions.append_event('snapshot', log_snapshot(data, at=at, snapshot_id=round_id)|{'round_id': round_id}, timestamp=at.isoformat())
+    sessions.end_game(timestamp=(at+timedelta(seconds=1)).isoformat())
+    batch = ReplayProducer(sessions, store, repository=ROOT).produce('901')
+    report = ReviewPolicy(min_cost=.05).build(batch, data=data)
+    point = next(row for row in report.timeline if row['category'] == 'econ')
+    assert point['shown']['followed'] is True, dict(point['unavailable'])

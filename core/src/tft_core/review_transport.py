@@ -6,6 +6,7 @@ from tft_review import ReviewAccess
 class ReviewTransport:
     def __init__(self,sessions,service=None):
         self.sessions,self.service=sessions,service
+        self.enqueue = None
 
     def permitted(self,game_id):
         if not self.sessions:
@@ -40,7 +41,14 @@ class ReviewTransport:
                 'evidence_id':graph.root_id,'ended_at':end['timestamp']}
 
     def call(self,operation,game_id,**arguments):
-        self.permitted(game_id)
+        game = self.permitted(game_id)
+        if operation=='regenerate':
+            if game['review_locked']:
+                raise ValueError('Review remains locked until the Live-mode run starts')
+            if self.enqueue is None:
+                raise ValueError('Review supervisor unavailable')
+            self.enqueue(game_id, regenerate=True)
+            return {'state': 'queued', 'game_id': str(game_id)}
         if operation=='media':
             content=ReviewAccess(self.sessions).read_media(game_id,arguments['name'])
             if content is None:

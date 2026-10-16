@@ -187,3 +187,51 @@ def test_slow_tag_flush_does_not_hold_mode_lock_or_publish_after_silent_downgrad
                 assert any(row.get('request_id')=='held-tag' and row['type']=='error' for row in messages)
                 assert logs.read_review('123')['tags']=={}
     asyncio.run(scenario())
+
+
+def test_authenticated_regeneration_and_cross_game_summaries_use_review_jobs(tmp_path):
+    from tests.test_replay_contracts import ROOT, logged_game
+    from tft_core.review_jobs import ReviewJobs
+    from tft_review import ReviewService
+    async def scenario():
+        logs, store, _, _ = logged_game(tmp_path, mode='baseline')
+        service = ReviewService(logs, store, repository=ROOT)
+        jobs = ReviewJobs(logs, store, service, ROOT)
+        server = CoreServer('token', sessions=logs, review_service=service)
+        server.review.enqueue = jobs.enqueue
+        jobs.start()
+        try:
+            async with server.listen() as listener:
+                async with connect(f'ws://127.0.0.1:{listener.sockets[0].getsockname()[1]}') as ws:
+                    await ws.send(dump(Hello(token='token'))); await ws.recv(); await ws.recv()
+                    await ws.send(json.dumps({'v':1, 'type':'request_review', 'request_id':'manual',
+                        'game_id':'901', 'operation':'regenerate'}))
+                    queued = json.loads(await ws.recv())
+                    assert queued['type'] == 'review_response', queued
+                    assert queued['value']['state'] == 'queued'
+                    for _ in range(500):
+                        records = jobs.jobs()
+                        if records and records[0]['state'] == 'completed': break
+                        await asyncio.sleep(.01)
+                    assert jobs.jobs()[0]['state'] == 'completed'
+                    await ws.send(json.dumps({'v':1, 'type':'request_review_games', 'request_id':'games'}))
+                    view = json.loads(await ws.recv())
+                    assert view['games'][0]['game_id'] == '901'
+                    assert 'total_estimated_cost' in view['games'][0]
+                    assert view['aggregates']['last10']['games'] == 1
+                    logs.set_mode('silent'); logs.start_game('902')
+                    await ws.send(json.dumps({'v':1, 'type':'request_review', 'request_id':'blocked',
+                        'game_id':'901', 'operation':'regenerate'}))
+                    assert json.loads(await ws.recv())['code'] == 'review_request_rejected'
+        finally:
+            await jobs.shutdown()
+    asyncio.run(scenario())
+
+
+def test_locked_finished_review_cannot_be_manually_regenerated(tmp_path):
+    import pytest
+    from tft_core.review_transport import ReviewTransport
+    from tests.test_replay_contracts import logged_game
+    logs, _, _, _ = logged_game(tmp_path)
+    with pytest.raises(ValueError, match='locked'):
+        ReviewTransport(logs).call('regenerate', '901')

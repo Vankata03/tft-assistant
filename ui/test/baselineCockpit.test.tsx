@@ -208,3 +208,10 @@ it('Baseline renders qualified augment averages with provenance and flags, falli
   expect(renderToStaticMarkup(createElement(BaselineOverlay, { state: fallback }))).toContain('Tier A')
   expect(renderToStaticMarkup(createElement(BaselineOverlay, { state: { ...state, mode: 'silent' } }))).toBe('')
 })
+
+it('idle Silent mode never claims a game is logging and retains capture setup errors',()=>{
+ const html=renderToStaticMarkup(createElement(Cockpit,{state:{core:'running',mode:'silent',gameflow:{clientRunning:false,phase:null},error:'Capture settings missing',baseline:{v:1,type:'baseline_state',mode:'silent',status:'Capture settings missing',stale:[],content:null,voice:null}},onMode:()=>{},onSelectGuide:()=>{}}))
+ expect(html).toContain('Silent mode · waiting for a game')
+ expect(html).toContain('Capture settings missing')
+ expect(html).not.toContain('Silent game · logging')
+})

@@ -328,15 +328,17 @@ class CoreServer:
             try:
                 if self.sessions and self.sessions.active_game_id and self.sessions.mode is SessionMode.SILENT:
                     raise ValueError('Silent games suppress post-game surfaces')
-                rows=await self.io.call(self.sessions.list_games) if self.sessions else []
+                if self.review.service:
+                    result = await self.io.call(self.review.service.games)
+                else:
+                    rows = await self.io.call(self.sessions.list_games) if self.sessions else []
+                    result = {'games': [{name: (None if name == 'placement' and row['review_locked'] else row[name])
+                        for name in ('game_id','date','mode','finished','review_locked','patch','placement')} for row in rows],
+                        'aggregates': {}}
                 if self.sessions and self.sessions.active_game_id and self.sessions.mode is SessionMode.SILENT:
                     raise ValueError('Review permissions changed')
-                permitted=[]
-                for row in rows:
-                    view={name:row[name] for name in ('game_id','date','mode','finished','review_locked','patch')}
-                    view['placement']=None if row['review_locked'] else row['placement']
-                    permitted.append(view)
-                await self._send(ws,dump(ReviewGames(request_id=message.request_id,games=tuple(permitted))))
+                await self._send(ws,dump(ReviewGames(request_id=message.request_id,
+                    games=tuple(result['games']), aggregates=result['aggregates'])))
             except (ValueError,KeyError,TypeError) as error:
                 await self._send(ws,dump(ErrorMessage(code='review_request_rejected',request_id=message.request_id,message=str(error))))
             return
@@ -345,7 +347,7 @@ class CoreServer:
                 keys={'page':('report_id','evidence_id','path','cursor','limit'),
                     'what_if':('report_id','evidence_id','moment_id','option_id'),
                     'tag':('report_id','evidence_id','moment_id','tag'),
-                    'media':('name','cursor','limit'),'summary':()}
+                    'media':('name','cursor','limit'),'summary':(),'regenerate':()}
                 arguments={name:getattr(message,name) for name in keys[message.operation]}
                 value=await self.io.call(self.review.call,message.operation,message.game_id,**arguments)
                 # Re-check session permissions after work completed off the socket loop.

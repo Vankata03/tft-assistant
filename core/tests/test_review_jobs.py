@@ -245,3 +245,36 @@ def test_real_review_child_completion_cleans_up_without_ownership_errors(tmp_pat
         assert errors == []
 
     asyncio.run(scenario())
+
+
+def test_manual_regeneration_recomputes_same_identity_and_preserves_tags(tmp_path):
+    from tft_core.review_jobs import ReviewJobs
+    from tft_review import ReviewService
+    async def scenario():
+        sessions, store, _, _ = logged_game(tmp_path, mode='baseline')
+        service = ReviewService(sessions, store, repository=ROOT)
+        jobs = ReviewJobs(sessions, store, service, ROOT)
+        jobs.start()
+        try:
+            jobs.enqueue('901')
+            for _ in range(500):
+                records = jobs.jobs()
+                if records and records[0]['state'] == 'completed':
+                    break
+                await asyncio.sleep(.01)
+            first, = jobs.jobs()
+            assert first['state'] == 'completed'
+            jobs.enqueue('901', regenerate=True)
+            for _ in range(500):
+                records = jobs.jobs()
+                if records and records[0]['state'] == 'completed' and records[0]['started_at'] != first['started_at']:
+                    break
+                await asyncio.sleep(.01)
+            second, = jobs.jobs()
+            assert second['job_id'] == first['job_id']
+            assert second['state'] == 'completed'
+            assert second['started_at'] != first['started_at']
+            assert service.summary('901')['report_id'] == first['receipt']['report_id']
+        finally:
+            await jobs.shutdown()
+    asyncio.run(scenario())

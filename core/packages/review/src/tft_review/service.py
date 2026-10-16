@@ -1,6 +1,6 @@
 """Protected owner routes over immutable, authenticated review evidence."""
 from tft_engine.evidence import EvidenceGraph
-from datetime import datetime
+from datetime import datetime, timezone
 import re
 
 from .contracts import json_value
@@ -57,7 +57,9 @@ class ReviewService:
             self.producer.hooks, self.producer.hook_version)
         if not identity['finished']:
             raise ValueError('Review job requires a finished game log')
+        outcome = self.sessions.read_outcome(game_id) if hasattr(self.sessions, 'read_outcome') else None
         return {'job_id': digest({'game_id': str(game_id), 'identity': identity,
+                'outcome_hash': outcome['evidence_hash'] if outcome else None,
                 'report_schema_version': 1}),
             'game_id': str(game_id), 'engine_version': identity['commit'],
             'data_snapshot_id': data.snapshot_id, 'log_hash': identity['log_hash'],
@@ -74,7 +76,13 @@ class ReviewService:
         data = self.data_store.get(batch.identity['data_snapshot_id'])
         report = ReviewPolicy(min_cost=data.tunables['review_min_cost'].value).build(batch, data=data)
         document = report.to_dict()
+        outcome = self.sessions.read_outcome(game_id) if hasattr(self.sessions, 'read_outcome') else None
+        if outcome:
+            document['evidence']['final_outcome'] = outcome
         document['summary'] = surface_summary(report)
+        if outcome:
+            document['summary']['placement'] = {'value': outcome['placement'], 'reason': None,
+                'source': outcome['source'], 'evidence_hash': outcome['evidence_hash']}
         graph = EvidenceGraph.factor(document)
         if self.job_identity(game_id) != job:
             raise ValueError('Review job identity changed during evaluation')
@@ -97,6 +105,13 @@ class ReviewService:
             raise ValueError('Review evidence identity mismatch')
         if graph.resolve(path=('game_id',)) != str(game_id):
             raise ValueError('Review belongs to another game')
+        outcome = self.sessions.read_outcome(game_id) if hasattr(self.sessions, 'read_outcome') else None
+        try:
+            stored_outcome_hash = graph.resolve(path=('evidence', 'final_outcome', 'evidence_hash'))
+        except ValueError:
+            stored_outcome_hash = None
+        if stored_outcome_hash != (outcome['evidence_hash'] if outcome else None):
+            raise ValueError('Review outcome evidence changed; regenerate')
         return graph
 
     def summary(self, game_id):
@@ -111,9 +126,56 @@ class ReviewService:
                 'category_costs': {'value': None, 'reason': 'review_locked'},
                 'follow_rate': {'value': None, 'reason': 'review_locked'}, 'top5': []}
         graph = self._read_graph(game_id)
-        return graph.resolve(path=('summary',)) | {'schema_version': 1,
+        summary = graph.resolve(path=('summary',))
+        tags = self.sessions.read_review(game_id).get('tags', {})
+        summary['top5'] = [dict(row, tag=tags.get(row['moment_id'])) for row in summary['top5']]
+        summary['tags'] = tags
+        return summary | {'schema_version': 1,
             'game_id': game_id, 'locked': False, 'finished': game['finished'],
             'report_id': graph.root_id, 'evidence_id': graph.root_id}
+
+    def games(self):
+        """Cross-game cost summaries exclude locked and unavailable reviews."""
+        games = []
+        for game in self.sessions.list_games():
+            row = {key: game[key] for key in ('game_id', 'date', 'mode', 'finished', 'review_locked', 'patch')}
+            row.update(placement=None if game['review_locked'] else game['placement'],
+                total_estimated_cost=None, worst_category=None, category_costs={},
+                live_game_number=game.get('run_number'), source='game_log')
+            if game['finished'] and not game['review_locked']:
+                try:
+                    summary = self.summary(game['game_id'])
+                    costs = {kind: value['value'] for kind, value in summary['category_costs'].items()
+                        if isinstance(value, dict) and type(value.get('value')) in (int, float)}
+                    row.update(category_costs=costs,
+                        total_estimated_cost=sum(costs.values()) if costs else None,
+                        worst_category=min(costs, key=costs.get) if costs else None)
+                except (ValueError, OSError, PermissionError):
+                    row['review_status'] = 'unavailable'
+            games.append(row)
+        logged = {row['game_id'] for row in games}
+        run = self.sessions.run
+        for match in (run or {}).get('baseline', {}).get('matches', ()):
+            game_id = match['metadata']['match_id'].split('_', 1)[1]
+            placement = next(row['placement'] for row in match['info']['participants']
+                if row['puuid'] == run['baseline']['owner_puuid'])
+            if game_id not in logged:
+                games.append({'game_id': game_id, 'date': datetime.fromtimestamp(
+                    match['info']['game_datetime']/1000, tz=timezone.utc).isoformat(), 'mode': 'baseline',
+                    'finished': True, 'review_locked': False, 'patch': None, 'placement': placement,
+                    'source': 'match_api', 'total_estimated_cost': None, 'worst_category': None,
+                    'category_costs': {}, 'live_game_number': None})
+        games.sort(key=lambda row: (row['date'], row['game_id']), reverse=True)
+        def aggregate(rows):
+            categories = {}
+            for row in rows:
+                for kind, value in row['category_costs'].items():
+                    categories.setdefault(kind, []).append(value)
+            return {'games': len(rows), 'categories': {kind: {'value': sum(values)/len(values),
+                'games': len(values), 'label': 'average_estimated_signed_cost'} for kind, values in categories.items()}}
+        last = [row for row in games if row['finished'] and row['source'] == 'game_log'][:10]
+        live = [row for row in games if row['live_game_number'] is not None and 1 <= row['live_game_number'] <= 50]
+        return {'games': games, 'aggregates': {'last10': aggregate(last), 'live_run': aggregate(live)}}
 
     def detail(self, game_id, *, path=(), cursor=0, limit=32, max_bytes=65536):
         graph = self._read_graph(game_id)

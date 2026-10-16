@@ -11,12 +11,85 @@ from .sections import sections, surface_sections
 from .observed_line import value_observed_line
 from tft_data import DataError
 
-_PICK_EVENTS = {'augment': 'augment_pick', 'item': 'item_pick', 'carousel': 'carousel_pick'}
+_PICK_EVENTS = {'augment': 'augment_pick', 'item': 'item_pick', 'carousel': 'carousel_pick',
+    'wisp': 'wisp_purchase', 'shop': 'purchase'}
 _IDENTITIES = {'augment': ('slot', 'augment_id'), 'item': ('slot', 'item_id'),
-    'carousel': ('slot', 'unit_id', 'item_id'), 'wisp': ('slot', 'wisp_id')}
+    'carousel': ('slot', 'unit_id', 'item_id'), 'wisp': ('slot', 'wisp_id'), 'shop': ('slot', 'unit_id')}
+
+
+def selected_option(record):
+    selected = next((option for option in record.options
+        if option['option_id'] == record.advice['option_id']), None)
+    if selected is None and record.decision in {'transition', 'positioning', 'shop'} and record.advice.get('option_id'):
+        selected = {'option_id': record.advice['option_id'], 'action': record.decision,
+            'payload': dict(record.advice.get('payload', {})), 'expected_placement': None,
+            'standard_error': None, 'reason': record.advice['reason']}
+    return selected
+
+
+def board_identity(board, *, positions=False):
+    return sorted((unit['unit_id'], unit.get('stars', 1), tuple(sorted(unit.get('items', ()))),
+        unit.get('position') if positions else None) for unit in board.get('units', ()))
+
+
+def observed_board_call(record, batch):
+    context = next(c for c in batch.contexts if c.log_seq == record.log_seq)
+    later = [r.log_seq for r in batch.records if r.decision == record.decision and r.log_seq > record.log_seq]
+    stop = min(later, default=float('inf'))
+    # The next decision snapshot is also the observation of the previous action.
+    candidates = [c for c in batch.contexts if record.log_seq < c.log_seq <= stop
+        and c.snapshot['round_id'] == context.snapshot['round_id']]
+    if record.decision == 'positioning':
+        fight = next((e for e in batch.observations if e['kind'] == 'fight_start'
+            and e['seq'] > record.log_seq and e['payload'].get('round_id') == context.snapshot['round_id']), None)
+        if fight is None:
+            return None, 'prefight_board_unavailable'
+        candidates = [c for c in batch.contexts if record.log_seq <= c.log_seq < fight['seq']
+            and c.snapshot['round_id'] == context.snapshot['round_id']]
+    for observed in reversed(candidates):
+        if any(e['kind'] in {'capture_gap', 'tracking_ambiguity', 'board_read_disagreement'}
+                and record.log_seq < e['seq'] <= observed.log_seq for e in batch.observations):
+            return None, 'capture_gap_prevents_action_attribution'
+        field = observed.snapshot['fields'].get('comp_lock' if record.decision == 'pivot' else 'board')
+        if not field or field['read_at'] != observed.timestamp:
+            continue
+        value = field['value']
+        if record.decision == 'pivot':
+            before = context.snapshot['fields'].get('comp_lock', {}).get('value')
+            if value == before or not value:
+                continue
+            option = next((o for o in record.options if o['payload'].get('comp_id') == value), None)
+            if option is None:
+                return None, 'observed_comp_not_scored'
+        else:
+            selected = selected_option(record)
+            payload = record.advice.get('payload', {})
+            if record.decision == 'positioning':
+                layout = payload.get('layout', ())
+                units = value.get('units', ())
+                if not layout:
+                    return None, 'layout_unavailable'
+                followed = all(isinstance(row.get('unit_index'), int)
+                    and 0 <= row['unit_index'] < len(units)
+                    and units[row['unit_index']]['unit_id'] == row.get('unit_id')
+                    and units[row['unit_index']].get('position') == row.get('cell') for row in layout)
+            elif payload.get('board'):
+                followed = board_identity(value) == board_identity(payload['board'])
+            else:
+                return None, 'transition_operation_not_observable'
+            if selected is None:
+                return None, 'engine_choice_unavailable'
+            option = dict(selected) if followed else dict(selected) | {
+                'option_id': 'observed-board:'+digest(value), 'payload': {'board': value},
+                'expected_placement': None, 'standard_error': None}
+        return dict(option) | {'observed_at': observed.timestamp, 'observed_log_seq': observed.log_seq,
+            'evidence': 'fresh_captured_comp_lock' if record.decision == 'pivot' else 'fresh_captured_board'}, None
+    return None, 'confirmed_action_unavailable'
 
 
 def observed_option(record, batch):
+    if record.decision in {'transition', 'pivot', 'positioning'}:
+        return observed_board_call(record, batch)
     kind = _PICK_EVENTS.get(record.decision)
     if kind is None:
         return None, 'player_policy_not_identified'
@@ -24,23 +97,33 @@ def observed_option(record, batch):
     later = [other.log_seq for other in batch.records
         if other.decision == record.decision and other.log_seq > record.log_seq]
     stop = min(later, default=float('inf'))
-    candidates = []
+    candidates, purchases = [], []
     for event in batch.observations:
         if (record.log_seq < event['seq'] < stop and event['kind'] == kind
             and datetime.fromisoformat(event['timestamp']) >= datetime.fromisoformat(context.timestamp)
-            and event['payload'].get('evidence')):
+            and (event['payload'].get('evidence') or kind in {'purchase', 'wisp_purchase'})):
+            purchases.append(event)
             keys = _IDENTITIES[record.decision]
             matches = [option for option in record.options
-                if option['action'] == 'pick'
+                if option['action'] in ('pick', 'buy')
                 and all(key in option['payload'] and key in event['payload']
                     and option['payload'][key] == event['payload'][key] for key in keys)]
             if len(matches) == 1:
                 candidates.append((matches[0], event))
+    if record.decision == 'shop' and record.advice.get('payload', {}).get('buys') and purchases:
+        buys = [dict(event['payload']) for event in purchases]
+        identity = lambda rows: sorted((row['slot'], row['unit_id']) for row in rows)
+        followed = identity(buys) == identity(record.advice['payload']['buys'])
+        latest = max(purchases, key=lambda event: event['seq'])
+        return {'option_id': record.advice['option_id'] if followed else 'observed-shop:'+digest(buys),
+            'action': 'shop', 'payload': {'buys': buys}, 'expected_placement': None, 'standard_error': None,
+            'observed_at': latest['timestamp'], 'observed_log_seq': latest['seq'],
+            'evidence': 'confirmed_purchase_events'}, None
     if len(candidates) != 1:
         return None, 'confirmed_choice_unavailable_or_ambiguous'
     option, event = candidates[0]
     return dict(option) | {'observed_log_seq': event['seq'],
-        'observed_at': event['timestamp'], 'evidence': event['payload']['evidence']}, None
+        'observed_at': event['timestamp'], 'evidence': event['payload'].get('evidence', kind)}, None
 
 
 def decision_segment(batch, record):
@@ -84,14 +167,29 @@ def paired_uncertainty(selected, player, context):
     return stdev([a-b for a, b in zip(left, right)]) / sqrt(len(left))
 
 
+def deviation_choice(choice):
+    """Stable action meaning, excluding ids, valuation noise and observation clocks."""
+    if choice is None:
+        return None
+    payload = choice['payload']
+    keys = ('operation', 'augment_id', 'item_id', 'unit_id', 'wisp_id', 'slot',
+        'comp_id', 'target', 'from', 'swap_in', 'swap_out', 'sell', 'hold', 'holder',
+        'component', 'recipe', 'levels', 'rolls')
+    meaning = {key: payload[key] for key in keys if key in payload}
+    if choice['action'] == 'line':
+        meaning = {key: sorted(payload.get(key, {}).values()) for key in ('levels', 'rolls')}
+    if not meaning:
+        return (choice['action'], choice['option_id'])
+    return (choice['action'], digest(meaning))
+
+
 def group_moments(points):
     groups, previous = [], {}
     for point in points:
         if point['category'] == 'positioning':
             continue
         signature = (point['category'],
-            point['engine_choice']['option_id'] if point['engine_choice'] else None,
-            point['player_choice']['option_id'] if point['player_choice'] else None,
+            deviation_choice(point['engine_choice']), deviation_choice(point['player_choice']),
             point['shown']['status'])
         prior = previous.get(point['category'])
         if (point['differed'] and prior is not None and prior[0] == signature
@@ -123,13 +221,20 @@ class ReviewPolicy:
         for record in batch.records:
             context = next(context for context in batch.contexts if context.log_seq == record.log_seq)
             segment, window = decision_segment(batch, record)
-            selected = next((option for option in record.options
-                if option['option_id'] == record.advice['option_id']), None)
+            selected = selected_option(record)
             player, reason = observed_option(record, batch)
             if record.decision == 'econ' and data is not None and selected is not None:
                 try:
                     player, original = value_observed_line(batch,context,data)
-                    selected = dict(selected)|{'payload':dict(selected['payload'])|{'after':original}}
+                    best = min(context.evaluation['line_results'].get(context.evaluation['plan']['target'], ()),
+                        key=lambda row: (row['expected_placement'], row['line']['id']), default=original)
+                    best_option = next((option for option in record.options if option['option_id'] == best['line']['id']), selected)
+                    selected = dict(best_option)|{'payload':dict(best_option['payload'])|{'after':best}}
+                    observed_end = player['payload']['observed_through_seq']
+                    horizon = [row for row in batch.contexts if context.log_seq <= row.log_seq <= observed_end]
+                    player = dict(player)|{'observed_at': horizon[-1].timestamp,
+                        'payload': dict(player['payload'])|{'horizon_rounds': sorted({row.snapshot['round_id'] for row in horizon}),
+                            'initial_level': context.snapshot['fields']['level']['value']}}
                     reason = None
                     policies[context.log_seq] = player
                 except (DataError,KeyError,ValueError,TypeError) as error:
@@ -177,7 +282,7 @@ class ReviewPolicy:
                 for kind, value in category_costs.items()},
             'follow_rate': follow_rate([row['shown'] for row in timeline]),
             'top5': (harmful+differed)[:5]}
-        detail = sections(batch, data, policies=policies)
+        detail = sections(batch, data, policies=policies, timeline=timeline)
         return ReviewReport(batch.game_id, summary, tuple(timeline), tuple(moments),
             {'replay': replace(batch, records=tuple(attributed)).to_dict()},
             surface=surface_sections(detail, timeline), **detail)
