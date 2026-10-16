@@ -223,7 +223,7 @@ function startCore(): CoreSupervisor {
     if(state.core!=='running'||(state.mode==='silent'&&['InProgress','Reconnect','PreEndOfGame'].includes(state.gameflow?.phase??'')))throw new Error('Review surfaces suppressed during this game')
     if(typeof input!=='object'||input===null)throw new Error('Invalid review request')
     const row=input as Omit<RequestReview,'v'|'type'|'request_id'>
-    if(typeof row.game_id!=='string'||!/^\d{1,30}$/.test(row.game_id)||!['summary','page','what_if','tag','media'].includes(row.operation)||!validEvidencePath(row.path)||!Number.isSafeInteger(row.cursor)||row.cursor<0||!Number.isSafeInteger(row.limit)||row.limit<1||row.limit>49152)throw new Error('Invalid bounded review request')
+    if(typeof row.game_id!=='string'||!/^\d{1,30}$/.test(row.game_id)||!['summary','page','what_if','tag','media','regenerate'].includes(row.operation)||!validEvidencePath(row.path)||!Number.isSafeInteger(row.cursor)||row.cursor<0||!Number.isSafeInteger(row.limit)||row.limit<1||row.limit>49152)throw new Error('Invalid bounded review request')
     const response=await link.requestReview(row)
     if(state.core!=='running'||(state.mode==='silent'&&['InProgress','Reconnect','PreEndOfGame'].includes(state.gameflow?.phase??'')))throw new Error('Review permissions changed')
     return response

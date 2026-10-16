@@ -2101,7 +2101,8 @@
             "page",
             "what_if",
             "tag",
-            "media"
+            "media",
+            "regenerate"
           ],
           "title": "Operation",
           "type": "string"
@@ -2258,6 +2259,13 @@
     "ReviewGames": {
       "additionalProperties": false,
       "properties": {
+        "aggregates": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Aggregates",
+          "type": "object"
+        },
         "games": {
           "items": {
             "additionalProperties": {
@@ -2289,7 +2297,8 @@
         "v",
         "type",
         "request_id",
-        "games"
+        "games",
+        "aggregates"
       ],
       "title": "ReviewGames",
       "type": "object"
@@ -2380,7 +2389,8 @@
             "page",
             "what_if",
             "tag",
-            "media"
+            "media",
+            "regenerate"
           ],
           "title": "Operation",
           "type": "string"

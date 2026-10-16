@@ -29,3 +29,18 @@ it('review distinguishes player and Engine choices, uncertainty and unavailable 
  expect(html).toContain('logged keyframe unavailable')
  expect(html).not.toContain('<pre>')
 })
+
+it('saved review tag is visible and pressed on its moment card',()=>{
+ const html=renderToStaticMarkup(createElement(ReviewSummaryView,{...callbacks,summary:{game_id:'123',locked:false,top5:[{moment_id:'m',round_id:'3-2',category:'augment',tag:'disagree'}]}}))
+ expect(html).toContain('Saved tag: disagree')
+ expect(html).toContain('aria-pressed="true"')
+})
+
+it('renders category averages and the number of games behind each estimate',async()=>{
+ const {ReviewAveragesView}=await import('../src/renderer/src/review/ReviewPanel')
+ const html=renderToStaticMarkup(createElement(ReviewAveragesView,{aggregates:{last10:{games:10,categories:{econ:{value:-.75,games:8}}},live_run:{games:0,categories:{}}}}))
+ expect(html).toContain('Last 10 logged games')
+ expect(html).toContain('-0.75')
+ expect(html).toContain('8 scored games')
+ expect(html).toContain('Live-mode run')
+})

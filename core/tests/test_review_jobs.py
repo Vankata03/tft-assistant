@@ -245,3 +245,93 @@ def test_real_review_child_completion_cleans_up_without_ownership_errors(tmp_pat
         assert errors == []
 
     asyncio.run(scenario())
+
+
+def test_manual_regeneration_recomputes_same_identity_and_preserves_tags(tmp_path):
+    from tft_core.review_jobs import ReviewJobs
+    from tft_review import ReviewService
+    async def scenario():
+        sessions, store, _, _ = logged_game(tmp_path, mode='baseline')
+        service = ReviewService(sessions, store, repository=ROOT)
+        jobs = ReviewJobs(sessions, store, service, ROOT)
+        jobs.start()
+        try:
+            jobs.enqueue('901')
+            for _ in range(500):
+                records = jobs.jobs()
+                if records and records[0]['state'] == 'completed':
+                    break
+                await asyncio.sleep(.01)
+            first, = jobs.jobs()
+            assert first['state'] == 'completed'
+            jobs.enqueue('901', regenerate=True)
+            for _ in range(500):
+                records = jobs.jobs()
+                if records and records[0]['state'] == 'completed' and records[0]['started_at'] != first['started_at']:
+                    break
+                await asyncio.sleep(.01)
+            second, = jobs.jobs()
+            assert second['job_id'] == first['job_id']
+            assert second['state'] == 'completed'
+            assert second['started_at'] != first['started_at']
+            assert service.summary('901')['report_id'] == first['receipt']['report_id']
+        finally:
+            await jobs.shutdown()
+    asyncio.run(scenario())
+
+
+def test_regeneration_enqueued_while_a_request_is_being_marked_handled_is_not_lost(tmp_path, monkeypatch):
+    """Enqueue runs on a server worker thread; the supervisor's handled write must not overwrite it."""
+    import json
+    import threading
+    import tft_core.review_jobs as review_jobs
+    from tft_core.review_jobs import ReviewJobs
+    from tft_review import ReviewService
+    original = review_jobs._write
+    async def scenario():
+        sessions, store, _, _ = logged_game(tmp_path, mode='baseline')
+        service = ReviewService(sessions, store, repository=ROOT)
+        jobs = ReviewJobs(sessions, store, service, ROOT)
+        raced = []
+        def write(path, value):
+            if path.parent == jobs.requests and value.get('state') == 'handled' and not raced:
+                # A concurrent regenerate lands between the nonce check and this write.
+                thread = threading.Thread(target=jobs.enqueue, args=('901',), kwargs={'regenerate': True})
+                raced.append(thread)
+                thread.start()
+                thread.join(.3)
+            original(path, value)
+        monkeypatch.setattr(review_jobs, '_write', write)
+        jobs.start()
+        try:
+            jobs.enqueue('901')
+            first_started = None
+            for _ in range(800):
+                records = jobs.jobs()
+                if first_started is None and records and records[0]['state'] == 'completed':
+                    first_started = records[0]['started_at']
+                request = json.loads((jobs.requests / '901.json').read_text())
+                if (raced and not raced[0].is_alive() and request['state'] == 'handled'
+                        and records[0]['started_at'] != first_started and records[0]['state'] == 'completed'):
+                    break
+                await asyncio.sleep(.01)
+            assert raced
+            request = json.loads((jobs.requests / '901.json').read_text())
+            assert request['regenerate'] is True
+            assert request['state'] == 'handled'
+            assert jobs.jobs()[0]['started_at'] != first_started
+        finally:
+            await jobs.shutdown()
+    asyncio.run(scenario())
+
+
+def test_ordinary_request_does_not_downgrade_a_queued_regeneration(tmp_path):
+    import json
+    from tft_core.review_jobs import ReviewJobs
+    from tft_review import ReviewService
+    sessions, store, _, _ = logged_game(tmp_path, mode='baseline')
+    jobs = ReviewJobs(sessions, store, ReviewService(sessions, store, repository=ROOT), ROOT)
+    jobs.requests.mkdir(parents=True)
+    jobs.enqueue('901', regenerate=True)
+    jobs.enqueue('901')
+    assert json.loads((jobs.requests / '901.json').read_text())['regenerate'] is True

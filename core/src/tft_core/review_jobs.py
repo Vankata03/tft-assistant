@@ -11,6 +11,8 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import threading
+from uuid import uuid4
 from datetime import UTC, datetime
 from time import time
 from hashlib import sha256
@@ -46,6 +48,9 @@ class ReviewJobs:
         self._wake = asyncio.Event()
         self._closed = False
         self._child_shutdown_complete = True
+        self._loop = None
+        # Server worker threads enqueue while the supervisor marks requests handled.
+        self._requests_lock = threading.Lock()
         self._task = None
         self._process = None
         self._launches = set()
@@ -62,6 +67,7 @@ class ReviewJobs:
                 '--repository', str(self.repository), '--expected-job-id', job_id]
 
     def start(self):
+        self._loop = asyncio.get_running_loop()
         self.records.mkdir(parents=True, exist_ok=True)
         self.requests.mkdir(parents=True, exist_ok=True)
         self.children.register_owner()
@@ -78,7 +84,7 @@ class ReviewJobs:
         if self.error:
             self.error("review_supervisor_failed", self.status)
 
-    def enqueue(self, game_id):
+    def enqueue(self, game_id, *, regenerate=False):
         game_id = str(game_id)
         if not game_id.isdecimal() or int(game_id) <= 0:
             raise ValueError('Review requires a positive game ID')
@@ -87,8 +93,17 @@ class ReviewJobs:
             raise ValueError('Review requires successful capture finalization and game_end')
         if self._closed or (self._task is not None and self._task.done()):
             raise RuntimeError('Review supervisor is closed or stopped')
-        _write(self.requests / f'{game_id}.json', {'game_id': game_id, 'state': 'queued'})
-        self._wake.set()
+        path = self.requests / f'{game_id}.json'
+        with self._requests_lock:
+            pending = json.loads(path.read_text()) if path.exists() else {}
+            # A queued manual regeneration is not downgraded by a later ordinary request.
+            regenerate = regenerate or (pending.get('state') == 'queued' and pending.get('regenerate', False))
+            _write(path, {'game_id': game_id, 'state': 'queued',
+                'regenerate': regenerate, 'request_nonce': uuid4().hex})
+        if self._loop:
+            self._loop.call_soon_threadsafe(self._wake.set)
+        else:
+            self._wake.set()
 
     def jobs(self):
         return [json.loads(path.read_text()) for path in self.records.glob('*.json')]
@@ -132,7 +147,7 @@ class ReviewJobs:
                     break
                 path, request = selected
                 try:
-                    await self._produce(request['game_id'])
+                    await self._produce(request['game_id'], regenerate=request.get('regenerate', False))
                 except asyncio.CancelledError:
                     raise
                 except Exception as error:
@@ -140,27 +155,32 @@ class ReviewJobs:
                     request['reason'] = self.status
                     if self.error:
                         self.error('review_unavailable', self.status)
-                # Preserve an on-demand request accepted while this job ran.
-                latest = json.loads(path.read_text())
-                if latest.get('request_nonce') != request.get('request_nonce'):
-                    continue
-                request['state'] = 'handled'
+                # Preserve an on-demand request accepted while this job ran. Server
+                # worker threads enqueue under the same lock as this handled write.
                 outcome = self.outcomes.status(request['game_id'])
-                if outcome is not None:
-                    request['outcome_state'] = outcome['state']
-                    request.pop('outcome_reason', None)
-                    request['outcome_attempts'] = request.get('outcome_attempts', 0) + 1
-                    if outcome['state'] == 'pending' and request['outcome_attempts'] < 10:
-                        request.update(state='queued', regenerate=False,
-                            outcome_retry_at=time() + self.outcome_retry_seconds)
-                    if outcome['state'] != 'confirmed':
-                        reason = outcome['reason']
-                        if outcome['state'] == 'pending' and request['state'] == 'handled':
-                            reason = 'Outcome retry limit reached; check owner match API and regenerate review to retry'
-                        request['outcome_reason'] = reason
-                        if self.error and outcome.get('configured'):
-                            self.error('outcome_unavailable', reason)
-                _write(path, request)
+                notify = None
+                with self._requests_lock:
+                    latest = json.loads(path.read_text())
+                    if latest.get('request_nonce') != request.get('request_nonce'):
+                        continue
+                    request['state'] = 'handled'
+                    if outcome is not None:
+                        request['outcome_state'] = outcome['state']
+                        request.pop('outcome_reason', None)
+                        request['outcome_attempts'] = request.get('outcome_attempts', 0) + 1
+                        if outcome['state'] == 'pending' and request['outcome_attempts'] < 10:
+                            request.update(state='queued', regenerate=False,
+                                outcome_retry_at=time() + self.outcome_retry_seconds)
+                        if outcome['state'] != 'confirmed':
+                            reason = outcome['reason']
+                            if outcome['state'] == 'pending' and request['state'] == 'handled':
+                                reason = 'Outcome retry limit reached; check owner match API and regenerate review to retry'
+                            request['outcome_reason'] = reason
+                            if outcome.get('configured'):
+                                notify = reason
+                    _write(path, request)
+                if notify and self.error:
+                    self.error('outcome_unavailable', notify)
 
     async def _recover(self):
         reconciled = await self.children.reconcile()
@@ -227,7 +247,7 @@ class ReviewJobs:
                     self.error('review_launch_blocked', 'Process startup cancellation remains unconfirmed; late child admission is blocked')
             raise
 
-    async def _produce(self, game_id):
+    async def _produce(self, game_id, *, regenerate=False):
         await self._collect_outcome(game_id)
         if self._closed:
             return
@@ -240,7 +260,7 @@ class ReviewJobs:
         path = self.records / f'{job_id}.json'
         if job_id in self._blocked:
             raise ValueError('Review child ownership is blocked; no duplicate evaluator was launched')
-        if path.exists() and json.loads(path.read_text())['state'] in {'completed', 'unavailable'}:
+        if not regenerate and path.exists() and json.loads(path.read_text())['state'] in {'completed', 'unavailable'}:
             return
         reservation = JobMutex(self.children.root, 'schedule-' + job_id)
         if not reservation.acquire():

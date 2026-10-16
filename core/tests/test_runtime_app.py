@@ -400,6 +400,25 @@ def test_actual_app_finalizes_then_runs_review_child_and_serves_authenticated_re
             assert response["type"] == "review_response"
             assert response["value"]["locked"] is False
             assert response["value"]["report_id"] == ready["report_id"]
+            # Manual regeneration uses this actual app's owned review supervisor.
+            async def request_review(request_id, operation, **arguments):
+                await ws.send(json.dumps({'v': 1, 'type': 'request_review', 'request_id': request_id,
+                    'game_id': '123', 'operation': operation, 'report_id': ready['report_id'],
+                    'evidence_id': ready['evidence_id'], **arguments}))
+                response, _ = await receive_until(ws, lambda m: m.get('request_id') == request_id)
+                assert response['type'] == 'review_response', response
+                return response['value']
+            point = await request_review('moment-id', 'page', path=['moments', 0, 'moment_id'])
+            moment_id = point['items'][0]['value']
+            await request_review('owner-tag', 'tag', moment_id=moment_id, tag='unsure')
+            before_log = sessions.log_path('123').read_bytes()
+            queued = await request_review('regenerate', 'regenerate')
+            assert queued['state'] == 'queued'
+            regenerated, _ = await receive_until(ws, lambda m: m['type'] == 'review_ready', seconds=20)
+            assert regenerated['report_id'] == ready['report_id']
+            summary = await request_review('new-summary', 'summary')
+            assert summary['tags'][moment_id] == 'unsure'
+            assert sessions.log_path('123').read_bytes() == before_log
 
     asyncio.run(scenario())
 

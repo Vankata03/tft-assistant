@@ -543,7 +543,7 @@ export interface PhysicalClientBounds {
  */
 export interface ReviewResponse {
   game_id: string
-  operation: 'summary' | 'page' | 'what_if' | 'tag' | 'media'
+  operation: 'summary' | 'page' | 'what_if' | 'tag' | 'media' | 'regenerate'
   request_id: string
   type: 'review_response'
   v: 1
@@ -556,6 +556,9 @@ export interface ReviewResponse {
  * via the `definition` "ReviewGames".
  */
 export interface ReviewGames {
+  aggregates: {
+    [k: string]: JsonValue
+  }
   games: {
     [k: string]: JsonValue
   }[]
@@ -661,7 +664,7 @@ export interface RequestReview {
   limit: number
   moment_id: string | null
   name: string | null
-  operation: 'summary' | 'page' | 'what_if' | 'tag' | 'media'
+  operation: 'summary' | 'page' | 'what_if' | 'tag' | 'media' | 'regenerate'
   option_id: string | null
   /**
    * @maxItems 64

@@ -77,3 +77,11 @@ it('shows raw recorded evidence only after an explicit Debug action',async()=>{
  await click(host,'Debug')
  expect(calls.at(-1)?.path).toEqual(['debug'])
 })
+
+it('requests on-demand regeneration for the selected finished game',async()=>{
+ const host=mount()
+ await act(async()=>root!.render(createElement(ReviewPanel,{state:state('live')})))
+ await click(host,'Regenerate review')
+ expect(calls.at(-1)).toMatchObject({operation:'regenerate',game_id:'123'})
+ expect(host.textContent).toContain('Review regeneration queued')
+})

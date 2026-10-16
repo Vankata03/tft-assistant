@@ -211,13 +211,14 @@ class ReviewGames(_Message):
     type: Literal['review_games'] = 'review_games'
     request_id: str
     games: tuple[dict[str,JsonValue],...]
+    aggregates: dict[str,JsonValue] = Field(default_factory=dict)
 
 
 class RequestReview(_Message):
     type: Literal['request_review'] = 'request_review'
     request_id: str = Field(min_length=1,max_length=100)
     game_id: str = Field(pattern=r'^[1-9][0-9]*$')
-    operation: Literal['summary','page','what_if','tag','media']
+    operation: Literal['summary','page','what_if','tag','media','regenerate']
     report_id: str | None = None
     evidence_id: str | None = None
     path: tuple[str | StrictInt,...] = Field(default=(),max_length=64)
@@ -232,7 +233,7 @@ class RequestReview(_Message):
     def required_arguments(self):
         if any(isinstance(part,str) and len(part)>500 or type(part) is int and part<0 for part in self.path):
             raise ValueError('Invalid review evidence path')
-        if self.operation not in ('summary','media') and (not self.report_id or not self.evidence_id):
+        if self.operation not in ('summary','media','regenerate') and (not self.report_id or not self.evidence_id):
             raise ValueError('Review details require the current report and evidence identities')
         if self.operation in ('tag','what_if') and not self.moment_id:
             raise ValueError('Known review moment required')
@@ -247,7 +248,7 @@ class ReviewResponse(_Message):
     type: Literal['review_response'] = 'review_response'
     request_id: str
     game_id: str
-    operation: Literal['summary','page','what_if','tag','media']
+    operation: Literal['summary','page','what_if','tag','media','regenerate']
     value: dict[str,JsonValue]
 
 
