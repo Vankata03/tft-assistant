@@ -1,25 +1,32 @@
-"""Family-3 priors from public statistics by empirical Bayes (``fit --priors``).
+"""Fit family-3 priors from explicitly qualified public aggregate cohorts.
 
-Only current-patch, non-stale statistics rows enter. A patch's priors are
-recomputed only once its statistics pass about 500 boards; until then the
-committed priors stay. The board count is a lower bound: the largest sample
-count of any eligible row, because every row's boards belong to the patch.
+``evidence`` is a JSON object with schema ``public_prior_cohorts_v1`` and
+``cohorts``. Each cohort binds id, patch, source (metatft or tactics.tools),
+HTTPS citation, timezone-aware start/end/updated_at, distinct_boards and rows.
+The qualification object must explicitly certify public_aggregate,
+distinct_boards and independent_rows. These are producer attestations, not
+qualification inferred from raw Statistic rows. The caller must verify them
+against the cited publication. No owner logs enter this estimator.
 
-Estimators, matched to how the Engine applies each prior:
+Unit/trait rows contain exact integer successes/trials and unit_star or
+breakpoint. Item rows contain entity_id, item_id, trials, mean placement gain
+and variance of the matched placement contrast, including baseline uncertainty.
+Augment rows contain entity_id, trials, mean placement delta, variance and the
+qualified tier prior_mean on the same scale. Variances are individual-outcome
+variances, not variances of means. Row identities must be unique and the cohort
+producer must certify independent sampling units (no overlapping fitted rows).
 
-- ``cost_star_baseline``: per cost and star, the sample-weighted top-4 rate
-  of the current patch on the lobby logit scale.
-- ``unit_prior_strength`` and ``trait_prior_strength``: the beta-binomial
-  marginal-likelihood maximum of the prior sample size, centred on the
-  cost-star prior and the lobby rate respectively.
-- ``item_class_prior`` and ``item_prior_strength``: a normal hierarchical
-  model of item placement deltas; class means and the method-of-moments
-  between-row variance give the prior strength as noise over signal variance.
-
-Augment priors stay carried until augment statistics and a cross-patch
-holdout exist. Nothing here publishes data; results go to a candidate file.
+Current-patch fits use only the latest qualified cohort. Explicit distinct
+boards gate the fit; entity sample counts never establish patch population.
+Beta-binomial marginal likelihood estimates binomial strengths. Normal
+hierarchical moments estimate placement strengths without inventing variance.
+The flag multiplier uses flagged early/late pairs from disjoint cohorts across
+patches, training on older patches and checking the newest unseen patch.
+Missing evidence carries committed fields. All outputs remain candidates.
 """
 from dataclasses import dataclass, field
+from datetime import datetime
+from urllib.parse import urlparse
 from math import exp, isfinite, lgamma, log
 
 from tft_data.config import STATISTICS_MIN_SAMPLES
@@ -28,8 +35,6 @@ from tft_engine.power import lobby_rate, logit, sigmoid
 
 FAMILY_3 = ('cost_star_baseline', 'unit_prior_strength', 'trait_prior_strength',
     'item_class_prior', 'item_prior_strength', 'augment_prior_strength', 'augment_flag_prior_multiplier')
-# Variance of a lobby's placements 1..8 when a row reports no variance.
-LOBBY_PLACEMENT_VARIANCE = 63/12
 _STRENGTH_BOUNDS = (1e-2, 1e6)
 
 
@@ -79,93 +84,262 @@ def _beta_binomial_strength(rows):
     return strength, None
 
 
-def _unit_rows(rows, data):
-    for row in rows:
-        entity = data.entities.get(row.entity_id)
-        if (row.kind == 'unit' and row.unit_star is not None and row.item_id is None and row.comp_id is None
-                and row.top4_rate is not None and entity is not None and entity.kind in ('unit', 'unit_form')):
-            yield row, entity
+def _integer(value, label, *, minimum=0):
+    if type(value) is not int or value < minimum:
+        raise ValueError(f'{label} requires an exact integer >= {minimum}')
+    return value
 
 
-def fit_priors(data, *, min_boards=STATISTICS_MIN_SAMPLES):
-    rows = [row for row in data.statistics if row.patch == data.patch and not row.stale]
-    boards = max((row.sample_count for row in rows), default=0)
+def _number(value, label):
+    if isinstance(value, bool) or not isinstance(value, (float, int)) or not isfinite(value):
+        raise ValueError(f'{label} requires a finite number')
+    return value
+
+
+def _time(value):
+    try:
+        result = datetime.fromisoformat(value)
+    except (ValueError, TypeError):
+        raise ValueError('Cohort times require ISO timestamps') from None
+    if result.tzinfo is None or result.utcoffset() is None:
+        raise ValueError('Cohort times require timezones')
+    return result
+
+
+def _cohorts(evidence, data):
+    if not isinstance(evidence, dict) or evidence.get('schema') != 'public_prior_cohorts_v1':
+        raise ValueError('Public prior evidence requires public_prior_cohorts_v1 schema')
+    cohorts = evidence.get('cohorts')
+    if not isinstance(cohorts, list):
+        raise ValueError('Public prior evidence requires a cohort list')
+    identities, qualified = set(), []
+    for original in cohorts:
+        if not isinstance(original, dict):
+            raise ValueError('Public prior cohort must be an object')
+        cohort = dict(original)
+        for key in ('id', 'patch', 'source', 'citation'):
+            if not isinstance(cohort.get(key), str) or not cohort[key].strip():
+                raise ValueError(f'Cohort requires {key}')
+        if cohort['id'] in identities:
+            raise ValueError('Duplicate public cohort id')
+        identities.add(cohort['id'])
+        citation = urlparse(cohort['citation'])
+        host = citation.hostname or ''
+        domain = {'metatft': 'metatft.com', 'tactics.tools': 'tactics.tools'}.get(cohort['source'])
+        if (domain is None or citation.scheme != 'https' or citation.username or citation.password
+                or not (host == domain or host.endswith('.'+domain))):
+            raise ValueError('Cohort requires a public provider HTTPS citation bound to its source')
+        qualification = cohort.get('qualification', {})
+        if not isinstance(qualification, dict) or any(qualification.get(key) is not True
+                for key in ('public_aggregate', 'distinct_boards', 'independent_rows')):
+            raise ValueError('Cohort requires explicit public/distinct-board/independent-row qualification')
+        start, end, updated = (_time(cohort.get(key)) for key in ('start', 'end', 'updated_at'))
+        if not start < end <= updated:
+            raise ValueError('Cohort must bind ordered source observation and publication times')
+        _integer(cohort.get('distinct_boards'), 'distinct_boards')
+        rows = cohort.get('rows')
+        if not isinstance(rows, list):
+            raise ValueError('Cohort requires aggregate rows')
+        keys = set()
+        for row in rows:
+            if not isinstance(row, dict):
+                raise ValueError('Cohort row must be an object')
+            kind = row.get('kind')
+            entity = data.entities.get(row.get('entity_id'))
+            expected = 'unit' if kind == 'item' else kind
+            if kind not in ('unit', 'trait', 'item', 'augment') or entity is None or entity.kind not in (
+                    ('unit', 'unit_form') if expected == 'unit' else (expected,)):
+                raise ValueError('Cohort row requires a known matching entity')
+            trials = _integer(row.get('trials'), 'trials', minimum=1)
+            if kind in ('unit', 'trait'):
+                successes = _integer(row.get('successes'), 'successes')
+                if successes > trials:
+                    raise ValueError('successes cannot exceed trials')
+                key = 'unit_star' if kind == 'unit' else 'breakpoint'
+                _integer(row.get(key), key, minimum=1)
+                if kind == 'unit' and entity.cost is None:
+                    raise ValueError('Unit prior evidence requires a cost')
+            else:
+                _number(row.get('mean'), 'placement delta')
+                if _number(row.get('variance'), 'placement variance') <= 0:
+                    raise ValueError('Placement variance must be positive')
+                if not -7 <= row['mean'] <= 7:
+                    raise ValueError('Placement delta must lie in [-7, 7]')
+                if kind == 'item':
+                    item = data.entities.get(row.get('item_id'))
+                    if item is None or item.kind != 'item' or any('item_class' not in e.values for e in (entity, item)):
+                        raise ValueError('Item prior evidence requires known holder/item classes')
+                else:
+                    _number(row.get('prior_mean'), 'augment tier prior mean')
+                    if not -7 <= row['prior_mean'] <= 7 or type(row.get('flagged', False)) is not bool:
+                        raise ValueError('Invalid augment prior or flag')
+            key = (kind, row['entity_id'], row.get('unit_star'), row.get('breakpoint'), row.get('item_id'))
+            if key in keys:
+                raise ValueError('Duplicate aggregate row identity')
+            keys.add(key)
+        if sum(row['trials'] for row in rows) > cohort['distinct_boards']:
+            raise ValueError('Independent aggregate rows exceed the certified distinct-board population')
+        cohort['_start'], cohort['_end'] = start, end
+        qualified.append(cohort)
+    for index, cohort in enumerate(qualified):
+        for other in qualified[:index]:
+            if cohort['patch'] == other['patch'] and max(cohort['_start'], other['_start']) < min(cohort['_end'], other['_end']):
+                raise ValueError('Public cohort observation windows overlap within a patch')
+    return sorted(qualified, key=lambda row: (row['_end'], row['id']))
+
+
+def _normal_strength(rows):
+    """Rows are (mean, outcome variance, count, prior mean)."""
+    if len(rows) < 2:
+        return None, 'insufficient_rows'
+    between = sum((mean-prior)**2-variance/n for mean, variance, n, prior in rows)/len(rows)
+    if between <= 0:
+        return None, 'no_between_row_variance'
+    return sum(variance for _, variance, _, _ in rows)/len(rows)/between, None
+
+
+def _temporal_multiplier(cohorts, strength, reference):
+    pairs = []
+    patches = sorted({c['patch'] for c in cohorts}, key=lambda patch:
+        min(c['_start'] for c in cohorts if c['patch'] == patch))
+    for patch in patches:
+        current = [c for c in cohorts if c['patch'] == patch]
+        if len(current) < 2:
+            continue
+        early, late = current[0], current[-1]
+        if early['source'] != late['source']:
+            continue
+        targets = {r['entity_id']: r for r in late['rows'] if r['kind'] == 'augment'}
+        rows = []
+        for row in early['rows']:
+            target = targets.get(row['entity_id'])
+            if (row['kind'] == 'augment' and row.get('flagged') is True and target is not None
+                    and row['prior_mean'] == target['prior_mean']):
+                rows.append((row, target))
+        if rows:
+            pairs.append((patch, rows))
+    if len(pairs) < 2:
+        return None, 'cross_patch_holdout_unavailable', None
+    training, holdout = pairs[:-1], pairs[-1]
+    holdout_start = min(c['_start'] for c in cohorts if c['patch'] == holdout[0])
+    if any(c['_end'] > holdout_start for c in cohorts if c['patch'] in {p for p, _ in training}):
+        return None, 'nonchronological_cross_patch_holdout', None
+    def loss(multiplier, groups):
+        values = []
+        for _, rows in groups:
+            # Equal weight per patch; normal target likelihood up to constants.
+            values.append(sum(((r['trials']*r['mean']+strength*multiplier*r['prior_mean'])
+                /(r['trials']+strength*multiplier)-t['mean'])**2/(t['variance']/t['trials'])
+                for r, t in rows)/len(rows))
+        return sum(values)/len(values)
+    candidate, bounded = _golden_log(lambda value: -loss(value, training), 1., 1000.)
+    if bounded:
+        return None, 'temporal_optimum_at_bound', None
+    candidate_loss, reference_loss = loss(candidate, [holdout]), loss(reference, [holdout])
+    diagnostics = {'method': 'normal temporal prediction loss; equal patches',
+        'training_patches': [patch for patch, _ in training], 'holdout_patch': holdout[0],
+        'candidate_loss': candidate_loss, 'reference_loss': reference_loss,
+        'strength': strength, 'bounds': [1., 1000.]}
+    return (candidate, None, diagnostics) if candidate_loss <= reference_loss else (
+        None, 'temporal_holdout_regression', diagnostics)
+
+
+def fit_priors(data, *, evidence=None, min_boards=STATISTICS_MIN_SAMPLES):
+    """Produce unaccepted prior candidates; raw rounded statistics cannot qualify."""
+    _integer(min_boards, 'min_boards', minimum=1)
+    if evidence is None:
+        return PriorFit('unqualified_public_evidence', data.patch, 0, min_boards,
+            carried={name: 'qualified_public_cohorts_unavailable' for name in FAMILY_3})
+    cohorts = _cohorts(evidence, data)
+    current = [cohort for cohort in cohorts if cohort['patch'] == data.patch]
+    selected = current[-1] if current else None
+    boards = selected['distinct_boards'] if selected else 0
     if boards < min_boards:
         return PriorFit('insufficient_boards', data.patch, boards, min_boards,
             carried={name: 'insufficient_boards' for name in FAMILY_3})
+    rows = selected['rows']
+    fields, carried = {}, {}
+    diagnostics = {'cohort': {key: selected[key] for key in (
+        'id', 'patch', 'source', 'citation', 'updated_at', 'start', 'end', 'distinct_boards', 'qualification')}}
     lobby = lobby_rate(data)
-    fields, carried, diagnostics = {}, {}, {}
-
-    committed = plain(data.tunables['cost_star_baseline'].value)
+    baseline = {cost: dict(stars) for cost, stars in plain(data.tunables['cost_star_baseline'].value).items()}
     pooled = {}
-    for row, entity in _unit_rows(rows, data):
-        cell = pooled.setdefault((str(entity.cost), str(row.unit_star)), [0.0, 0])
-        cell[0] += row.top4_rate*row.sample_count
-        cell[1] += row.sample_count
-    baseline = {cost: dict(stars) for cost, stars in committed.items()}
-    cells = {}
-    for (cost, stars), (wins, samples) in sorted(pooled.items()):
-        if samples and 0 < wins/samples < 1:
-            baseline.setdefault(cost, {})[stars] = logit(wins/samples)-logit(lobby)
-            cells[f'{cost}/{stars}'] = samples
-    if cells:
+    for row in rows:
+        if row['kind'] == 'unit':
+            key = (str(data.entities[row['entity_id']].cost), str(row['unit_star']))
+            cell = pooled.setdefault(key, [0, 0])
+            cell[0] += row['successes']
+            cell[1] += row['trials']
+    for (cost, stars), (successes, trials) in pooled.items():
+        if 0 < successes < trials:
+            baseline.setdefault(cost, {})[stars] = logit(successes/trials)-logit(lobby)
+    if any(0 < k < n for k, n in pooled.values()):
         fields['cost_star_baseline'] = baseline
-        diagnostics['cost_star_baseline'] = {'cells': cells, 'scale': 'logit(top4) - logit(lobby)'}
     else:
-        carried['cost_star_baseline'] = 'no_current_unit_star_statistics'
-
-    unit_evidence = []
-    for row, entity in _unit_rows(rows, data):
-        prior = baseline.get(str(entity.cost), {}).get(str(row.unit_star))
-        if prior is not None:
-            unit_evidence.append((row.top4_rate*row.sample_count, row.sample_count,
-                sigmoid(logit(lobby)+float(prior))))
-    trait_evidence = [(row.top4_rate*row.sample_count, row.sample_count, lobby) for row in rows
-        if row.kind == 'trait' and row.breakpoint is not None and row.top4_rate is not None]
-    for name, evidence in (('unit_prior_strength', unit_evidence), ('trait_prior_strength', trait_evidence)):
-        strength, reason = _beta_binomial_strength(evidence)
+        carried['cost_star_baseline'] = 'no_interior_unit_star_statistics'
+    for kind, name in (('unit', 'unit_prior_strength'), ('trait', 'trait_prior_strength')):
+        observations = []
+        for row in rows:
+            if row['kind'] != kind:
+                continue
+            if kind == 'unit':
+                prior = baseline.get(str(data.entities[row['entity_id']].cost), {}).get(str(row['unit_star']))
+                if prior is None:
+                    continue
+                mean = sigmoid(logit(lobby)+float(prior))
+            else:
+                mean = lobby
+            observations.append((row['successes'], row['trials'], mean))
+        strength, reason = _beta_binomial_strength(observations)
         if strength is None:
             carried[name] = reason
         else:
             fields[name] = strength
-            diagnostics[name] = {'rows': len(evidence), 'method': 'beta-binomial marginal likelihood'}
-
-    class_rows = {}
+            diagnostics[name] = {'rows': len(observations), 'method': 'beta-binomial marginal likelihood'}
+    classes = {}
     for row in rows:
-        if row.item_id is None:
-            continue
-        unit, item = data.entities.get(row.entity_id), data.entities.get(row.item_id)
-        base = max((other for other in rows if other.entity_id == row.entity_id and other.kind == 'unit'
-            and other.item_id is None), key=lambda other: other.sample_count, default=None)
-        if (base is None or unit is None or item is None or row.sample_count <= 0
-                or 'item_class' not in unit.values or 'item_class' not in item.values):
-            continue
-        variance = row.variance if row.variance is not None and isfinite(row.variance) and row.variance > 0 \
-            else LOBBY_PLACEMENT_VARIANCE
-        key = (str(unit.values['item_class'].value), str(item.values['item_class'].value))
-        class_rows.setdefault(key, []).append((base.average_placement-row.average_placement,
-            row.sample_count, variance))
-    evidence = sum(len(values) for values in class_rows.values())
-    if evidence < 2:
-        carried['item_class_prior'] = carried['item_prior_strength'] = 'insufficient_item_rows'
-    else:
-        classes = {key: sum(d*n for d, n, _ in values)/sum(n for _, n, _ in values)
-            for key, values in class_rows.items()}
+        if row['kind'] == 'item':
+            unit, item = (data.entities[row[key]] for key in ('entity_id', 'item_id'))
+            key = (str(unit.values['item_class'].value), str(item.values['item_class'].value))
+            classes.setdefault(key, []).append(row)
+    means = {key: sum(r['mean']*r['trials'] for r in values)/sum(r['trials'] for r in values)
+        for key, values in classes.items()}
+    if means:
         table = {unit: dict(items) for unit, items in plain(data.tunables['item_class_prior'].value).items()}
-        for (unit, item), mean in classes.items():
+        for (unit, item), mean in means.items():
             table.setdefault(unit, {})[item] = mean
         fields['item_class_prior'] = table
-        residual = [((d-classes[key])**2-variance/n, variance)
-            for key, values in class_rows.items() for d, n, variance in values]
-        between = sum(value for value, _ in residual)/len(residual)
-        if between <= 0:
-            carried['item_prior_strength'] = 'no_between_row_variance'
+    else:
+        carried['item_class_prior'] = 'insufficient_item_rows'
+    item_rows = [(r['mean'], r['variance'], r['trials'], means[key])
+        for key, values in classes.items() for r in values]
+    augment_rows = [(r['mean'], r['variance'], r['trials'], r['prior_mean'])
+        for r in rows if r['kind'] == 'augment' and not r.get('flagged', False)]
+    for name, observations in (('item_prior_strength', item_rows), ('augment_prior_strength', augment_rows)):
+        strength, reason = _normal_strength(observations)
+        if strength is None:
+            carried[name] = reason
         else:
-            fields['item_prior_strength'] = (sum(variance for _, variance in residual)/len(residual))/between
-            diagnostics['item_prior_strength'] = {'rows': len(residual), 'between_row_variance': between,
-                'method': 'normal hierarchical method of moments'}
-    carried['augment_prior_strength'] = ('augment_statistics_unavailable'
-        if not any(row.kind == 'augment' for row in rows) else 'augment_prior_fit_not_implemented')
-    carried['augment_flag_prior_multiplier'] = 'cross_patch_holdout_unavailable'
+            fields[name] = strength
+            diagnostics[name] = {'rows': len(observations), 'method': 'normal hierarchical method of moments'}
+    # Keep this strength fixed across temporal patches; do not learn it from the held-out patch.
+    strength = float(data.tunables['augment_prior_strength'].value)
+    reference = float(data.tunables['augment_flag_prior_multiplier'].value)
+    if strength <= 0 or not isfinite(strength) or reference < 1 or not isfinite(reference):
+        multiplier, reason, detail = None, 'qualified_fixed_augment_prior_unavailable', None
+    else:
+        multiplier, reason, detail = _temporal_multiplier(cohorts, strength, reference)
+    if multiplier is None:
+        carried['augment_flag_prior_multiplier'] = reason
+    else:
+        # The holdout used the committed strength. Jointly changing it would invalidate that test.
+        if 'augment_prior_strength' in fields:
+            fields.pop('augment_prior_strength')
+            carried['augment_prior_strength'] = 'fixed_for_temporal_multiplier_holdout'
+        fields['augment_flag_prior_multiplier'] = multiplier
+    if detail:
+        diagnostics['augment_flag_prior_multiplier'] = detail
+    diagnostics['public_cohorts'] = [{key: c[key] for key in (
+        'id', 'patch', 'source', 'citation', 'updated_at', 'start', 'end')} for c in cohorts]
     return PriorFit('candidate' if fields else 'no_estimable_priors', data.patch, boards, min_boards,
         fields, carried, diagnostics)
