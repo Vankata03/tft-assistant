@@ -145,6 +145,6 @@ def flip_rates(harness, game_ids=None, *, candidate=None, limit=20):
             'gate': {'status': ('pass' if new['rate'] <= old['rate'] else 'fail') if comparable else 'unavailable',
                 'reason': None if comparable else 'unpaired_or_missing_eligible_decisions' if proposed else 'no_candidate'}}
     return frozen_json({'domains': domains, 'examples': examples[:limit],
-        'weighting': 'equal games; reversals/eligible decisions within game',
+        'weighting': 'equal games; reversals over eligible decisions within game',
         'window': 'three planning phases inclusive; timer captures do not advance phase',
         'target_share': .05, 'target_is_gate': False})

@@ -8,7 +8,7 @@ from tft_review.contracts import json_value
 
 
 _OMIT = {'examples', 'manifest', 'largest_changes', 'changed_points', 'rows',
-    'target', 'conditioning', 'training_game_ids', 'holdout_game_ids',
+    'target', 'conditioning', 'carried_citation', 'training_game_ids', 'holdout_game_ids',
     'eligible_game_ids', 'candidates', 'citation', 'citations'}
 
 
@@ -22,8 +22,10 @@ def aggregate_only(value):
     if isinstance(value, list):
         return [aggregate_only(item) for item in value]
     if isinstance(value, str):
-        # Errors can originate from filesystem or external payload validation.
-        if '/' in value and not value.startswith('http'):
+        # Errors can originate from filesystem or external payload validation;
+        # any separator may carry a relative path or game identity. The
+        # harness's own statements therefore avoid path separators.
+        if ('/' in value or '\\' in value) and not value.startswith(('https://', 'http://')):
             return 'details omitted from aggregate artifact'
         if 'puuid' in value.lower():
             return 'private detail omitted'
@@ -51,7 +53,11 @@ def write_markdown(destination, reference, report=None, *, advice_diff=None, fit
             ('Advice diff', aggregate_only(advice_diff or {}))])
     if fit is not None:
         sections.append(('Fit diagnostics', aggregate_only({'status': fit.status,
-            'training_objective': fit.training_objective, 'solver': fit.solver, 'gates': fit.gates})))
+            'training_objective': fit.training_objective, 'solver': fit.solver,
+            # The published candidate adds margins after this search; its gates are the top-level Gates.
+            'family1_only_gates': {'scope': 'family-1 search candidate before margins were added; '
+                'not the gates of the published candidate, which are reported under Gates',
+                'gates': fit.gates}})))
     if margins is not None:
         sections.append(('Margin uncertainty', aggregate_only(margins)))
     if priors is not None:

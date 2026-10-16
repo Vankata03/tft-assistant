@@ -30,6 +30,14 @@ def sighting_law(data, *, opponent_id, round_id, level, previous=None, persisten
         or raw.get('cohort') != state.cohort
         or raw.get('source_updated_at') != state.updated_at.isoformat()):
         raise DataError('joint_sighting_support_unqualified')
+    # Owner-authored synthetic laws remain valid without production population claims.
+    if declaration.source == 'public-statistics':
+        expected = {'population': 'all_alive_boards_by_round_level', 'sampling': 'target_independent',
+            'whole_boards': True, 'disjoint_observations': True, 'provider': state.name,
+            'patch': data.patch, 'cohort': state.cohort,
+            'source_updated_at': state.updated_at.isoformat()}
+        if raw.get('population_qualification') != expected:
+            raise DataError('joint_sighting_support_population_unqualified')
     if previous is not None and (previous.opponent_id != opponent_id
         or round_index(previous.round_id, data) > round_index(round_id, data)):
         raise DataError('Joint persistence requires causal previous inference')

@@ -177,3 +177,32 @@ def test_late_patch_regression_does_not_publish_flag_multiplier(tmp_path):
     result = fit_priors(public_data(tmp_path),evidence=evidence(*cohorts))
     assert 'augment_flag_prior_multiplier' not in result.fields
     assert result.carried['augment_flag_prior_multiplier'] == 'temporal_holdout_regression'
+
+
+def test_partial_table_fit_lists_public_and_carried_cells(tmp_path):
+    from tft_harness.priors import fit_priors
+    data = public_data(tmp_path)
+    result = fit_priors(data, evidence=evidence(cohort([
+        binomial('unit', 'u0', 600), normal('item', 'u0', .4, item_id='i0')])))
+    cells = result.diagnostics['table_cells']
+    assert cells['cost_star_baseline']['fitted_cells'] == [['1', '1']]
+    assert ['3', '2'] in cells['cost_star_baseline']['carried_cells']
+    assert cells['item_class_prior']['fitted_cells'] == [['carry', 'ad']]
+    assert cells['item_class_prior']['carried_cells'] == [['carry', 'ap']]
+    assert cells['item_class_prior']['carried_source'] == 'owner'
+    assert cells['item_class_prior']['carried_citation'] == data.tunables['item_class_prior'].citation
+
+
+def test_removed_historical_augment_does_not_invalidate_temporal_holdout(tmp_path):
+    from tft_harness.priors import fit_priors
+    cohorts = temporal()
+    for old in cohorts[:2]:
+        for row in old['rows']:
+            row['entity_id'] = 'removed-' + row['entity_id']
+    data = public_data(tmp_path)
+    result = fit_priors(data, evidence=evidence(*cohorts))
+    assert result.fields['augment_flag_prior_multiplier'] > 2
+    assert result.diagnostics['augment_flag_prior_multiplier']['training_patches'] == ['previous']
+    cohorts[-1]['rows'][0]['entity_id'] = 'removed-current'
+    with pytest.raises(ValueError, match='known matching entity'):
+        fit_priors(data, evidence=evidence(*cohorts))

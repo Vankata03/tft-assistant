@@ -166,7 +166,14 @@ def test_fit_cli_writes_unaccepted_toml_with_holdout_diagnostics(tmp_path, monke
         '--output', str(output), '--search', str(search), '--bootstrap-draws', '20']) == 0
     candidate = tomllib.loads(next(output.glob('*.toml')).read_text())
     assert candidate['fields']['fight_scale']['family'] == '1'
-    assert 'Fit diagnostics' in next(output.glob('*.md')).read_text()
+    report = next(output.glob('*.md')).read_text()
+    def section(title):
+        return json.loads(report.split('## '+title+'\n\n```json\n')[1].split('\n```')[0])
+    diagnostics = section('Fit diagnostics')
+    assert 'gates' not in diagnostics
+    partial = diagnostics['family1_only_gates']
+    assert partial['scope'].startswith('family-1 search candidate before margins')
+    assert partial['gates'] and set(partial['gates']) <= set(section('Gates'))
     assert (repository/'data/18.2/tunables.toml').read_bytes() == before
 
 
@@ -197,7 +204,14 @@ def test_priors_cli_uses_qualified_public_counts_and_preserves_source(tmp_path, 
         '--output', str(output), '--prior-evidence', str(source), '--bootstrap-draws', '20']) == 0
     candidate = tomllib.loads(next(output.glob('*.toml')).read_text())
     fitted = candidate['fields']['cost_star_baseline']
-    assert fitted['source'] == 'public-statistics' and fitted['family'] == '3'
+    assert fitted['source'] == 'owner' and fitted['family'] == '3'
+    assert 'Mixed-origin table' in fitted['citation']
+    cells = candidate['harness_candidate']['provenance']['table_cells']['cost_star_baseline']
+    assert cells['fitted_cells'] == [['1', '1']]
+    assert ['3', '2'] in cells['carried_cells']
+    assert cells['carried_source'] == 'owner'
+    report = next(output.glob('*.md')).read_text()
+    assert '"fitted_cells"' in report and '"carried_cells"' in report
     assert candidate['harness_candidate']['provenance']['cohorts'][0]['citation'].startswith('https://tactics.tools/')
     assert str(source) not in next(output.glob('*.toml')).read_text()
 
@@ -233,3 +247,75 @@ def test_report_code_identity_is_running_source_separate_from_accepted_checkout(
     assert main(['eval','--repository',str(repository),'--snapshots',str(store.root),
         '--output',str(output),'--bootstrap-draws','20']) == 0
     assert git(ROOT,'rev-parse','HEAD') in next(output.glob('*.md')).read_text()
+
+
+def test_dirty_runtime_cli_publishes_code_identity_separate_from_accepted_data(tmp_path):
+    import subprocess
+    import sys
+    import tomllib
+    from tests.test_harness import combat_logs
+    from tests.test_harness_tunables_io import committed_repository, runtime_repository, git
+
+    (tmp_path/'games').mkdir()
+    (tmp_path/'accepted').mkdir()
+    sessions, store = combat_logs(tmp_path/'games', results=('win', 'loss'))
+    accepted = committed_repository(tmp_path/'accepted')
+    runtime = runtime_repository(tmp_path)
+    commit = git(runtime, 'rev-parse', 'HEAD')
+    with (runtime/'core/packages/engine/src/tft_engine/planning.py').open('a') as output:
+        output.write('\n# dirty runtime CLI fixture\n')
+    (runtime/'core/packages/engine/src/tft_engine/untracked_fixture.py').write_text('# untracked runtime\n')
+    search = tmp_path/'search.json'
+    search.write_text('{"fight_scale":[0.5,1,2]}')
+    output = tmp_path/'reports'
+    env = dict(os.environ, TFT_ASSISTANT_DATA_ROOT=str(sessions.root),
+        TFT_ASSISTANT_CONFIG_ROOT=str(sessions.config_root), PYTHONPATH=os.pathsep.join(map(str,
+        [runtime/'core/src', *sorted((runtime/'core/packages').glob('*/src'))])))
+    result = subprocess.run([sys.executable, '-m', 'tft_core.harness_cli', 'fit',
+        '--repository', str(accepted), '--snapshots', str(store.root), '--output', str(output),
+        '--search', str(search), '--bootstrap-draws', '20', '--max-evaluations', '3', '--model-draws', '2'],
+        cwd=runtime/'core/packages/harness', env=env, capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout+result.stderr
+    candidate = tomllib.loads(next(output.glob('*.toml')).read_text())['harness_candidate']
+    producer = candidate['producer']
+    assert producer['commit'] == candidate['code_commit'] == commit
+    assert producer['dirty'] is True and producer['dirty_hash']
+    assert producer['source_matches_checkout'] is True
+    assert candidate['accepted_checkout_head'] == git(accepted, 'rev-parse', 'HEAD') != commit
+    report = next(output.glob('*.md')).read_text()
+    def section(title):
+        return json.loads(report.split('## '+title+'\n\n```json\n')[1].split('\n```')[0])
+    assert section('Producer code identity') == producer
+    identities = section('Replay cache identities')
+    assert identities and all(identity['commit'] == commit and identity['dirty'] for identity in identities)
+    assert 'static and source pins' in section('Advice diff')['reference']
+
+
+def test_aggregate_report_scrubs_every_path_form_but_keeps_its_own_reference_statements(tmp_path, monkeypatch):
+    from tests.test_harness import combat_logs
+    from tests.test_harness_tunables_io import committed_repository
+    from tft_core.harness_cli import main
+    from tft_harness.markdown import aggregate_only
+    assert aggregate_only({'carried_citation': '/private/owner/notes'}) == {}
+    omitted = 'details omitted from aggregate artifact'
+    for leaked in ('games/NA1_901/events.jsonl', 'see logs\\games\\901', 'C:\\Users\\owner\\x',
+            '/private/var/x', '~/logs/x', 'error at "/tmp/x"'):
+        assert aggregate_only({'reason': leaked}) == {'reason': omitted}
+    (tmp_path/'games').mkdir()
+    (tmp_path/'accepted').mkdir()
+    sessions, store = combat_logs(tmp_path/'games', results=('win', 'loss'))
+    repository = committed_repository(tmp_path/'accepted')
+    monkeypatch.setenv('TFT_ASSISTANT_DATA_ROOT', str(sessions.root))
+    monkeypatch.setenv('TFT_ASSISTANT_CONFIG_ROOT', str(sessions.config_root))
+    output = tmp_path/'reports'
+    assert main(['eval', '--repository', str(repository), '--snapshots', str(store.root),
+        '--output', str(output), '--bootstrap-draws', '20']) == 0
+    report = next(output.glob('*.md')).read_text()
+    def section(title):
+        return json.loads(report.split('## '+title+'\n\n```json\n')[1].split('\n```')[0])
+    assert section('Advice diff')['reference'] == (
+        'latest committed accepted tunables; immutable static and source pins; original log points and seeds')
+    widened = section('Widened candidate and hand-set checks')['widened_candidates']
+    assert widened['reference'] == ('effective replay tunables; immutable static and source pins; '
+        'original log points and seeds')
+    assert omitted not in report and 'historical immutable tunables' not in report

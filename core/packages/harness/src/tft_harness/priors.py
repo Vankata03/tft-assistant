@@ -147,8 +147,13 @@ def _cohorts(evidence, data):
             kind = row.get('kind')
             entity = data.entities.get(row.get('entity_id'))
             expected = 'unit' if kind == 'item' else kind
-            if kind not in ('unit', 'trait', 'item', 'augment') or entity is None or entity.kind not in (
-                    ('unit', 'unit_form') if expected == 'unit' else (expected,)):
+            # Temporal augment prediction consumes published contrasts, not the
+            # current patch's entity catalog. Removed historical augments remain usable.
+            historical_augment = kind == 'augment' and cohort['patch'] != data.patch
+            if (not isinstance(row.get('entity_id'), str) or not row['entity_id'].strip()
+                    or kind not in ('unit', 'trait', 'item', 'augment')
+                    or (not historical_augment and (entity is None or entity.kind not in (
+                        ('unit', 'unit_form') if expected == 'unit' else (expected,))))):
                 raise ValueError('Cohort row requires a known matching entity')
             trials = _integer(row.get('trials'), 'trials', minimum=1)
             if kind in ('unit', 'trait'):
@@ -273,7 +278,9 @@ def fit_priors(data, *, evidence=None, min_boards=STATISTICS_MIN_SAMPLES):
     for (cost, stars), (successes, trials) in pooled.items():
         if 0 < successes < trials:
             baseline.setdefault(cost, {})[stars] = logit(successes/trials)-logit(lobby)
+    table_cells = {}
     if any(0 < k < n for k, n in pooled.values()):
+        table_cells['cost_star_baseline'] = [list(key) for key, (k, n) in sorted(pooled.items()) if 0 < k < n]
         fields['cost_star_baseline'] = baseline
     else:
         carried['cost_star_baseline'] = 'no_interior_unit_star_statistics'
@@ -309,6 +316,7 @@ def fit_priors(data, *, evidence=None, min_boards=STATISTICS_MIN_SAMPLES):
         for (unit, item), mean in means.items():
             table.setdefault(unit, {})[item] = mean
         fields['item_class_prior'] = table
+        table_cells['item_class_prior'] = [list(key) for key in sorted(means)]
     else:
         carried['item_class_prior'] = 'insufficient_item_rows'
     item_rows = [(r['mean'], r['variance'], r['trials'], means[key])
@@ -339,6 +347,13 @@ def fit_priors(data, *, evidence=None, min_boards=STATISTICS_MIN_SAMPLES):
         fields['augment_flag_prior_multiplier'] = multiplier
     if detail:
         diagnostics['augment_flag_prior_multiplier'] = detail
+    diagnostics['table_cells'] = {name: {
+        'fitted_cells': fitted,
+        'carried_cells': [[outer, inner] for outer, values in sorted(fields[name].items())
+            for inner in sorted(values) if [outer, inner] not in fitted],
+        'carried_source': data.tunables[name].source,
+        'carried_citation': data.tunables[name].citation}
+        for name, fitted in table_cells.items()}
     diagnostics['public_cohorts'] = [{key: c[key] for key in (
         'id', 'patch', 'source', 'citation', 'updated_at', 'start', 'end')} for c in cohorts]
     return PriorFit('candidate' if fields else 'no_estimable_priors', data.patch, boards, min_boards,

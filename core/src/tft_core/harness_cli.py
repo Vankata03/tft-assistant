@@ -36,7 +36,7 @@ def _offline(args):
     from tft_data import DataStore
     from tft_harness import EvaluationHarness
     from tft_harness.overlay import TunableOverlay
-    from tft_harness.tunables_io import latest_committed_tunables, write_candidate, producer_identity
+    from tft_harness.tunables_io import latest_committed_tunables, write_candidate, producer_identity, runtime_repository
     from tft_harness.markdown import write_markdown
     from tft_harness.fitting import fit
     from tft_harness.priors import fit_priors
@@ -52,7 +52,7 @@ def _offline(args):
         producer = producer_identity()
         sessions, store = SessionStore(root, config), DataStore(snapshots)
         accepted = TunableOverlay(store, {}, tagged_fields=reference.fields)
-        harness = EvaluationHarness(sessions, accepted, repository=args.repository,
+        harness = EvaluationHarness(sessions, accepted, repository=runtime_repository(),
             current_set=reference.set_number)
         fitted = priors = margins = None
         updates = {}
@@ -84,7 +84,7 @@ def _offline(args):
         report = harness.evaluate(candidate=updates, bootstrap_seed=args.seed,
             bootstrap_draws=args.bootstrap_draws)
         diff = dict(harness.advice_diff(updates, limit=0)) | {
-            'reference': 'latest committed accepted tunables; immutable static/source pins; original log points and seeds'}
+            'reference': 'latest committed accepted tunables; immutable static and source pins; original log points and seeds'}
         try:
             checks = harness.hand_set_checks(limit=0)
         except (DataError, ValueError, KeyError, OSError):
@@ -93,9 +93,14 @@ def _offline(args):
             checks=checks, producer=producer)
         if updates:
             runtime = producer
-            sources = {name: 'public-statistics' for name in updates} if priors else None
+            cells = priors.diagnostics.get('table_cells', {}) if priors else {}
+            sources = {name: ('owner' if cells.get(name, {}).get('carried_cells')
+                else 'public-statistics') for name in updates} if priors else None
             write_candidate(reference, updates, output, citation='Offline harness candidate; qualification and gates in private report',
-                sources=sources, provenance=({'method': 'qualified public empirical Bayes and temporal holdout',
+                sources=sources, citations={name: 'Mixed-origin table, unaccepted candidate, not owner confirmation: fitted cells use qualified public statistics; '
+                    'remaining cells retain accepted provenance recorded in harness_candidate.provenance.table_cells'
+                    for name, detail in cells.items() if detail['carried_cells']},
+                provenance=({'table_cells': cells, 'method': 'qualified public empirical Bayes and temporal holdout',
                     'cohorts': priors.diagnostics.get('public_cohorts', []), 'runtime_code': runtime} if priors else
                     {'method': fitted.solver['method'], 'metric': args.metric,
                      'family2_method': 'actual paired Engine tapes and training-game bootstrap refits',

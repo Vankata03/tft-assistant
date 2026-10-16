@@ -13,7 +13,10 @@ class TunableOverlay:
         if set(raw)-set(TUNABLE_FAMILIES):
             raise ValueError('Candidate contains unknown tunables')
         self.fields = tagged(raw, 'harness candidate', families=TUNABLE_FAMILIES)
-        self.fields = dict(tagged_fields or {}) | self.fields
+        # Refresh-computed values belong to each immutable historical snapshot.
+        accepted = {name: value for name, value in (tagged_fields or {}).items()
+            if TUNABLE_FAMILIES.get(name) != 'computed'}
+        self.fields = accepted | self.fields
         self.current = getattr(historical_store, 'current', None)
         self.identity = digest(self.fields)
 
