@@ -118,3 +118,9 @@ The one-shot `tft-harness start-run` workflow from ticket 42 was merged into `im
 - Review attribution, the review surfaces and on-demand regeneration merged into `implement/mvp` as `fb64eb7`. Regeneration runs through the core's owned review supervisor and keeps existing completed-job deduplication unless a regeneration is explicitly requested. A request from a server worker thread is no longer lost to a concurrent handled write. Locked games still reject regeneration, and no review route exposes a Riot PUUID.
 - The full root suite passed 839 tests in 158.84 seconds, process exit 0. Both import contracts, schema freshness, the offline lock check, whitespace checks and the UI tests, typecheck and build passed. Ticket 42 records the details.
 - Windows/Electron execution and live-game qualification remain open. Ticket 55 stays open.
+
+### 2026-10-16 — Post-integration public capability check
+
+- Accepted A/B/C integration `626cc718c1aa13aeaaa93f51c7c6a937a1010e84` is pushed to `origin/implement/mvp`; `git ls-remote` confirmed the exact SHA. Its preceding full root suite passed 866 tests with two existing Torch warnings.
+- A separate environment excludes Live from both installed distributions and import resolution. Every core, review and harness import resolved to root sources. Outcome collection, actual review children, regeneration, desktop workflows and the actual app's no-advisor missing-settings case passed 48 tests in 39.06 seconds, exit 0. Fixtures use temporary stores, local HTTP and authenticated localhost sockets; no owner API, private data or host startup setting was used. Log: `/private/tmp/tft-notes/public-626cc71.log`.
+- This extends software proof after A/B/C integration. It does not qualify Windows, production data, useful Live advice, target latency or historical native-abort causality. Fitting/CLI completion and the complete application acceptance matrix remain open; ticket 55 is not closed.
