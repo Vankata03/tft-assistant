@@ -326,4 +326,4 @@ def advice_diff(harness, candidate, game_ids=None, *, limit=20):
         'expected_placement_difference': aggregate(differences),
         'reason': None if eligible else 'no_paired_decisions', 'excluded': dict(exclusions),
         'largest_changes': examples[:limit], 'candidate_id': overlay.identity,
-        'reference': 'historical immutable tunables; original log points and seeds'})
+        'reference': 'effective replay tunables; immutable static and source pins; original log points and seeds'})

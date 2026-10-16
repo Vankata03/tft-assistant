@@ -63,7 +63,7 @@ def latest_committed_tunables(repository, *, path=None):
             capture_output=True, check=True, text=True).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         raise DataError(f'Committed tunables require a Git checkout with a HEAD commit: {repository}') from None
-    calendar = _show(repository, 'HEAD:data/patches.toml')
+    calendar = _show(repository, f'{commit}:data/patches.toml')
     try:
         rows = tomllib.loads(calendar or '').get('patches', {})
         boundaries = sorted((datetime.fromisoformat(str(when)), patch) for patch, when in rows.items())
@@ -76,8 +76,8 @@ def latest_committed_tunables(repository, *, path=None):
         boundaries = [(when, patch) for when, patch in boundaries if str(selected) == f"data/{patch}/tunables.toml"]
     for _, patch in reversed(boundaries):
         tunables_path = f'data/{patch}/tunables.toml'
-        tunables_text = _show(repository, f'HEAD:{tunables_path}')
-        static_text = _show(repository, f'HEAD:data/{patch}/static.toml')
+        tunables_text = _show(repository, f'{commit}:{tunables_path}')
+        static_text = _show(repository, f'{commit}:data/{patch}/static.toml')
         if tunables_text is None or static_text is None:
             continue
         try:
@@ -93,18 +93,39 @@ def latest_committed_tunables(repository, *, path=None):
         missing = set(families)-set(fields)-{'opponent_growth_correction_by_stage'}
         if missing:
             raise DataError(f'Committed tunables miss fields: {sorted(missing)}')
-        file_commit = subprocess.run(["git", "-C", str(repository), "log", "-1", "--format=%H", commit, "--", tunables_path], capture_output=True, check=True, text=True).stdout.strip()
-        blob = subprocess.run(["git", "-C", str(repository), "rev-parse", f"{commit}:{tunables_path}"], capture_output=True, check=True, text=True).stdout.strip()
+        try:
+            file_commit = subprocess.run(["git", "-C", str(repository), "log", "-1", "--format=%H", commit, "--", tunables_path], capture_output=True, check=True, text=True).stdout.strip()
+            blob = subprocess.run(["git", "-C", str(repository), "rev-parse", f"{commit}:{tunables_path}"], capture_output=True, check=True, text=True).stdout.strip()
+        except (OSError, subprocess.CalledProcessError):
+            raise DataError('Cannot read accepted tunables identity from the pinned Git commit') from None
         return CommittedTunables(repository, file_commit, commit, blob, patch, set_number, tunables_path, document, fields)
     raise DataError('No committed patch tunables at HEAD; commit data/<patch>/tunables.toml first')
+
+
+def runtime_repository():
+    """Return the Git checkout containing the running harness package."""
+    try:
+        result = subprocess.run(['git', '-C', str(Path(__file__).resolve().parent),
+            'rev-parse', '--show-toplevel'], capture_output=True, text=True, check=True)
+        return Path(result.stdout.strip())
+    except (OSError, subprocess.CalledProcessError):
+        raise DataError('Running harness source requires a Git checkout for replay identity') from None
 
 
 def producer_identity():
     """Identify running producer source independently of the accepted-data checkout."""
     package = Path(__file__).resolve().parent
+    git_failed = False
     def git(*args):
-        result = subprocess.run(['git', '-C', str(package), *args], capture_output=True, check=False)
+        nonlocal git_failed
+        try:
+            result = subprocess.run(['git', '-C', str(root or package), *args], capture_output=True, check=False)
+        except OSError:
+            git_failed = True
+            return b''
+        git_failed |= result.returncode != 0
         return result.stdout if result.returncode == 0 else b''
+    root = None
     root = git('rev-parse', '--show-toplevel').decode().strip()
     commit = git('rev-parse', 'HEAD').decode().strip()
     runtime, mismatches = {}, 0
@@ -126,8 +147,8 @@ def producer_identity():
     status = git('status', '--porcelain=v1', '--untracked-files=all', '--', *paths)
     diff = git('diff', 'HEAD', '--binary', '--', *paths)
     result = {'commit': commit or 'unavailable', 'runtime_source_hash': source_hash,
-        'runtime_mismatch_count': mismatches, 'source_matches_checkout': bool(root) and not mismatches,
-        'dirty': bool(status or mismatches), 'python': '.'.join(map(str, sys.version_info[:3]))}
+        'runtime_mismatch_count': mismatches, 'source_matches_checkout': bool(root) and not mismatches and not git_failed,
+        'dirty': bool(status or mismatches or git_failed), 'python': '.'.join(map(str, sys.version_info[:3]))}
     if status:
         result['dirty_hash'] = hashlib.sha256(status+diff+source_hash.encode()).hexdigest()
     return result
@@ -166,7 +187,8 @@ def write_candidate(committed, updates, destination, *, citation, generated_at=N
             raise DataError(f'Candidate value must be finite TOML data: {name}')
     destination = Path(destination).resolve()
     data_root = (committed.repository/'data').resolve()
-    if destination == data_root or data_root in destination.parents:
+    if any(ancestor == data_root or (ancestor.exists() and data_root.exists()
+            and ancestor.samefile(data_root)) for ancestor in (destination, *destination.parents)):
         raise DataError('Candidates are never written into the committed data directory')
     document = plain(committed.document)
     document['fields'] = dict(document['fields'])

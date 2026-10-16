@@ -36,7 +36,7 @@ def _offline(args):
     from tft_data import DataStore
     from tft_harness import EvaluationHarness
     from tft_harness.overlay import TunableOverlay
-    from tft_harness.tunables_io import latest_committed_tunables, write_candidate, producer_identity
+    from tft_harness.tunables_io import latest_committed_tunables, write_candidate, producer_identity, runtime_repository
     from tft_harness.markdown import write_markdown
     from tft_harness.fitting import fit
     from tft_harness.priors import fit_priors
@@ -52,7 +52,7 @@ def _offline(args):
         producer = producer_identity()
         sessions, store = SessionStore(root, config), DataStore(snapshots)
         accepted = TunableOverlay(store, {}, tagged_fields=reference.fields)
-        harness = EvaluationHarness(sessions, accepted, repository=args.repository,
+        harness = EvaluationHarness(sessions, accepted, repository=runtime_repository(),
             current_set=reference.set_number)
         fitted = priors = margins = None
         updates = {}

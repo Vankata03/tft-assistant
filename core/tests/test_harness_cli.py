@@ -233,3 +233,45 @@ def test_report_code_identity_is_running_source_separate_from_accepted_checkout(
     assert main(['eval','--repository',str(repository),'--snapshots',str(store.root),
         '--output',str(output),'--bootstrap-draws','20']) == 0
     assert git(ROOT,'rev-parse','HEAD') in next(output.glob('*.md')).read_text()
+
+
+def test_dirty_runtime_cli_publishes_code_identity_separate_from_accepted_data(tmp_path):
+    import subprocess
+    import sys
+    import tomllib
+    from tests.test_harness import combat_logs
+    from tests.test_harness_tunables_io import committed_repository, runtime_repository, git
+
+    (tmp_path/'games').mkdir()
+    (tmp_path/'accepted').mkdir()
+    sessions, store = combat_logs(tmp_path/'games', results=('win', 'loss'))
+    accepted = committed_repository(tmp_path/'accepted')
+    runtime = runtime_repository(tmp_path)
+    commit = git(runtime, 'rev-parse', 'HEAD')
+    with (runtime/'core/packages/engine/src/tft_engine/planning.py').open('a') as output:
+        output.write('\n# dirty runtime CLI fixture\n')
+    (runtime/'core/packages/engine/src/tft_engine/untracked_fixture.py').write_text('# untracked runtime\n')
+    search = tmp_path/'search.json'
+    search.write_text('{"fight_scale":[0.5,1,2]}')
+    output = tmp_path/'reports'
+    env = dict(os.environ, TFT_ASSISTANT_DATA_ROOT=str(sessions.root),
+        TFT_ASSISTANT_CONFIG_ROOT=str(sessions.config_root), PYTHONPATH=os.pathsep.join(map(str,
+        [runtime/'core/src', *sorted((runtime/'core/packages').glob('*/src'))])))
+    result = subprocess.run([sys.executable, '-m', 'tft_core.harness_cli', 'fit',
+        '--repository', str(accepted), '--snapshots', str(store.root), '--output', str(output),
+        '--search', str(search), '--bootstrap-draws', '20', '--max-evaluations', '3', '--model-draws', '2'],
+        cwd=runtime/'core/packages/harness', env=env, capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout+result.stderr
+    candidate = tomllib.loads(next(output.glob('*.toml')).read_text())['harness_candidate']
+    producer = candidate['producer']
+    assert producer['commit'] == candidate['code_commit'] == commit
+    assert producer['dirty'] is True and producer['dirty_hash']
+    assert producer['source_matches_checkout'] is True
+    assert candidate['accepted_checkout_head'] == git(accepted, 'rev-parse', 'HEAD') != commit
+    report = next(output.glob('*.md')).read_text()
+    def section(title):
+        return json.loads(report.split('## '+title+'\n\n```json\n')[1].split('\n```')[0])
+    assert section('Producer code identity') == producer
+    identities = section('Replay cache identities')
+    assert identities and all(identity['commit'] == commit and identity['dirty'] for identity in identities)
+    assert 'static/source pins' in section('Advice diff')['reference']

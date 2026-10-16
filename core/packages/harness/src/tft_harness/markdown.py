@@ -2,6 +2,7 @@
 from datetime import UTC, datetime
 import json
 import os
+import re
 from pathlib import Path
 
 from tft_review.contracts import json_value
@@ -23,7 +24,7 @@ def aggregate_only(value):
         return [aggregate_only(item) for item in value]
     if isinstance(value, str):
         # Errors can originate from filesystem or external payload validation.
-        if '/' in value and not value.startswith('http'):
+        if re.search(r"(?:^|[\s\"'=(:])(?:/|[A-Za-z]:[\\/]|~[\\/])", value):
             return 'details omitted from aggregate artifact'
         if 'puuid' in value.lower():
             return 'private detail omitted'
