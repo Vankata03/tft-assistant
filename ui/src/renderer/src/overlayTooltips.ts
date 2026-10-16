@@ -42,11 +42,15 @@ export function useOverlayTooltips(enabled:boolean):void{
   const onMove=(event:MouseEvent)=>{pointer={x:event.clientX,y:event.clientY};evaluate()}
   const onOut=(event:MouseEvent)=>{if(event.relatedTarget===null){pointer=null;evaluate()}}
   const observer=typeof MutationObserver==='undefined'?null:new MutationObserver(evaluate)
-  observer?.observe(document.body,{childList:true,subtree:true})
+  // Tags can move without being replaced (React reuses keyed nodes and only rewrites their
+  // style), so position changes re-check the still pointer as well as added or removed tags.
+  observer?.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['style','class']})
   document.addEventListener('mousemove',onMove,true)
   document.addEventListener('mouseout',onOut,true)
+  window.addEventListener('resize',evaluate)
   return()=>{
    observer?.disconnect()
+   window.removeEventListener('resize',evaluate)
    document.removeEventListener('mousemove',onMove,true)
    document.removeEventListener('mouseout',onOut,true)
    clearTimeout(timer)

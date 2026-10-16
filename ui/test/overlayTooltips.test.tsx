@@ -33,14 +33,16 @@ async function mount(state:ShellState){
  vi.setSystemTime(capturedAt)
  layout()
  vi.stubGlobal('IntersectionObserver',class {observe(){}disconnect(){}})
- const coach={getState:async()=>state,onState:()=>()=>{},reportShown:vi.fn(),liveShown:vi.fn(),overlayInteractive:vi.fn()}
+ const listeners:((next:ShellState)=>void)[]=[]
+ const coach={getState:async()=>state,onState:(listener:(next:ShellState)=>void)=>{listeners.push(listener);return()=>{}},reportShown:vi.fn(),liveShown:vi.fn(),overlayInteractive:vi.fn()}
  Object.assign(window,{coach})
  const style=document.createElement('style');style.textContent=css;document.head.append(style)
  const host=document.createElement('div');document.body.append(host);root=createRoot(host)
  await import('../src/live/LiveShell')
  await act(async()=>{root!.render(createElement(App))})
  for(let tick=0;tick<3;tick++)await act(async()=>{await vi.advanceTimersByTimeAsync(0)})
- return {host,coach}
+ const push=(next:ShellState)=>act(async()=>{for(const listener of listeners)listener(next)})
+ return {host,coach,push}
 }
 afterEach(()=>{act(()=>root?.unmount());root=null;document.head.replaceChildren();document.body.replaceChildren();vi.restoreAllMocks();vi.unstubAllGlobals();vi.useRealTimers()})
 
@@ -85,6 +87,33 @@ it('cancels a pending tooltip when the pointer leaves the tag or the overlay, an
  move(250,410);wait(400)
  expect(tooltipShown(tag)).toBe(true)
  move(600,250)
+ expect(tooltipShown(tag)).toBe(false)
+})
+
+const twoGuideSlots=(slots:[number,number]):ShellState=>({...baseline,baseline:{...baseline.baseline!,content:{...baseline.baseline!.content!,
+ shop:slots.map(slot=>({slot,entity:{id:`unit-${slot}`,name:`Unit ${slot}`,icon:'',cost:3},in_guide:true})),
+ anchors:[0,1,2,3].map(index=>({kind:'shop',index,x:.1+index*.2,y:.8,width:.1,height:.04}))}}} as ShellState)
+
+it('closes an open tooltip when a state update moves its tag away from a still pointer',async()=>{
+ const {host,push}=await mount(twoGuideSlots([0,1]))
+ const [first]=[...host.querySelectorAll('.overlay-tag')]
+ move(150,410);wait(400)
+ expect(tooltipShown(first!)).toBe(true)
+ await push(twoGuideSlots([2,3]))
+ const tags=[...host.querySelectorAll('.overlay-tag')]
+ expect(tags[0]).toBe(first)
+ expect((first as HTMLElement).style.left).toBe('50%')
+ expect(tags.some(tooltipShown)).toBe(false)
+ wait(400)
+ expect(tags.some(tooltipShown)).toBe(false)
+})
+
+it('re-checks the pointer when the overlay window is resized under it',async()=>{
+ const {host}=await mount(baseline)
+ const tag=tagWithText(host,'In Guide')
+ move(250,410);wait(400)
+ expect(tooltipShown(tag)).toBe(true)
+ act(()=>{Object.assign(window,{innerWidth:2000});vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(()=>({x:900,y:900,left:900,top:900,right:950,bottom:930,width:50,height:30,toJSON:()=>({})}) as DOMRect);window.dispatchEvent(new Event('resize'))})
  expect(tooltipShown(tag)).toBe(false)
 })
 
