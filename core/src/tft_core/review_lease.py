@@ -109,11 +109,21 @@ class OwnedReviewChildren:
 
     def command(self, worker, game_id, job_id):
         nonce = secrets.token_hex(16)
-        return [worker[0], '-m', 'tft_core.review_child',
+        command = [worker[0], '-m', 'tft_core.review_child',
             '--lease-root', str(self.root), '--job-id', job_id,
             '--game-id', game_id, '--launch-nonce', nonce,
             '--owner-nonce', self.owner_nonce, '--owner-pid', str(self.owner['pid']),
             '--owner-created', str(self.owner['created_at']), '--', *worker[1:]]
+        self.launch_state(command, 'prepared')
+        return command
+
+    def launch_state(self, command, state):
+        """Admit only a launch whose process handle reached its live owner."""
+        nonce = command[command.index('--launch-nonce') + 1]
+        job_id = command[command.index('--job-id') + 1]
+        atomic_record(self.root / 'launches' / f'{nonce}.json', {
+            'launch_nonce': nonce, 'job_id': job_id,
+            'owner_nonce': self.owner_nonce, 'state': state})
 
     def reaped(self, job_id, command, exit_code):
         path = self.record_path(job_id)
