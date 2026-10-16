@@ -105,7 +105,7 @@ def validate_outcome(value, *, game_id, set_number, queue_id=None):
 
 
 class OutcomeCollector:
-    """Owner-scoped match collection on the review identity worker, never capture.
+    """Owner-scoped match collection in an owned review child, never capture.
 
     Configuration is private ``outcome-source.json`` with ``owner_puuid``,
     ``platform`` and ``region``. The frozen EUNE baseline can supply the owner
@@ -128,6 +128,23 @@ class OutcomeCollector:
         return json.loads(path.read_text()) if path.exists() else None
 
     def collect(self, game_id):
+        from .review_lease import JobMutex, atomic_record
+
+        # One API client may dispatch at a time, including clients in different
+        # review children/cores. The OS releases this lock if a child is killed.
+        mutex = JobMutex(self.sessions.config_root/'outcome-api', _digest('riot-pacing'))
+        if not mutex.acquire():
+            previous = self.status(game_id) or {}
+            status = {'game_id': str(game_id), 'attempts': previous.get('attempts', 0) + 1,
+                'configured': True, 'state': 'pending', 'reason': 'Another outcome collector owns the API; retry pending'}
+            atomic_record(self.sessions.root/'outcome-status'/f'{game_id}.json', status)
+            return status
+        try:
+            return self._collect(game_id)
+        finally:
+            mutex.close()
+
+    def _collect(self, game_id):
         from tft_data.models import DataError
         from tft_data.riot import RiotClient
         from .review_lease import atomic_record
@@ -153,7 +170,8 @@ class OutcomeCollector:
                     source_key = (owner, platform, region)
                     if self.client is None and source_key != self._source_key:
                         self._configured_client = (self.client_factory or RiotClient)(
-                            key_path=self.sessions.config_root/'riot-api-key', platform=platform, region=region)
+                            key_path=self.sessions.config_root/'riot-api-key', platform=platform, region=region,
+                            pacing_path=self.sessions.config_root/'outcome-api'/'pacing.json')
                         self._source_key = source_key
                     client = self.client or self._configured_client
                     # RiotClient also validates configured routing when HTTP is injected.
@@ -168,7 +186,7 @@ class OutcomeCollector:
                         self.sessions.record_outcome(game_id, client.match(match_id), owner_puuid=owner, platform=platform)
                         status.update(state='confirmed', reason=None)
             except DataError:
-                status.update(state='pending', reason='Owner match API unavailable; check local key, connectivity and routing; retry pending')
+                status.update(state='pending', reason='Owner match API unavailable; check local key, private outcome-api/pacing.json, connectivity and routing; retry pending')
             except (OSError, ValueError, KeyError, TypeError):
                 status.update(state='unavailable', reason='Outcome configuration or match evidence invalid; last-good facts preserved; review private source and retry')
         atomic_record(self.sessions.root/'outcome-status'/f'{game_id}.json', status)

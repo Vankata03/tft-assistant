@@ -1,5 +1,6 @@
 """Post-game truth through public capture, outcome and session boundaries."""
 import asyncio
+from contextlib import contextmanager
 from copy import deepcopy
 
 import httpx
@@ -8,6 +9,60 @@ import pytest
 from tests.test_harness_baseline import baseline_fixture
 from tft_capture.lcu import LcuConnection, LcuCredentials
 from tft_core.storage import SessionStore
+
+
+@contextmanager
+def outcome_http_fixture(tmp_path, monkeypatch, transport):
+    """Expose only fixture Riot responses to this process and its real children."""
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    import urllib.request
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            response = transport(self.path, dict(self.headers))
+            self.send_response(response.status)
+            for key, value in response.headers.items():
+                self.send_header(key, value)
+            self.end_headers()
+            try:
+                self.wfile.write(json.dumps(response.body).encode())
+            except BrokenPipeError:
+                pass
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    fixture = tmp_path/'http-fixture'
+    fixture.mkdir()
+    source = f'''import urllib.request
+from urllib.parse import urlsplit
+original_urlopen = urllib.request.urlopen
+def fixture_urlopen(request, *args, **kwargs):
+    url = urlsplit(request.full_url)
+    if url.hostname and url.hostname.endswith('.api.riotgames.com'):
+        request = urllib.request.Request('http://127.0.0.1:{server.server_port}' + url.path + ('?' + url.query if url.query else ''), headers=dict(request.header_items()))
+    return original_urlopen(request, *args, **kwargs)
+urllib.request.urlopen = fixture_urlopen
+'''
+    (fixture/'sitecustomize.py').write_text(source)
+    namespace = {}
+    exec(source, namespace)
+    import os
+    with monkeypatch.context() as patch:
+        patch.setattr('tft_data.riot.urlopen', namespace['fixture_urlopen'])
+        patch.setenv('PYTHONPATH', str(fixture) + os.pathsep + os.environ.get('PYTHONPATH', ''))
+        try:
+            yield
+        finally:
+            urllib.request.urlopen = namespace['original_urlopen']
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=1)
 
 
 def test_real_queue_metadata_stays_explicit_and_only_ranked_games_number_the_run(tmp_path):
@@ -115,13 +170,18 @@ def test_collector_paces_owner_scoped_http_and_recovers_a_delayed_match(tmp_path
 
 
 @pytest.mark.parametrize('delayed', [False, True, 'never_available'])
-def test_actual_review_job_collects_outcome_before_historical_evaluation(tmp_path, delayed):
+def test_actual_review_job_collects_outcome_before_historical_evaluation(tmp_path, monkeypatch, delayed):
     import json
     from tests.test_replay_contracts import ROOT, NOW, historical_data, log_snapshot
-    from tft_core.outcomes import OutcomeCollector
     from tft_core.review_jobs import ReviewJobs
-    from tft_data.riot import HTTPResponse, RiotClient
+    from tft_data.riot import HTTPResponse
     from tft_review import ReviewService
+
+    requests = []
+    def external_http(url, headers):
+        requests.append(url)
+        absent = delayed == 'never_available' or (delayed and len(requests) == 1)
+        return HTTPResponse(200, {}, ([] if absent else ['EUN1_901']) if '/ids?' in url else match_fixture())
 
     async def scenario():
         store, data = historical_data(tmp_path)
@@ -135,14 +195,8 @@ def test_actual_review_job_collects_outcome_before_historical_evaluation(tmp_pat
             'owner_puuid': 'owner', 'platform': 'eun1', 'region': 'europe'}))
         key = sessions.config_root/'riot-api-key'
         key.write_text('fixture-key')
-        requests = []
-        def external_http(url, headers):
-            requests.append(url)
-            absent = delayed == 'never_available' or (delayed and len(requests) == 1)
-            return HTTPResponse(200, {}, ([] if absent else ['EUN1_901']) if '/ids?' in url else match_fixture())
-        client = RiotClient(key_path=key, sleep=lambda seconds: None, transport=external_http)
         jobs = ReviewJobs(sessions, store, ReviewService(sessions, store, repository=ROOT), ROOT,
-            outcome_collector=OutcomeCollector(sessions, client=client), outcome_retry_seconds=.01)
+            outcome_retry_seconds=.01)
         jobs.start()
         try:
             jobs.enqueue('901')
@@ -166,7 +220,8 @@ def test_actual_review_job_collects_outcome_before_historical_evaluation(tmp_pat
                 assert sessions.read_outcome('901')['placement'] == 4
         finally:
             assert await jobs.shutdown()
-    asyncio.run(scenario())
+    with outcome_http_fixture(tmp_path, monkeypatch, external_http):
+        asyncio.run(scenario())
 
 
 def test_actual_app_persists_ranked_queue_from_the_gameflow_watcher(tmp_path):
@@ -274,3 +329,104 @@ def test_automatic_collector_retains_server_rate_limits_across_finished_games(tm
     assert collector.collect('901')['state'] == 'confirmed'
     assert collector.collect('902')['state'] == 'confirmed'
     assert any(delay > 100 for delay in delays)
+
+
+@pytest.mark.parametrize('restart_clock', [False, True])
+@pytest.mark.parametrize('rate_header', ['X-App-Rate-Limit', 'X-Method-Rate-Limit'])
+def test_collector_process_restarts_preserve_declared_api_limits(tmp_path, restart_clock, rate_header):
+    import json
+    from tft_core.outcomes import OutcomeCollector
+    from tft_data.riot import HTTPResponse, RiotClient
+
+    sessions = finished_session(tmp_path)
+    sessions.start_game('902', set_id='18', queue_id=1100)
+    sessions.end_game()
+    (sessions.config_root/'riot-api-key').write_text('fixture-key')
+    (sessions.config_root/'outcome-source.json').write_text(json.dumps({
+        'owner_puuid': 'owner', 'platform': 'eun1', 'region': 'europe'}))
+    elapsed, delays = [10.0], []
+    def sleep(seconds):
+        delays.append(seconds)
+        elapsed[0] += seconds
+    def external_http(url, headers):
+        return HTTPResponse(200, {rate_header: '2:120' if rate_header == 'X-App-Rate-Limit' else '1:120'},
+            ['EUN1_901', 'EUN1_902'] if '/ids?' in url else match_fixture(url.rsplit('_', 1)[1]))
+    def client_factory(**options):
+        return RiotClient(**options, transport=external_http, clock=lambda: elapsed[0], sleep=sleep)
+    assert OutcomeCollector(sessions, client_factory=client_factory).collect('901')['state'] == 'confirmed'
+    if restart_clock:
+        elapsed[0] = 0.0
+    assert OutcomeCollector(sessions, client_factory=client_factory).collect('902')['state'] == 'confirmed'
+    assert any(delay > 100 for delay in delays)
+
+
+@pytest.mark.parametrize('stop', ['timeout', 'shutdown'])
+def test_blocked_outcome_http_is_owned_and_cannot_publish_after_shutdown(tmp_path, monkeypatch, stop):
+    import json
+    import threading
+    from tests.test_replay_contracts import ROOT, historical_data, log_snapshot, NOW
+    from tft_core.review_jobs import ReviewJobs
+    from tft_data.riot import HTTPResponse
+    from tft_review import ReviewService
+
+    store, data = historical_data(tmp_path)
+    sessions = SessionStore(tmp_path/'logs', tmp_path/'config', live_installed=True)
+    sessions.set_mode('baseline')
+    sessions.start_game('901', set_id='18', queue_id=1100, patch=data.patch,
+        data_snapshot_id=data.snapshot_id, timestamp=NOW.isoformat())
+    sessions.append_event('snapshot', log_snapshot(data), timestamp=NOW.isoformat())
+    sessions.end_game()
+    (sessions.config_root/'riot-api-key').write_text('fixture-key')
+    (sessions.config_root/'outcome-source.json').write_text(json.dumps({
+        'owner_puuid': 'owner', 'platform': 'eun1', 'region': 'europe'}))
+    entered, release = threading.Event(), threading.Event()
+
+    def external_http(url, headers):
+        if '/ids?' in url:
+            entered.set()
+            assert release.wait(10)
+            return HTTPResponse(200, {}, ['EUN1_901'])
+        return HTTPResponse(200, {}, match_fixture())
+
+    async def scenario():
+        jobs = ReviewJobs(sessions, store, ReviewService(sessions, store, repository=ROOT), ROOT,
+                          hard_timeout=2 if stop == 'timeout' else 30)
+        jobs.start()
+        jobs.enqueue('901')
+        try:
+            async with asyncio.timeout(4):
+                while not entered.is_set():
+                    await asyncio.sleep(.005)
+            if stop == 'timeout':
+                async with asyncio.timeout(4):
+                    while not jobs.outcomes.status('901'):
+                        await asyncio.sleep(.005)
+                assert jobs.outcomes.status('901')['state'] == 'pending'
+                async with asyncio.timeout(3):
+                    while not jobs.jobs() or jobs.jobs()[-1]['state'] == 'running':
+                        await asyncio.sleep(.005)
+                assert jobs.jobs()[-1]['state'] == 'completed', jobs.jobs()
+            assert await jobs.shutdown()
+            assert sessions.read_outcome('901') is None
+            status = jobs.outcomes.status('901')
+            release.set()
+            await asyncio.sleep(.2)
+            assert sessions.read_outcome('901') is None
+            assert jobs.outcomes.status('901') == status
+            resumed = ReviewJobs(sessions, store, ReviewService(sessions, store, repository=ROOT), ROOT,
+                                 hard_timeout=4)
+            resumed.start()
+            try:
+                resumed.enqueue('901')
+                async with asyncio.timeout(4):
+                    while (resumed.outcomes.status('901') or {}).get('state') != 'confirmed':
+                        await asyncio.sleep(.005)
+                assert sessions.read_outcome('901')['placement'] == 4
+            finally:
+                assert await resumed.shutdown()
+        finally:
+            release.set()
+            await jobs.shutdown()
+
+    with outcome_http_fixture(tmp_path, monkeypatch, external_http):
+        asyncio.run(scenario())

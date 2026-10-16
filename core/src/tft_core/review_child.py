@@ -73,7 +73,7 @@ def main(argv=None):
         receipt = json.loads(output.getvalue())
         if receipt.get('game_id') != args.game_id or receipt.get('job_id') != args.job_id:
             raise ValueError('Review child receipt identity changed')
-        if receipt.get('status') not in {'review_ready', 'review_unavailable'}:
+        if receipt.get('status') not in {'review_ready', 'review_unavailable', 'outcome_collected'}:
             raise ValueError('Review child has no completion receipt')
         record.update(state='finished', receipt=receipt, exit_code=exit_code,
                       finished_at=datetime.now(UTC).isoformat())
