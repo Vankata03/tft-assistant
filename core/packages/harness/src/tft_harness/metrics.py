@@ -17,10 +17,16 @@ def number(value):
     return type(value) in (int, float) and isfinite(value)
 
 
-def placement_truth(batch):
+def placement_truth(batch, outcome=None):
+    """The log's own placement first; validated late match truth only fills its absence."""
     ends = [event for event in batch.observations if event['kind'] == 'game_end']
     value = ends[-1]['payload'].get('placement') if ends else None
-    return (value, 'game_end') if type(value) is int and 1 <= value <= 8 else (None, None)
+    if type(value) is int and 1 <= value <= 8:
+        return value, 'game_end'
+    # Storage rejects outcomes that conflict with a logged placement.
+    if outcome is not None:
+        return outcome['placement'], 'riot_match'
+    return None, None
 
 
 def selected_line(context):
@@ -42,10 +48,10 @@ def prediction_row(batch, context, data, metric, prediction, truth, *, naive=Non
         'naive_prediction': naive, 'data_snapshot_id': data.snapshot_id, 'seed': context.seed, **extra}
 
 
-def placement_rows(batch, data, *, partial):
+def placement_rows(batch, data, *, partial, outcome=None):
     rows, excluded = [], Counter()
     metric = 'expected_placement_mae'
-    truth, source = placement_truth(batch)
+    truth, source = placement_truth(batch, outcome)
     for context in batch.contexts:
         if 'semantic_duplicate' in context.unavailable:
             continue

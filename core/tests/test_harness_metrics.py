@@ -185,3 +185,33 @@ def test_partial_games_leave_placement_calibration_but_keep_qualified_fights(tmp
     assert report.metrics['expected_placement_mae']['value'] is None
     assert report.metrics['expected_placement_mae']['excluded']['partial_game_over_25_percent_gaps'] == 1
     assert report.metrics['fight_brier']['eligible_rows'] == 1
+
+
+def outcome_game(tmp_path, *, placement=None, events=()):
+    """A finished set-18 ranked capture whose late Riot match truth is recorded separately."""
+    from tft_core.storage import SessionStore
+    from tests.test_replay_contracts import historical_data
+
+    store, data = historical_data(tmp_path)
+    sessions = SessionStore(tmp_path/'logs', tmp_path/'config', live_installed=True)
+    sessions.set_mode('baseline')
+    sessions.start_game('901', set_id='18', queue_id=1100, patch=data.patch,
+        data_snapshot_id=data.snapshot_id, timestamp=NOW.isoformat())
+    sessions.append_event('snapshot', log_snapshot(data), timestamp=NOW.isoformat())
+    for kind, payload, at in events:
+        sessions.append_event(kind, payload, timestamp=at.isoformat())
+    sessions.end_game(placement=placement, timestamp=(NOW+timedelta(seconds=30)).isoformat())
+    return sessions, store, data
+
+
+def test_expected_placement_uses_match_outcome_when_the_log_has_no_placement(tmp_path):
+    from tests.test_outcomes import match_fixture
+
+    sessions, store, _ = outcome_game(tmp_path)
+    harness = EvaluationHarness(sessions, store, repository=ROOT)
+    assert harness.evaluate().metrics['expected_placement_mae']['excluded'] == {'terminal_placement_unavailable': 1}
+    sessions.record_outcome('901', match_fixture(), owner_puuid='owner')
+    report = harness.evaluate()
+    row = next(row for row in report.examples if row['metric'] == 'expected_placement_mae')
+    assert row['truth'] == 4 and row['truth_source'] == 'riot_match'
+    assert report.manifest[0]['truth_sources'] == ('capture_log', 'riot_match')

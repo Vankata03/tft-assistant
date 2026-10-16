@@ -147,6 +147,9 @@ class EvaluationHarness:
                 counts['missing_or_corrupt_data_games'] += 1
                 manifest.append({'game_id': game['game_id'], 'eligible': False, 'reason': str(error)})
                 continue
+            outcome, outcome_reason = self._outcome(game['game_id'])
+            if outcome_reason:
+                counts[outcome_reason+'_games'] += 1
             known_rounds = {context.snapshot['round_id'] for context in batch.contexts}
             gap_rounds = {context.snapshot['round_id'] for context in batch.contexts
                 if 'capture_gap' in context.unavailable or any(reason.startswith('stale_field:') for reason in context.unavailable)}
@@ -163,12 +166,13 @@ class EvaluationHarness:
                 'previous_patch': previous_patch,
                 'replay_identity': dict(batch.identity),
                 'gap_share': gap_share, 'split': 'holdout' if game['game_id'] in holdout else 'train',
-                'truth_sources': ['capture_log'], 'eligible': True})
+                'truth_sources': ['capture_log']+(['riot_match'] if outcome else []),
+                'outcome_status': outcome_reason or 'confirmed', 'eligible': True})
             game_rows, game_excluded = self._fight_rows(batch, data)
             sighting_rows, sighting_excluded = self._sighting_rows(batch, data)
             game_rows.extend(sighting_rows)
             game_excluded.update(sighting_excluded)
-            placement, placement_excluded = placement_rows(batch, data, partial=partial)
+            placement, placement_excluded = placement_rows(batch, data, partial=partial, outcome=outcome)
             game_rows.extend(placement)
             game_excluded.update(placement_excluded)
             lines, line_excluded = line_rows(batch, data)
@@ -190,7 +194,7 @@ class EvaluationHarness:
             except (PermissionError, ValueError, OSError):
                 tags = None
             diagnostic_game = {'batch': batch, 'data': data, 'review': review,
-                'placement': placement_truth(batch)[0], 'tags': tags}
+                'placement': placement_truth(batch, outcome)[0], 'tags': tags, 'outcome': outcome}
             diagnostic_reports.append((batch.game_id, report_diagnostics(game_rows, (diagnostic_game,), {
                 'gap_rounds': len(gap_rounds), 'known_rounds': len(known_rounds)})))
             check_reports.append((batch.game_id, observational_checks((diagnostic_game,), game_rows)))
@@ -246,6 +250,17 @@ class EvaluationHarness:
             'placement_naive': 'fresh positively complete alive lobby; average rank for tied HP',
             'report_only_policy': 'only FITTED_METRICS enter fitting/generic loss gates; flips have their own nonincrease gate',
             'sighting_naive': 'same joint support; persistence disabled'}), rows
+
+    def _outcome(self, game_id):
+        """Late match truth lives outside the log; absent or invalid truth is never inferred."""
+        reader = getattr(self.sessions, 'read_outcome', None)
+        if reader is None:
+            return None, 'outcome_store_unavailable'
+        try:
+            outcome = reader(game_id)
+        except (ValueError, OSError):
+            return None, 'outcome_invalid'
+        return (outcome, None) if outcome is not None else (None, 'outcome_unavailable')
 
     @classmethod
     def _naive_loss(cls, row):
