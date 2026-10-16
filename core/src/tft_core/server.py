@@ -163,6 +163,22 @@ class CoreServer:
     def mode(self) -> SessionMode:
         return self._mode
 
+    def refresh_idle_mode(self) -> None:
+        """Adopt another process's durable selection only outside a game."""
+        if (not self.sessions or self.sessions.active_game_id is not None
+                or self._gameflow.phase in {"InProgress", "Reconnect", "PreEndOfGame"}):
+            return
+        mode = self.sessions.mode
+        if mode == self._mode:
+            return
+        self._mode = mode
+        if mode is not SessionMode.LIVE:
+            self.live.clear("Live content suppressed by session mode")
+        self._broadcast(self._clients, dump(self._mode_message()))
+        self._publish_baseline_state()
+        self._publish_live_state()
+        self._publish_geometry_state()
+
     @asynccontextmanager
     async def listen(self, host: str = "127.0.0.1", port: int = 0):
         try:
