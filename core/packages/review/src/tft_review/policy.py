@@ -1,4 +1,6 @@
 """Observed choice attribution uses later actions, never later valuation inputs."""
+from collections import Counter
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from dataclasses import replace
 from math import isfinite, sqrt
@@ -120,6 +122,114 @@ def observed_board_call(record, batch):
     return None, 'confirmed_action_unavailable'
 
 
+def _shop_identity(rows):
+    return sorted((row['slot'], row['unit_id']) for row in rows)
+
+
+def _shop_offer(context):
+    """One capture's fresh shop read as slot -> unit id, or None when unknown."""
+    snapshot = context.snapshot
+    field = snapshot['fields'].get('shop')
+    if (not isinstance(field, Mapping) or field.get('read_at') != snapshot['captured_at']
+            or 'shop' in snapshot.get('stale_fields', ()) or isinstance(field.get('value'), str)
+            or not isinstance(field.get('value'), Sequence)):
+        return None
+    offer = {}
+    for row in field['value']:
+        if not isinstance(row, Mapping) or type(row.get('slot')) is not int or row['slot'] in offer:
+            return None
+        offer[row['slot']] = row.get('unit_id')
+    return offer or None
+
+
+def _shop_purchases(batch, record, context, stop):
+    start = datetime.fromisoformat(context.timestamp)
+    return [event for event in batch.observations if record.log_seq < event['seq'] < stop
+        and event['kind'] == 'purchase' and datetime.fromisoformat(event['timestamp']) >= start]
+
+
+def _shop_interrupted(batch, context, through_seq, through_at):
+    """A capture gap or ambiguous shop transition hides what the player did."""
+    start = datetime.fromisoformat(context.timestamp)
+    for event in batch.observations:
+        if event['kind'] not in {'capture_gap', 'tracking_ambiguity'}:
+            continue
+        if context.log_seq < event['seq'] <= through_seq:
+            return True
+        if event['kind'] == 'capture_gap':
+            gap_start, gap_end = event['payload'].get('start'), event['payload'].get('end')
+            if (gap_end is not None and datetime.fromisoformat(gap_end) > start
+                    and (gap_start is None or datetime.fromisoformat(gap_start) <= through_at)):
+                return True
+    return any('capture_gap' in other.unavailable for other in batch.contexts
+        if context.log_seq < other.log_seq <= through_seq)
+
+
+def _shop_continuity(batch, context, boundary, purchases):
+    """Whether a later shop decision still faces the shown offer.
+
+    `joined` needs positive evidence: a fresh shop read at the later capture in
+    the same round, with every slot unchanged except slots emptied by confirmed
+    purchases from that offer, and no logged roll in between. A roll, round
+    change or replaced slot means the player left the shown offer (`broken`).
+    A capture gap, ambiguous transition or missing shop read is `unknown`.
+    """
+    through_seq = max([boundary.log_seq, *(event['seq'] for event in purchases)])
+    through_at = max([datetime.fromisoformat(boundary.timestamp),
+        *(datetime.fromisoformat(event['timestamp']) for event in purchases)])
+    if _shop_interrupted(batch, context, through_seq, through_at):
+        return 'unknown'
+    later = [other for other in batch.contexts if context.log_seq < other.log_seq <= through_seq]
+    if any(event['kind'] == 'roll' and context.log_seq < event['seq'] <= through_seq
+            for event in batch.observations):
+        return 'broken'
+    if any(other.snapshot['round_id'] != context.snapshot['round_id'] for other in later):
+        return 'broken'
+    offer = _shop_offer(context)
+    if offer is None:
+        return 'unknown'
+    missing = object()
+    if any(offer.get(event['payload'].get('slot'), missing) != event['payload'].get('unit_id')
+            for event in purchases):
+        return 'broken'
+    for other in later:
+        current = _shop_offer(other)
+        if current is None:
+            if other.log_seq == boundary.log_seq:
+                return 'unknown'
+            continue
+        emptied = {event['payload']['slot'] for event in purchases if event['seq'] < other.log_seq}
+        if current.keys() != offer.keys() or any(
+                current[slot] != (None if slot in emptied else unit) for slot, unit in offer.items()):
+            return 'broken'
+    return 'joined'
+
+
+def _bundle_purchases(batch, record, context, purchases, later):
+    """Confirmed purchases of a shown bundle, joined across captures of the same offer.
+
+    A bundle partly bought when the next shop decision starts continues into
+    that decision's window only while the offer is positively unchanged.
+    Purchases outside the advised bundle stop the join and stay visible.
+    """
+    advised = Counter(_shop_identity(record.advice['payload']['buys']))
+    boundaries = sorted(set(later))
+    for index, boundary_seq in enumerate(boundaries):
+        bought = Counter(_shop_identity(event['payload'] for event in purchases))
+        if not bought <= advised or bought == advised:
+            break
+        stop = boundaries[index+1] if index+1 < len(boundaries) else float('inf')
+        extended = _shop_purchases(batch, record, context, stop)
+        boundary = next(other for other in batch.contexts if other.log_seq == boundary_seq)
+        verdict = _shop_continuity(batch, context, boundary, extended)
+        if verdict == 'unknown':
+            return None, 'shop_offer_continuity_unknown'
+        if verdict == 'broken':
+            break
+        purchases = extended
+    return purchases, None
+
+
 def observed_option(record, batch):
     if record.decision in {'transition', 'pivot', 'positioning'}:
         return observed_board_call(record, batch)
@@ -144,9 +254,14 @@ def observed_option(record, batch):
             if len(matches) == 1:
                 candidates.append((matches[0], event))
     if record.decision == 'shop' and record.advice.get('payload', {}).get('buys') and purchases:
+        purchases, reason = _bundle_purchases(batch, record, context, purchases, later)
+        if reason:
+            return None, reason
+        last = max(purchases, key=lambda event: event['seq'])
+        if _shop_interrupted(batch, context, last['seq'], datetime.fromisoformat(last['timestamp'])):
+            return None, 'capture_gap_prevents_action_attribution'
         buys = [dict(event['payload']) for event in purchases]
-        identity = lambda rows: sorted((row['slot'], row['unit_id']) for row in rows)
-        followed = identity(buys) == identity(record.advice['payload']['buys'])
+        followed = _shop_identity(buys) == _shop_identity(record.advice['payload']['buys'])
         latest = max(purchases, key=lambda event: event['seq'])
         first = min(purchases, key=lambda event: (datetime.fromisoformat(event['timestamp']), event['seq']))
         onset = {'observed_started_at': first['timestamp'], 'observed_start_log_seq': first['seq']} if len(purchases) > 1 else {}

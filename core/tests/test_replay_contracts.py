@@ -96,13 +96,13 @@ def log_snapshot(data, *, at=NOW, snapshot_id='original', **changes):
         'phase': 'planning', 'capture_copies': {'rgb_bytes': 120}}
 
 
-def logged_game(tmp_path, *, finish=True, mode='silent'):
+def logged_game(tmp_path, *, finish=True, mode='silent', **fields):
     data_store, data = historical_data(tmp_path)
     sessions = SessionStore(tmp_path / 'logs', tmp_path / 'config', live_installed=True)
     sessions.set_mode(mode)
     sessions.start_game('901', patch=data.patch, data_snapshot_id=data.snapshot_id,
         model_version='reader-fixture-v1', engine_version='historical-engine', timestamp=NOW.isoformat())
-    event = sessions.append_event('snapshot', log_snapshot(data), timestamp=NOW.isoformat())
+    event = sessions.append_event('snapshot', log_snapshot(data, **fields), timestamp=NOW.isoformat())
     if finish:
         sessions.end_game(timestamp=(NOW+timedelta(seconds=4)).isoformat())
     return sessions, data_store, data, event
