@@ -38,6 +38,13 @@ def combine_checks(reports, rows):
         for _, report in reports:
             exclusions.update(report[name]['excluded'])
         result[name] = combine_aggregates((game, report[name]) for game, report in reports)|{'excluded': dict(exclusions)}
+    identity = result['board_reader_identity']
+    buckets = {bucket for _, report in reports for bucket in report['board_reader_identity']['by_reader_confidence']}
+    identity['by_reader_confidence'] = {bucket: {'reader_right_share': combine_aggregates(
+        (game, report['board_reader_identity']['by_reader_confidence'][bucket]) for game, report in reports
+        if bucket in report['board_reader_identity']['by_reader_confidence'])} for bucket in sorted(buckets)}
+    identity['value_meaning'] = 'share of resolved disagreements where the reader, not purchase tracking, was right'
+    identity['truth_source'] = 'riot_match_owner_final_board'
     stages = {stage for _, report in reports for stage in report['classifier']['by_stage']}
     result['classifier']['by_stage'] = {stage: combine_aggregates(
         (game, report['classifier']['by_stage'][stage]) for game, report in reports
@@ -50,7 +57,7 @@ def combine_checks(reports, rows):
 def observational_checks(games, rows):
     classifier, classifier_excluded = [], Counter()
     stages, sources = defaultdict(list), set()
-    reader, reader_excluded = [], Counter()
+    reader, reader_excluded, buckets = [], Counter(), defaultdict(list)
     for game in games:
         batch, data = game['batch'], game['data']
         # These checks require qualified terminal identity, not an arbitrary
@@ -77,16 +84,52 @@ def observational_checks(games, rows):
                     classifier_excluded['classifier_vocabulary_unavailable'] += 1
         elif not outcome:
             classifier_excluded['terminal_boards_unavailable'] += 1
-        disagreements = [event for event in batch.observations
-            if event['kind'] in ('reader_disagreement', 'reader_tracker_disagreement', 'board_read_disagreement')]
+        disagreements = [row for event in batch.observations
+            if event['kind'] in ('reader_disagreement', 'reader_tracker_disagreement', 'board_read_disagreement')
+            for row in event['payload'].get('disagreements', (event['payload'],))]
         if not disagreements:
             reader_excluded['no_reader_disagreement_observations'] += 1
         elif not outcome:
             reader_excluded['qualified_terminal_identity_unavailable'] += len(disagreements)
+        else:
+            final = final_unit_ids(outcome, data)
+            for row in disagreements:
+                reader_id, tracking_id = (row.get(name) for name in ('reader_unit_id', 'tracking_unit_id'))
+                confidence = row.get('reader_confidence')
+                if type(confidence) not in (int, float) or not 0 <= confidence <= 1:
+                    reader_excluded['reader_confidence_unavailable'] += 1
+                    continue
+                proved = {name: unit_key(value, data) in final for name, value in
+                    (('reader', reader_id), ('tracking', tracking_id)) if value}
+                # Only a final board holding exactly one claimant proves a source right.
+                if sum(proved.values()) != 1:
+                    reader_excluded['final_board_does_not_resolve'] += 1
+                    continue
+                sample = (batch.game_id, int(proved.get('reader', False)))
+                reader.append(sample)
+                buckets[confidence_bucket(confidence)].append(sample)
     return {'status': 'report_only', 'classifier': aggregate(classifier)|{'excluded': dict(classifier_excluded),
         'by_stage': {stage: aggregate(values) for stage, values in stages.items()}, 'truth_sources': tuple(sorted(sources))},
-        'board_reader_identity': aggregate(reader)|{'excluded': dict(reader_excluded)},
+        'board_reader_identity': aggregate(reader)|{'excluded': dict(reader_excluded),
+            'by_reader_confidence': {bucket: aggregate(values) for bucket, values in sorted(buckets.items())}},
         'confidence_bands': confidence_checks(rows)}
+
+
+def unit_key(unit_id, data):
+    from tft_engine.shop_math import canonical_id
+    return canonical_id(unit_id, data) if unit_id in data.entities else unit_id
+
+
+def final_unit_ids(outcome, data, participant_id=None):
+    """Canonical unit identities on one participant's validated final match board."""
+    participant_id = outcome['owner_id'] if participant_id is None else participant_id
+    row = next(row for row in outcome['participants'] if row['participant_id'] == participant_id)
+    return {unit_key(unit['character_id'], data) for unit in row['units']}
+
+
+def confidence_bucket(value):
+    lower = min(9, int(value*10))
+    return f'[{lower/10},{(lower+1)/10}{"]" if lower == 9 else ")"}'
 
 
 def own_terminal_board(batch, data):

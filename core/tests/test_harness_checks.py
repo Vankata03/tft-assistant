@@ -97,3 +97,32 @@ def test_confidence_check_fails_flat_accuracy_across_three_banded_games(tmp_path
     assert {name: row['value'] for name, row in checks['bands'].items()} == {'low': .25, 'medium': .25, 'high': .25}
     assert checks['ordering']['status'] == 'fail'
     assert 'hand_set_checks' not in report.gates
+
+
+def owner_match(units):
+    from tests.test_outcomes import match_fixture
+    match = match_fixture()
+    match['info']['participants'][3]['units'] = [{'character_id': unit, 'tier': 1, 'items': []} for unit in units]
+    return match
+
+
+def test_board_reader_identity_scores_disagreements_against_the_owners_final_match_board(tmp_path):
+    from tests.test_harness_metrics import outcome_game
+
+    disagreement = lambda reader, tracking, confidence: {'position': 0, 'zone': 'board',
+        'reader_unit_id': reader, 'tracking_unit_id': tracking, 'reader_confidence': confidence,
+        'chosen_unit_id': tracking}
+    sessions, store, _ = outcome_game(tmp_path, events=(
+        ('reader_disagreement', {'disagreements': [disagreement('unit', 'ghost', .42),
+            disagreement('ghost', 'unit', .45), disagreement('ghost', 'phantom', .9)]}, NOW+timedelta(seconds=1)),))
+    harness = EvaluationHarness(sessions, store, repository=ROOT)
+    before = harness.evaluate().metrics['hand_set_checks']['board_reader_identity']
+    assert before['value'] is None
+    assert before['excluded'] == {'qualified_terminal_identity_unavailable': 3}
+    sessions.record_outcome('901', owner_match(['unit']), owner_puuid='owner')
+    check = harness.evaluate().metrics['hand_set_checks']['board_reader_identity']
+    # Two resolved disagreements in one bucket: the reader was right once.
+    assert check['by_reader_confidence']['[0.4,0.5)']['reader_right_share']['value'] == .5
+    assert check['by_reader_confidence']['[0.4,0.5)']['reader_right_share']['eligible_rows'] == 2
+    assert check['excluded'] == {'final_board_does_not_resolve': 1}
+    assert check['truth_source'] == 'riot_match_owner_final_board'
