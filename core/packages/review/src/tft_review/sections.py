@@ -23,6 +23,7 @@ def surface_sections(detail, timeline):
         actual_result = actual['payload'].get('after') if actual else None
         lines.append({name: row[name] for name in ('log_seq', 'round_id', 'observed', 'pin', 'unavailable')} | {
             'recommended': line_header(row['recommended']), 'actual': line_header(actual_result),
+            'pinned': line_header(row['pinned']), 'pin_cost': row['pin_cost'],
             'evidence_path': ['lines', index]})
     return {'lines': tuple(lines),
         'plan_timeline': tuple({name: row.get(name) for name in ('log_seq', 'round_id',
@@ -45,12 +46,13 @@ def surface_sections(detail, timeline):
             'engine_decision_id': row['engine_decision_id'], 'cost': None, 'reason': row['reason'],
             'action': row['advice']['action'], 'confidence': row['advice']['confidence'],
             'layout': row['advice'].get('payload', {}).get('layout'),
-            'unavailable': {'display': 'display_attribution_unavailable'},
+            **{key: row.get(key) for key in ('shown', 'followed', 'result', 'win_probability', 'fight_path')},
+            'unavailable': {} if row.get('followed') is not None else {'followed': 'prefight_board_unavailable'},
             'evidence_path': ['positioning', index]}
             for index, row in enumerate(detail['positioning']))}
 
 
-def sections(batch, data=None, *, policies=None):
+def sections(batch, data=None, *, policies=None, timeline=()):
     lines, plans, fights, positioning = [], [], [], []
     for context in batch.contexts:
         fields = context.snapshot['fields']
@@ -61,15 +63,24 @@ def sections(batch, data=None, *, policies=None):
         plan = evaluation['plan']
         target = plan.get('target')
         line_rows = evaluation.get('line_results', {}).get(target, ())
-        recommended = next((row for row in line_rows if row['line']['id'] == (plan.get('line') or {}).get('id')), None)
+        recommended = min(line_rows, key=lambda row: (row['expected_placement'], row['line']['id']), default=None)
         projected = batch.snapshot_for(context).fields.get('pinned_line')
         pin = projected.value if projected else None
+        pinned = next((row for row in line_rows if pin and row['line']['id'] == pin.get('id')), None)
+        pin_cost = recommended['expected_placement']-pinned['expected_placement'] if recommended and pinned else None
         actual = (policies or {}).get(context.log_seq)
         lines.append({'log_seq': context.log_seq, 'round_id': context.snapshot['round_id'],
-            'observed': observed, 'recommended': recommended, 'pin': pin,
+            'observed': observed, 'recommended': recommended, 'pin': pin, 'pinned': pinned, 'pin_cost': pin_cost,
             'actual_policy': actual, 'unavailable': {} if actual else {'actual_policy': 'player_policy_not_identified'}})
+        pivot = next((row for row in timeline if row['log_seq'] == context.log_seq and row['category'] == 'pivot'), None)
+        called = pivot and pivot['shown'].get('shown_option_id') is not None
+        taken = pivot and pivot['player_choice'] is not None
+        # A call is taken or ignored only when its display preceded the pivot.
+        followed = pivot['shown'].get('followed') if called else None
+        called_status = ({True: 'called_and_taken', False: 'called_and_ignored'}.get(followed, 'called_action_unknown')
+            if called else 'taken_without_call' if taken else 'display_attribution_unavailable')
         plans.append({'log_seq': context.log_seq, 'round_id': context.snapshot['round_id'],
-            **dict(plan), 'called_status': 'display_attribution_unavailable',
+            **dict(plan), 'called_status': called_status,
             'observed_lock': fields.get('comp_lock', {}).get('value')})
     for record in batch.records:
         if record.decision == 'positioning':
@@ -102,6 +113,27 @@ def sections(batch, data=None, *, policies=None):
             except (DataError, KeyError, ValueError, TypeError) as error:
                 row['unavailable'] = {'forecast': str(error)}
         fights.append(row)
+    for note in positioning:
+        point = next(row for row in timeline if row['engine_decision_id'] == note['engine_decision_id'] and row['log_seq'] == note['log_seq'])
+        note['shown'] = point['shown']
+        note['followed'] = None if point['player_choice'] is None else not point['differed']
+        fight = next(((index, row) for index, row in enumerate(fights) if row['start_log_seq'] > note['log_seq']
+            and row['round_id'] == point['round_id']), None)
+        note.update({'result': fight[1]['result'] if fight else None,
+            'win_probability': fight[1]['win_probability'] if fight else None,
+            'fight_path': ['surface', 'fights', fight[0]] if fight else None})
+    per_fight = []
+    for index, fight in enumerate(fights):
+        candidates = [note for note in positioning if note.get('fight_path') == ['surface', 'fights', index]]
+        if candidates:
+            per_fight.append(max(candidates, key=lambda row: row['log_seq']))
+        else:
+            per_fight.append({'log_seq': fight['start_log_seq'], 'engine_decision_id': None,
+                'advice': {'action': 'No layout advised', 'confidence': None, 'payload': {}},
+                'cost': None, 'reason': 'no_layout_advised', 'followed': None, 'shown': None,
+                'result': fight['result'], 'win_probability': fight['win_probability'],
+                'fight_path': ['surface', 'fights', index]})
+    positioning = per_fight
     debug = {'raw_snapshot_count': len(batch.contexts),
         'evaluated_snapshot_count': sum(context.evaluation is not None for context in batch.contexts),
         'gap_events': tuple(event for event in batch.observations if event['kind'] == 'capture_gap'),

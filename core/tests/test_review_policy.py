@@ -87,7 +87,7 @@ def test_review_attributes_confirmed_pick_and_preserves_signed_cost_without_fabr
     assert moment['player_choice']['option_id'] == 'b'
     assert moment['shown']['status'] == 'no_advice_in_baseline_mode'
     assert report.summary['category_costs']['augment']['value'] == moment['cost']
-    assert report.summary['follow_rate'] == {'value': None, 'reason': 'no_acknowledged_eligible_advice', 'eligible': 0}
+    assert report.summary['follow_rate'] == {'value': None, 'reason': 'no_shown_advice_with_known_choice', 'eligible': 0, 'followed': 0}
     assert report.summary['top5'][0]['moment_id'] == moment['moment_id']
     assert moment['engine_decision_id'] != moment['moment_id']
     assert moment['paired_uncertainty'] is None

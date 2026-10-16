@@ -31,6 +31,16 @@ const fields = new Set([
   "recommended",
   "actual",
   "pin",
+  "pinned",
+  "pin_cost",
+  "followed",
+  "fight_path",
+  "shown_option_id",
+  "shown_at",
+  "delivery_revision",
+  "surfaces",
+  "cause",
+  "would_have_said",
   "unavailable",
   "evidence_path",
   "line_id",
@@ -362,6 +372,8 @@ function PositioningRow({ row }: { row: RecordValue }): React.JSX.Element {
       ) : (
         <p>No target layout recorded</p>
       )}
+      <p>Layout {row.followed===true?'followed':row.followed===false?'not followed':'follow unknown'} · actual {label(row.result)} · forecast win {percent(row.win_probability)??'unavailable'}</p>
+      <p>Shown status {label(object(row.shown).status)}</p>
       <p>Not costed · {label(row.reason)}</p>
     </>
   );
@@ -622,10 +634,7 @@ function ScopedSection({
                       Pinned Line {text(object(row.pin).id)} ·{" "}
                       {describeSchedule(row.pin)}
                     </h4>
-                    <p>
-                      Pinned forecast unavailable · this review records the
-                      pinned schedule only
-                    </p>
+                    {row.pinned?<><Forecast label="Pinned forecast" value={row.pinned} scales={scales}/><p>Pinned estimated signed cost {number(row.pin_cost)?.toFixed(2)??'unavailable'}</p></>:<p>Pinned forecast unavailable · this review records the pinned schedule only</p>}
                   </section>
                 )}
               </>

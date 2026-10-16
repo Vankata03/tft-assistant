@@ -96,3 +96,16 @@ it('Lines say when no Line was pinned',async()=>{
  expect(host.textContent).not.toContain('No level-ups')
  expect(host.textContent).not.toContain('Hit unavailable')
 })
+
+it('positioning shows confirmed follow status alongside fight outcome and forecast',async()=>{
+ const host=await mount('positioning',{surface:{positioning:[{log_seq:18,engine_decision_id:'p',action:'Move',confidence:.5,layout:[],reason:'template',followed:true,shown:{status:'followed'},result:'loss',win_probability:.6,fight_path:['surface','fights',0],unavailable:{}}]}})
+ expect(host.textContent).toContain('Layout followed · actual loss · forecast win 60%')
+})
+
+it('Lines render the separately scored pinned forecast and its estimated signed cost',async()=>{
+ const forecast={line_id:'pin',schedule:{id:'pin',levels:{'3-3':6},rolls:{}},expected_placement:4,standard_error:.2,projections:[]}
+ const host=await mount('lines',{surface:{lines:[{log_seq:1,round_id:'3-2',observed:{},pin:forecast.schedule,pinned:forecast,pin_cost:-.5,recommended:null,actual:null,unavailable:{}}]}})
+ expect(host.textContent).toContain('Pinned forecast')
+ expect(host.textContent).toContain('Pinned estimated signed cost -0.50')
+ expect(host.textContent).not.toContain('pinned schedule only')
+})

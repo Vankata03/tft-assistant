@@ -23,14 +23,22 @@ export function ReviewSummaryView({summary,onMoment,onTag}:ReviewSummaryProps):R
    <div className="review-choice-pair"><RecordedChoice label="Engine choice" value={moment.engine_choice} unavailable={documentValue(moment.unavailable).engine_choice}/><RecordedChoice label="Player choice" value={moment.player_choice} unavailable={documentValue(moment.unavailable).player_choice}/></div>
    <p className="subtle">Keyframe: {typeof documentValue(moment.keyframe).media_name==='string'?'Logged capture available':humanReason(documentValue(moment.keyframe).reason)}</p>
    <button onClick={()=>onMoment(String(moment.moment_id),Array.isArray(moment.moment_path)?moment.moment_path as (string|number)[]:null)}>Expand scored moment</button>
-   <span className="review-tags">{(['agree','disagree','unsure'] as const).map(tag=><button key={tag} onClick={()=>onTag(String(moment.moment_id),tag)}>{tag}</button>)}</span>
+   {moment.tag?<p>Saved tag: {String(moment.tag)}</p>:null}<span className="review-tags">{(['agree','disagree','unsure'] as const).map(tag=><button key={tag} aria-pressed={moment.tag===tag} onClick={()=>onTag(String(moment.moment_id),tag)}>{tag}</button>)}</span>
   </article>):<p>No qualified harmful or differing moments are available.</p>}
  </section>
+}
+
+export function ReviewAveragesView({aggregates}:{aggregates:Document}):React.JSX.Element{
+ return <section aria-label="Cross-game cost averages"><h3>Average estimated signed costs</h3>{[['last10','Last 10 logged games'],['live_run','Live-mode run']].map(([key,label])=>{
+  const row=documentValue(aggregates[key!]),categories=documentValue(row.categories)
+  return <section key={key}><h4>{label} · {String(row.games??0)} games</h4>{Object.entries(categories).length?Object.entries(categories).map(([kind,value])=><p key={kind}>{kind}: {metric(value)} · {String(documentValue(value).games??0)} scored games</p>):<p>No scored unlocked reviews available.</p>}</section>
+ })}</section>
 }
 
 export function ReviewPanel({state,onOpenChange}:{state:ShellState;onOpenChange?:(open:boolean)=>void}):React.JSX.Element|null{
  const [open,setOpen]=useState(false),[games,setGames]=useState<ReviewGames['games']>([]),[game,setGame]=useState<string|null>(null),[summary,setSummary]=useState<Document|null>(null),[error,setError]=useState<string|null>(null)
  const [path,setPath]=useState<readonly(string|number)[]|null>(null),[cursor,setCursor]=useState(0),[page,setPage]=useState<Document|null>(null),[notice,setNotice]=useState<string|null>(null),[selectedMoment,setSelectedMoment]=useState<Document|null>(null)
+ const [aggregates,setAggregates]=useState<Document>({})
  const [section,setSection]=useState<string|null>(null)
  // Any mode or connection change starts a new authorization scope for loaded pages.
  const scope=useRef({mode:state.mode,core:state.core,epoch:0})
@@ -48,7 +56,7 @@ export function ReviewPanel({state,onOpenChange}:{state:ShellState;onOpenChange?
   if(!open||suppressed)return
   let active=true
   setError(null)
-  void window.coach.reviewGames().then(response=>{if(active)setGames(response.games)}).catch((e:unknown)=>{if(active)setError(String(e))})
+  void window.coach.reviewGames().then(response=>{if(active){setGames(response.games);setAggregates(documentValue(response.aggregates))}}).catch((e:unknown)=>{if(active)setError(String(e))})
   return()=>{active=false}
  },[open,suppressed])
  useEffect(()=>{
@@ -56,7 +64,7 @@ export function ReviewPanel({state,onOpenChange}:{state:ShellState;onOpenChange?
   let active=true;setSummary(null);setPath(null);setSection(null);setPage(null);setSelectedMoment(null);setError(null)
   void window.coach.requestReview({game_id:game,operation:'summary',report_id:null,evidence_id:null,path:[],cursor:0,limit:32,moment_id:null,option_id:null,tag:null,name:null}).then(response=>{if(active)setSummary(response.value)}).catch((e:unknown)=>{if(active)setError(String(e))})
   return()=>{active=false}
- },[game,open,suppressed])
+ },[game,open,suppressed,state.reviewRequest?.serial])
  useEffect(()=>{
   if(!path||!summary||suppressed)return
   let active=true;setPage(null);setError(null)
@@ -67,9 +75,10 @@ export function ReviewPanel({state,onOpenChange}:{state:ShellState;onOpenChange?
  const browse=(next:readonly(string|number)[])=>{setPath(next);setCursor(0)}
  return <section className="review-shell">
   <button onClick={()=>setOpen(!open)} aria-expanded={open}>{open?'Close review':'Post-game review'}</button>
-  {open?<div className="review-grid"><aside className="panel"><h2>Logged games</h2>{games.map(row=><button className="review-game" disabled={!row.finished} key={String(row.game_id)} onClick={()=>setGame(String(row.game_id))}>{String(row.game_id)} · {String(row.mode)} · {row.review_locked?'locked':row.placement===null?'placement unavailable':`placement ${String(row.placement)}`}</button>)}</aside><div>
+  {open?<div className="review-grid"><aside className="panel"><h2>Logged games</h2>{games.map(row=><button className="review-game" disabled={!row.finished||row.source==='match_api'} key={String(row.game_id)} onClick={()=>setGame(String(row.game_id))}>{String(row.game_id)} · {String(row.mode)} · {String(row.date??'date unavailable')} · {row.review_locked?'locked':row.placement===null?'placement unavailable':`placement ${String(row.placement)}`} · estimated cost {typeof row.total_estimated_cost==='number'?row.total_estimated_cost.toFixed(2):'unavailable'} · worst category {String(row.worst_category??'unavailable')}</button>)}<ReviewAveragesView aggregates={aggregates}/></aside><div>
+   {game?<button onClick={()=>{void request('regenerate').then(()=>setNotice('Review regeneration queued · the current report stays available until completion')).catch((e:unknown)=>setError(String(e)))}}>Regenerate review</button>:null}
    {error?<p role="alert" className="status-banner">{error}</p>:null}{notice?<p role="status">{notice}</p>:null}
-   {summary?<ReviewSummaryView summary={summary} onMoment={(id)=>{setPath(null);setSelectedMoment((Array.isArray(summary.top5)?summary.top5.map(documentValue):[]).find(moment=>moment.moment_id===id)??null)}} onTag={(moment_id,tag)=>{void request('tag',{moment_id,tag}).then(()=>setNotice(`Saved ${tag}`)).catch((e:unknown)=>setError(String(e)))}}/>:game?<p role="status">Loading protected review…</p>:<p>Select a finished logged game.</p>}
+   {summary?<ReviewSummaryView summary={summary} onMoment={(id)=>{setPath(null);setSelectedMoment((Array.isArray(summary.top5)?summary.top5.map(documentValue):[]).find(moment=>moment.moment_id===id)??null)}} onTag={(moment_id,tag)=>{void request('tag',{moment_id,tag}).then(()=>{setNotice(`Saved ${tag}`);setSummary(current=>current?{...current,top5:(Array.isArray(current.top5)?current.top5.map(documentValue):[]).map(row=>row.moment_id===moment_id?{...row,tag}:row)}:current)}).catch((e:unknown)=>setError(String(e)))}}/>:game?<p role="status">Loading protected review…</p>:<p>Select a finished logged game.</p>}
    {summary&&!summary.locked?<>{selectedMoment?<ReviewMoment key={`${summary.report_id}:${String(selectedMoment.moment_id)}`} moment={selectedMoment} request={async(operation,args)=>(await request(operation,args)).value} onDebug={browse}/>:null}<nav className="review-sections">{[['Game plan','plan_timeline'],['Lines · actual / recommended / pinned','lines'],['Fights · forecast / result','fights'],['Full round timeline','timeline'],['Positioning','positioning']].map(([label,key])=><button key={key} aria-pressed={section===key} onClick={()=>setSection(key!)}>{label}</button>)}<button onClick={()=>browse(['debug'])}>Debug</button></nav>
     {section?<ReviewSection name={section} path={['surface',section]} scopeKey={JSON.stringify([game,summary.report_id,summary.evidence_id,epoch])} request={async(operation,args)=>(await request(operation,args)).value} onDebug={browse}/>:null}
     {path?<section className="panel review-evidence"><h3>{path.join(' / ')}</h3>{path.length?<button onClick={()=>browse(path.slice(0,-1))}>Parent evidence</button>:null}
