@@ -175,6 +175,119 @@ def test_actual_app_publishes_source_gated_live_state_and_enforces_downgrade(tmp
     asyncio.run(scenario())
 
 
+def test_actual_app_adopts_durable_run_and_numbers_only_finished_ranked_games(tmp_path):
+    from tests.test_harness_baseline import baseline_fixture
+    from tft_core.storage import SessionStore
+
+    class QueueClient(ScriptedClient):
+        queue_id = None
+
+        async def get_game_metadata(self):
+            return self.game_id, self.mode, self.queue_id
+
+    async def scenario():
+        client = QueueClient()
+        async with core(tmp_path, client) as (ws, sessions, data, task):
+            initial, seen = await receive_until(ws, lambda m: m["type"] == "session_mode")
+            assert initial["mode"] == "silent"
+            if not any(m["type"] == "gameflow" and m["phase"] == "Lobby" for m in seen):
+                await receive_until(
+                    ws, lambda m: m["type"] == "gameflow" and m["phase"] == "Lobby"
+                )
+            # A separate public store represents the one-shot command's durable
+            # write. No mode command is sent to the already authenticated app.
+            launcher = SessionStore(sessions.root, sessions.config_root, live_installed=True)
+            launcher.start_run(baseline_fixture(sessions=launcher), set_id="18")
+            await receive_until(
+                ws, lambda m: m["type"] == "session_mode" and m["mode"] == "live"
+            )
+            assert client.phase == "Lobby"
+            assert sessions.active_game_id is None
+            assert sessions.list_games() == []
+            assert data.current.set_number == 18
+
+            expected = []
+            for game_id, queue_id, number in (
+                ("901", 1100, 1),
+                ("902", 1090, None),
+                ("903", None, None),
+                ("904", 1100, 2),
+            ):
+                client.game_id, client.mode, client.queue_id = game_id, "TFT", queue_id
+                client.phase = "InProgress"
+                await ws.send(json.dumps({"v": 1, "type": "request_live_state"}))
+                live, _ = await receive_until(
+                    ws,
+                    lambda m: m["type"] == "live_state"
+                    and m.get("content")
+                    and m["content"]["game_id"] == game_id,
+                    seconds=8,
+                )
+                assert live["mode"] == "live"
+                active = next(row for row in sessions.list_games() if row["game_id"] == game_id)
+                assert (active["finished"], active["run_number"]) == (False, None)
+                header = sessions.read_events(game_id)[0]["payload"]
+                assert (header["mode"], header["set_id"], header["queue_id"]) == (
+                    "live", "18", queue_id
+                )
+                client.phase = "EndOfGame"
+                ready, _ = await receive_until(
+                    ws,
+                    lambda m: m["type"] == "review_ready" and m["game_id"] == game_id,
+                    seconds=20,
+                )
+                assert ready["mode"] == "live"
+                events = sessions.read_events(game_id)
+                kinds = [event["kind"] for event in events]
+                assert kinds.index("capture_closed") < kinds.index("game_end")
+                assert "advice_delivery" in kinds
+                expected.append((game_id, queue_id, True, "live", "18", number))
+                assert [
+                    (row["game_id"], row["queue_id"], row["finished"], row["mode"],
+                     row["set_id"], row["run_number"])
+                    for row in sessions.list_games()
+                ] == expected
+
+        # Reopening rebuilds the disposable index from the durable logs/run.
+        reopened = SessionStore(tmp_path / "logs", tmp_path / "config", live_installed=True)
+        assert [
+            (row["game_id"], row["run_number"], row["block"])
+            for row in reopened.list_games()
+        ] == [("901", 1, 1), ("902", None, None), ("903", None, None), ("904", 2, 1)]
+        assert task.done() and task.exception() is None
+
+    asyncio.run(scenario())
+
+
+def test_actual_app_durable_idle_selection_cannot_upgrade_an_active_silent_game(tmp_path):
+    from tft_core.storage import SessionStore
+
+    async def scenario():
+        client = ScriptedClient()
+        async with core(tmp_path, client) as (ws, sessions, _, _):
+            await receive_until(
+                ws, lambda m: m["type"] == "gameflow" and m["phase"] == "Lobby"
+            )
+            client.game_id, client.mode, client.phase = "905", "TFT", "InProgress"
+            await receive_until(
+                ws, lambda m: m["type"] == "gameflow" and m["phase"] == "InProgress"
+            )
+            assert sessions.active_game_id == "905"
+            launcher = SessionStore(sessions.root, sessions.config_root, live_installed=True)
+            launcher.set_mode("live")
+            await asyncio.sleep(.6)  # Cross the idle reconciliation cadence.
+            await ws.send(json.dumps({"v": 1, "type": "set_session_mode", "mode": "live"}))
+            rejected, _ = await receive_until(ws, lambda m: m["type"] == "error")
+            assert rejected["code"] == "mode_rejected"
+            await ws.send(json.dumps({"v": 1, "type": "request_live_state"}))
+            state, _ = await receive_until(ws, lambda m: m["type"] == "live_state")
+            assert (state["mode"], state["content"]) == ("silent", None)
+            assert sessions.mode.value == "silent"
+            assert not any(event["kind"] == "mode_change" for event in sessions.read_events("905"))
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("failure", ["new-pin", "disk-failure", "history-read"])
 def test_actual_app_preserves_accepted_pin_when_engine_work_fails(tmp_path, monkeypatch, failure):
     import hashlib

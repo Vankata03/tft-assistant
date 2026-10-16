@@ -111,6 +111,19 @@ async def run(
             except (OSError, ValueError, RuntimeError) as error:
                 server.publish_runtime_error("review_enqueue_failed", str(error))
 
+    async def follow_idle_mode():
+        # LCU deduplicates unchanged phases, but start-run writes independently.
+        previous_error = None
+        while True:
+            try:
+                server.refresh_idle_mode()
+                previous_error = None
+            except (OSError, ValueError) as error:
+                if str(error) != previous_error:
+                    server.publish_runtime_error("session_mode_unavailable", str(error))
+                    previous_error = str(error)
+            await asyncio.sleep(.25)
+
     async with server.listen() as ws_server:
         port = ws_server.sockets[0].getsockname()[1]
         print(
@@ -132,11 +145,16 @@ async def run(
         watcher = asyncio.create_task(
             GameflowWatcher(update, **(watcher_options or {})).run(), name="gameflow-watcher"
         )
+        idle_mode = asyncio.create_task(follow_idle_mode(), name="idle-session-mode")
         closing = asyncio.create_task(
             (closed or _stdin_closed(asyncio.get_running_loop())).wait(), name="shell-close-wait"
         )
         try:
-            done, _ = await asyncio.wait((closing, watcher), return_when=asyncio.FIRST_COMPLETED)
+            done, _ = await asyncio.wait((closing, watcher, idle_mode), return_when=asyncio.FIRST_COMPLETED)
+            if idle_mode in done and closing not in done:
+                failure = idle_mode.exception() if not idle_mode.cancelled() else "unexpected cancellation"
+                server.publish_runtime_error("session_mode_watcher_failed", f"Idle mode watcher stopped: {failure}")
+                raise RuntimeError(f"Idle mode watcher stopped: {failure}")
             if watcher in done and closing not in done:
                 failure = watcher.exception() if not watcher.cancelled() else "unexpected cancellation"
                 server.publish_runtime_error("watcher_failed", f"Gameflow watcher stopped: {failure}")
@@ -144,8 +162,9 @@ async def run(
             log.info("Shell closed stdin; finalizing capture")
         finally:
             watcher.cancel()
+            idle_mode.cancel()
             closing.cancel()
-            await asyncio.gather(watcher, closing, return_exceptions=True)
+            await asyncio.gather(watcher, idle_mode, closing, return_exceptions=True)
             if not await engine.shutdown():
                 server.publish_runtime_error("engine_shutdown_timeout", engine.status)
             if reviews is not None and not await reviews.shutdown():
