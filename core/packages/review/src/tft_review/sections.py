@@ -71,7 +71,7 @@ def surface_sections(detail, timeline):
         'plan_timeline': tuple({name: row.get(name) for name in ('log_seq', 'round_id',
             'status', 'target', 'backup', 'candidates', 'called_status', 'observed_lock',
             'pivot_from', 'pivot_to', 'pivot_round', 'rejected_target', 'player_label',
-            'divergence_round', 'planning_round', 'target_similarity')}
+            'divergence_round', 'planning_round', 'target_similarity', 'observed_transition')}
             | {'evidence_path': ['plan_timeline', index]}
             for index, row in enumerate(detail['plan_timeline'])),
         'fights': tuple({name: row.get(name) for name in ('round_id', 'opponent_id',
@@ -118,8 +118,27 @@ def sections(batch, data=None, *, policies=None, timeline=()):
         followed = pivot['shown'].get('followed') if called else None
         called_status = ({True: 'called_and_taken', False: 'called_and_ignored'}.get(followed, 'called_action_unknown')
             if called else 'taken_without_call' if taken else 'display_attribution_unavailable')
+        transition = plan.get('observed_transition')
+        transition = dict(transition) if transition and transition['snapshot_id'] == context.snapshot['snapshot_id'] else None
+        if transition:
+            transition['evidence_log_seqs'] = tuple(row.log_seq for row in batch.contexts
+                if row.log_seq <= context.log_seq and row.evaluation is not None
+                and row.snapshot['round_id'] in (transition['observed_since_round'], transition['confirmed_round'])
+                and row.evaluation['plan'].get('player_label') == transition['to'])
+            # This is an observed adoption, never a synthetic recommendation or cost.
+            prior_calls = [row for row in timeline if row['category'] == 'pivot'
+                and row['log_seq'] < context.log_seq
+                and row['shown'].get('shown_option_id') == transition['to']
+                and _at(row['shown']['shown_at']) <= _at(context.timestamp)
+                and any(event['kind'] == 'ui_show' and event['seq'] < context.log_seq
+                    and event['timestamp'] == row['shown']['shown_at']
+                    and event['payload'].get('decision_id') == row['engine_decision_id']
+                    and event['payload'].get('delivery_revision') == row['shown']['delivery_revision']
+                    for event in batch.observations)]
+            if not called and not prior_calls:
+                called_status = 'taken_without_call'
         plans.append({'log_seq': context.log_seq, 'round_id': context.snapshot['round_id'],
-            **dict(plan), 'called_status': called_status,
+            **dict(plan), 'observed_transition': transition, 'called_status': called_status,
             'observed_lock': fields.get('comp_lock', {}).get('value')})
     for record in batch.records:
         if record.decision == 'positioning':
@@ -173,13 +192,18 @@ def sections(batch, data=None, *, policies=None, timeline=()):
                 'result': fight['result'], 'win_probability': fight['win_probability'],
                 'fight_path': ['surface', 'fights', index]})
     positioning = per_fight
+    media = tuple(event for event in batch.observations if event['kind'] in {'keyframe', 'video'})
     debug = {'raw_snapshot_count': len(batch.contexts),
         'evaluated_snapshot_count': sum(context.evaluation is not None for context in batch.contexts),
         'gap_events': tuple(event for event in batch.observations if event['kind'] == 'capture_gap'),
-        'disagreements': tuple(event for event in batch.observations if event['kind'] in {
-            'reader_tracker_disagreement', 'tracking_ambiguity', 'board_read_disagreement'}),
+        'disagreements': tuple(dict(event) | {'keyframe_paths': tuple(['debug','media',index]
+            for index, frame in enumerate(media) if frame['kind'] == 'keyframe'
+            and frame['timestamp'] == event['timestamp']
+            and frame['payload'].get('reason') == event['kind'])}
+            for event in batch.observations if event['kind'] in {
+            'reader_disagreement', 'reader_tracker_disagreement', 'tracking_ambiguity', 'board_read_disagreement'}),
         'silences': tuple({'log_seq': context.log_seq, 'reasons': context.unavailable}
             for context in batch.contexts if context.unavailable and context.unavailable != ('semantic_duplicate',)),
-        'media': tuple(event for event in batch.observations if event['kind'] in {'keyframe', 'video'})}
+        'media': media}
     return {'lines': tuple(lines), 'plan_timeline': tuple(plans), 'fights': tuple(fights),
         'positioning': tuple(positioning), 'debug': debug}

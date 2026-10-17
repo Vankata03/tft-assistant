@@ -48,6 +48,7 @@ const fields = new Set([
   "id",
   "levels",
   "rolls",
+  "observed_rolls",
   "death_placement_cost",
   "expected_placement",
   "standard_error",
@@ -106,7 +107,7 @@ const fields = new Set([
   "unreviewed_snapshot_count",
 ]);
 // Round-keyed maps and reason maps keep every recorded key.
-const openMaps = new Set(["observed", "unavailable", "levels", "rolls"]);
+const openMaps = new Set(["observed", "unavailable", "levels", "rolls", "observed_rolls"]);
 function normalValue(value: unknown, field?: string): unknown {
   if (Array.isArray(value)) return value.map((child) => normalValue(child));
   if (value !== null && typeof value === "object") {

@@ -3,7 +3,7 @@ from datetime import datetime
 
 from tft_data import DataError
 from tft_engine import GameSnapshot, Line, simulate_lines
-from tft_engine.lines import horizon_rounds
+from tft_engine.lines import ObservedLine, horizon_rounds
 from tft_engine.lobby import alive_lobby
 from tft_engine.opponents import opponents_from_history
 from tft_engine.planning import read
@@ -39,12 +39,13 @@ def observed_line(batch, context, data):
     actions = [event for event in batch.observations if context.log_seq < event['seq'] <= end
         and datetime.fromisoformat(event['timestamp']) >= start
         and event['kind'] in ('level_up','roll')]
+    from .roll_stops import certify_roll_stops
+    roll_counts, certificates = certify_roll_stops(batch,context,data,actions)
     levels, rolls, evidence = {}, {}, []
     for event in actions:
         if event['kind'] == 'roll':
-            # A gold delta cannot reveal a chosen stopping floor. Add a roll
-            # schedule only after a separately certified stop is represented.
-            raise DataError('observed_roll_stopping_policy_unavailable')
+            evidence.append(event['seq'])
+            continue
         payload = event['payload']
         before,after = payload.get('before',{}).get('level'),payload.get('after',{}).get('level')
         if type(before) is not int or type(after) is not int or after <= before:
@@ -65,9 +66,20 @@ def observed_line(batch, context, data):
         if current < previous:
             raise DataError('contradictory_observed_level_change')
         previous = current
+    # The round abstraction cannot preserve leveling after rolling in one round.
+    for event in actions:
+        if event['kind'] != 'level_up':
+            continue
+        round_id = next((row.snapshot['round_id'] for row in later if row.timestamp == event['timestamp']), None)
+        if any(roll['kind'] == 'roll' and roll['seq'] < event['seq']
+            and roll['payload'].get('round_id') == round_id for roll in actions):
+            raise DataError('observed_intraround_level_roll_order_unsupported')
     schedule = {'levels':levels,'rolls':rolls}
-    line = Line('observed:'+digest(schedule)[:20],levels=levels,rolls=rolls)
-    return line, {'action_log_seqs':evidence,'observed_through_seq':end,
+    if roll_counts:
+        schedule['observed_rolls'] = roll_counts
+    line = (ObservedLine('observed:'+digest(schedule)[:20],levels=levels,observed_rolls=roll_counts)
+        if roll_counts else Line('observed:'+digest(schedule)[:20],levels=levels))
+    return line, {'stop_certificates':certificates,'action_log_seqs':evidence,'observed_through_seq':end,
         'valuation_policy':'ex_post_action_schedule/original_snapshot_data_history_seed',
         'initial_snapshot_id':snapshot.snapshot_id,'initial_prefix_through_seq':context.prefix_through_seq}
 

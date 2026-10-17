@@ -117,3 +117,11 @@ it('Lines render the separately scored pinned forecast and its estimated signed 
  expect(host.textContent).toContain('Pinned estimated signed cost -0.50')
  expect(host.textContent).not.toContain('pinned schedule only')
 })
+
+it('actual Line describes observed paid refresh counts without inventing a gold floor',async()=>{
+ const actual={line_id:'observed:rolls',schedule:{id:'observed:rolls',levels:{},rolls:{},observed_rolls:{'3-2':2}},expected_placement:4,standard_error:.2,projections:[]}
+ const host=await mount('lines',{surface:{lines:[{log_seq:1,round_id:'3-2',observed:{},pin:null,recommended:null,actual,unavailable:{}}]}})
+ expect(host.textContent).toContain('observed paid refreshes 3-2 × 2')
+ expect(host.textContent).not.toContain('no roll-down')
+ expect(host.textContent).not.toContain('to 14 gold')
+})

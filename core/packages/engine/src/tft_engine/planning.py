@@ -28,6 +28,10 @@ class GamePlan:
     planning_round: str | None = None
     target_similarity: float = 0.0
     pivot_round: str | None = None
+    observed_transition: Mapping | None = None
+    def __post_init__(self):
+        if self.observed_transition is not None:
+            object.__setattr__(self, 'observed_transition', freeze(self.observed_transition))
     def to_dict(self):
         return _encode(self)
 
@@ -237,6 +241,10 @@ def _choose_plan(snapshot,data,previous,fits,guards=None):
             divergence=None
     else:
         divergence=None
+    observed_transition = ({'from': previous.target, 'to': target,
+        'reason': 'observed_player_adoption', 'observed_since_round': previous.divergence_round,
+        'confirmed_round': snapshot.round_id, 'snapshot_id': snapshot.snapshot_id}
+        if adopt else None)
     if status=='committed' and not adopt:
         challenger=next((id for id in ordered if id!=target),None)
         if challenger:
@@ -254,7 +262,7 @@ def _choose_plan(snapshot,data,previous,fits,guards=None):
         target=lock; status='committed'
     backup=next((id for id in ordered if id!=target),None) if status=='committed' else None
     candidates=ordered[:cap] if status=='open' else tuple(id for id in (target,backup) if id)
-    return GamePlan(status,target,backup,candidates,previous.line,pivot_from,pivot_to,rejected,label,divergence,snapshot.round_id,similarities.get(target,0),pivot_round)
+    return GamePlan(status,target,backup,candidates,previous.line,pivot_from,pivot_to,rejected,label,divergence,snapshot.round_id,similarities.get(target,0),pivot_round,observed_transition)
 
 
 def _line_choice(snapshot,data,previous,plan,results):
