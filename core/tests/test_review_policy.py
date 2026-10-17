@@ -383,3 +383,43 @@ def test_full_timeline_shows_a_crash_gap_in_order_without_decisions_inside_it(tm
     assert service.produce('901')['locked'] is True
     with pytest.raises(PermissionError, match='locked'):
         service.detail('901', path=('surface', 'timeline'))
+
+
+def test_full_timeline_shows_a_legacy_stats_less_end_gap_after_the_last_reviewed_decision(tmp_path):
+    """An older log's interval-less stats-less marker appears as a bounded gap row."""
+    from tft_review import ReviewService
+
+    sessions, store, data, first = logged_game(tmp_path, finish=False, mode='baseline')
+    later = NOW+timedelta(seconds=1)
+    last = sessions.append_event('snapshot', log_snapshot(data, at=later, snapshot_id='later', gold=7),
+        timestamp=later.isoformat())
+    marker = sessions.append_event('capture_gap', {'reason': 'game_ended_without_stats'},
+        timestamp=(NOW+timedelta(seconds=3)).isoformat())
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=4)).isoformat())
+    raw = sessions.read_events('901')
+    service = ReviewService(sessions, store, repository=ROOT)
+    job = service.job_identity('901')
+
+    service.produce('901')
+
+    rows = surface_rows(service, '901', ['surface', 'timeline'],
+        ('kind', 'log_seq', 'cause', 'start', 'end', 'start_round_id', 'end_round_id',
+         'unreviewed_snapshot_count', 'evidence_path'))
+    kinds = [row['kind'] for row in rows]
+    assert kinds.count('capture_gap') == 1 and kinds[-1] == 'capture_gap'
+    gap = rows[-1]
+    assert gap['log_seq'] == marker['seq'] and gap['cause'] == 'game_ended_without_stats'
+    # Projected from the log: last capture (inclusive) to the marker's logged time.
+    assert gap['start'] == later.isoformat() and gap['end'] == (NOW+timedelta(seconds=3)).isoformat()
+    assert gap['end_round_id'] is None and gap['unreviewed_snapshot_count'] == 1
+    assert {row['log_seq'] for row in rows[:-1]} == {first['seq']}
+    assert not any(row['log_seq'] == last['seq'] for row in rows if row['kind'] == 'decision')
+    event = {row['path'][-1]: row.get('value') for row in service.detail('901',
+        path=tuple(gap['evidence_path']), max_bytes=2048)['items']}
+    assert event['kind'] == 'capture_gap'
+    payload = {row['path'][-1]: row.get('value') for row in service.detail('901',
+        path=tuple(gap['evidence_path'])+('payload',), max_bytes=2048)['items']}
+    assert payload['bounds'] == 'derived_from_log'
+    # The committed log and the job's log hash are unchanged by the projection.
+    assert [row for row in sessions.read_events('901') if row['kind'] != 'replay_cache'] == raw
+    assert service.job_identity('901')['log_hash'] == job['log_hash']

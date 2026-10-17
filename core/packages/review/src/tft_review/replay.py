@@ -26,7 +26,9 @@ def validate_events(events, game_id):
         metadata = events[0]['payload']
         if str(metadata['game_id']) != str(game_id):
             raise ValueError('game_start belongs to another game')
-        for index, event in enumerate(events):
+        # Validate the derived view too, before identity/cache access or consumers.
+        # Return the original events so projection never changes the log hash.
+        for index, event in enumerate(bound_legacy_gaps(events)):
             frozen_json(event)
             if type(event['v']) is not int or event['v'] != 1 or type(event['seq']) is not int or event['seq'] != index:
                 raise ValueError('invalid event version or sequence')
@@ -46,8 +48,6 @@ def validate_events(events, game_id):
                     raise ValueError('field read occurs after its capture')
             elif event['kind'] == 'sighting':
                 TraitSighting.from_dict(payload | {'read_at': event['timestamp']})
-            elif event['kind'] == 'capture_gap' and _legacy_stats_less_end(payload):
-                continue
             elif event['kind'] == 'capture_gap':
                 end = aware_timestamp(payload['end'])
                 if payload['start'] is None and payload.get('reason') != 'incomplete_first_event':
@@ -63,8 +63,7 @@ def validate_events(events, game_id):
 
 def _legacy_stats_less_end(payload):
     """Older cores logged a stats-less game end as a gap without bounds."""
-    return (payload.get('reason') == 'game_ended_without_stats'
-        and 'start' not in payload and 'end' not in payload)
+    return payload == {'reason': 'game_ended_without_stats'}
 
 
 def bound_legacy_gaps(events):
