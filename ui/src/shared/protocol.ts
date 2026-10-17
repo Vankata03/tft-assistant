@@ -87,7 +87,14 @@ export function parseCoreMessage(raw: string): CoreMessage | null {
     const pin = message.pin
     if (pin !== null && (!object(pin) || !['comp_id','line_id','seed'].every((key) => typeof pin[key] === 'string'))) return null
   }
-  if(type==='review_ready'&&(!['baseline','live'].includes(message.mode as string)||typeof message.game_id!=='string'||!/^\d{1,30}$/.test(message.game_id)||!hash(message.report_id)||!hash(message.evidence_id)||!['ended_at','ready_at'].every(key=>typeof message[key]==='string'&&Number.isFinite(Date.parse(message[key] as string)))||typeof message.latency_seconds!=='number'||message.latency_seconds<0||typeof message.late!=='boolean'))return null
+  if(type==='review_ready'&&(!/^[0-9a-f]{64}$/.test(message.job_id as string)||!/^[0-9a-f]{32}$/.test(message.notice_id as string)||!['baseline','live'].includes(message.mode as string)||typeof message.game_id!=='string'||!/^\d{1,30}$/.test(message.game_id)||!hash(message.report_id)||!hash(message.evidence_id)||!['ended_at','ready_at'].every(key=>typeof message[key]==='string'&&Number.isFinite(Date.parse(message[key] as string)))||typeof message.latency_seconds!=='number'||message.latency_seconds<0||typeof message.late!=='boolean'))return null
+  if(type==='review_ready'){
+    const at=message.displayed_at,latency=message.display_latency_seconds,late=message.display_late
+    if(!awareDate(message.ended_at)||!awareDate(message.ready_at))return null
+    if(at===null){if(latency!==null||late!==null)return null}
+    else if(!awareDate(at)||typeof latency!=='number'||latency<0||typeof late!=='boolean'||late!==(latency>30)||Math.abs((Date.parse(at as string)-Date.parse(message.ended_at as string))/1000-latency)>.001)return null
+  }
+
   if(type==='review_games'&&(typeof message.request_id!=='string'||!Array.isArray(message.games)||!message.games.every(game=>object(game)&&typeof game.game_id==='string'&&typeof game.review_locked==='boolean'&&typeof game.finished==='boolean')))return null
   if(type==='review_response'&&(typeof message.request_id!=='string'||typeof message.game_id!=='string'||!['summary','page','what_if','tag','media','regenerate'].includes(message.operation as string)||!object(message.value)))return null
   if (type === 'evidence_page' && (typeof message.request_id !== 'string' || typeof message.game_id !== 'string' || !hash(message.revision) || !object(message.page) || !Array.isArray(message.page.items))) return null

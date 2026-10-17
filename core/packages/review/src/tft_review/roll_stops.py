@@ -1,4 +1,4 @@
-"""Certify bounded observed refresh programs, without inferring player intent.
+"""Certify inferred action programs without inferring player intent.
 
 An idle boundary identifies an ex-post action count, not a chosen gold floor.
 Only continuously sampled, complete ownership/shop/gold ledgers with positively
@@ -18,8 +18,6 @@ from .contracts import json_value
 
 def certify_roll_stops(batch, context, data, actions):
     rolls = [event for event in actions if event['kind'] == 'roll']
-    if not rolls:
-        return {}, ()
     original = batch.snapshot_for(context)
     if any(read(original,data,name) != expected for name,expected in
         (('remaining_effects_complete',True),('remaining_effects',()),
@@ -33,6 +31,9 @@ def certify_roll_stops(batch, context, data, actions):
         raise DataError('observed_roll_ledger_unsupported')
     if data.value('rules_flags')['roll_cost'] != 2:
         raise DataError('observed_roll_cost_unsupported')
+    _certify_financial_horizon(batch, context, data, horizon_end)
+    if not rolls:
+        return {}, ()
     groups = []
     for event in rolls:
         if (not groups or event['payload'].get('round_id') != groups[-1][-1]['payload'].get('round_id')
@@ -125,3 +126,104 @@ def certify_roll_stops(batch, context, data, actions):
 
 def _at(event):
     return datetime.fromisoformat(event['timestamp'])
+
+
+def _certify_financial_horizon(batch, context, data, end):
+    """Account for the entire program interval, including time between bursts.
+
+    Later finances qualify the action ledger only; they never seed valuation.
+    Unknown income, XP spending or unobserved intervals cannot prove no refresh.
+    """
+    from math import floor
+    rows = [row for row in batch.contexts if context.log_seq <= row.log_seq <= end]
+    rules = data.value('rules_flags')
+    order = tuple(data.value('round_order'))
+    previous = None
+    ownership = None
+    def total_xp(fields):
+        table = data.value('xp_table')
+        return sum(table[str(level)] for level in range(1, fields['level'])) + fields['xp']
+    for row in rows:
+        state = GameSnapshot.from_dict(json_value(row.snapshot))
+        names = ('gold','xp','level','streak','owned_copies','inventory_complete',
+                 'remaining_effects','remaining_effects_complete','held_augments','held_augments_complete')
+        values = {name: read(state,data,name) for name in names}
+        if (any(value is None for value in values.values())
+            or any(not 0 <= (state.captured_at-state.fields[name].read_at).total_seconds() <= .5 for name in names)
+            or state.fields['gold'].read_at != state.captured_at
+            or values['inventory_complete'] is not True or values['remaining_effects_complete'] is not True
+            or values['remaining_effects'] or values['held_augments_complete'] is not True):
+            raise DataError('observed_roll_horizon_coverage_unavailable')
+        captured(state,data)
+        if previous:
+            prior, old, seq = previous
+            if not 0 < (state.captured_at-prior.captured_at).total_seconds() <= 2:
+                raise DataError('observed_roll_horizon_coverage_unavailable')
+            events = [event for event in batch.observations if seq < event['seq'] < row.log_seq]
+            if any(event['kind'] in ('sell','unit_grant','wisp_purchase','capture_gap','tracking_ambiguity') for event in events):
+                raise DataError('observed_roll_ledger_unsupported')
+            spending = 0
+            acquired = Counter()
+            for event in events:
+                if event['kind'] in ('roll','purchase'):
+                    cost = event['payload'].get('cost')
+                    if type(cost) is not int or cost < 0 or event['timestamp'] != row.timestamp:
+                        raise DataError('observed_roll_ledger_unsupported')
+                    spending += cost
+                    if event['kind'] == 'purchase':
+                        acquired[event['payload']['unit_id']] += event['payload']['copies']
+            income = passive = 0
+            if state.round_id != prior.round_id:
+                if order.index(state.round_id) != order.index(prior.round_id)+1:
+                    raise DataError('observed_roll_horizon_coverage_unavailable')
+                # PvE grants with unknown gold cannot establish a financial ledger.
+                # PvP needs a positively observed result and resulting streak.
+                kind = data.value('round_types')[prior.round_id]
+                won = False
+                if kind == 'pve':
+                    if rules['pve_orb_gold'].get(prior.round_id, 0):
+                        raise DataError('observed_roll_income_unavailable')
+                    expected_streak = old['streak'] if rules['pve_preserves_streak'] else 0
+                elif kind == 'pvp':
+                    results = [event for event in events if event['kind']=='fight_result'
+                               and event['payload'].get('round_id') == prior.round_id]
+                    if len(results) != 1 or results[0]['payload'].get('result') not in ('win','loss'):
+                        raise DataError('observed_roll_income_unavailable')
+                    won = results[0]['payload']['result'] == 'win'
+                    expected_streak = max(0,old['streak'])+1 if won else min(0,old['streak'])-1
+                else:
+                    raise DataError('observed_roll_income_unavailable')
+                if values['streak'] != expected_streak:
+                    raise DataError('observed_roll_income_unavailable')
+                interest = data.value('interest')
+                streak = max(((int(threshold),amount) for threshold,amount in data.value('streak_gold').items()
+                              if abs(expected_streak)>=int(threshold)), default=(0,0))[1]
+                base = data.value('gold_by_round')
+                income = (base.get(prior.round_id,base.get('default',0))
+                          + min(floor(old['gold']/interest['gold_per_tick'])*interest['gold_per_interest'],interest['cap'])
+                          + streak + won*rules['combat_win_gold'])
+                passive = rules['passive_xp']
+            elif values['streak'] != old['streak']:
+                # Combat rewards arriving separately need their own observed boundary.
+                raise DataError('observed_roll_income_unavailable')
+            purchased_xp = total_xp(values)-total_xp(old)-passive
+            if purchased_xp < 0 or purchased_xp % rules['xp_buy_amount']:
+                raise DataError('observed_roll_xp_ledger_unsupported')
+            if purchased_xp and not any(event['kind']=='level_up' for event in events):
+                raise DataError('observed_roll_xp_action_unsupported')
+            spending += purchased_xp/rules['xp_buy_amount']*rules['xp_buy_cost']
+            if values['gold'] != old['gold']+income-spending:
+                raise DataError('observed_roll_ledger_unsupported')
+        # Shop polls carry bounded older ownership. Reconcile the entire interval
+        # between complete reads, including purchases before intermediate polls.
+        if state.fields['owned_copies'].read_at == state.captured_at:
+            if ownership is not None:
+                copies, seq = ownership
+                acquired = Counter()
+                for event in batch.observations:
+                    if seq < event['seq'] < row.log_seq and event['kind']=='purchase':
+                        acquired[event['payload']['unit_id']] += event['payload']['copies']
+                if Counter(values['owned_copies']) != copies+acquired:
+                    raise DataError('observed_roll_ownership_unsupported')
+            ownership = Counter(values['owned_copies']), row.log_seq
+        previous = state, values, row.log_seq

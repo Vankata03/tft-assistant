@@ -693,6 +693,44 @@ class SessionStore:
         review['tags']=tags
         return review
 
+    def write_review_notice(self, game_id, receipt, *, cancelled=lambda: False):
+        """Durable transport metadata, separate from immutable review input and tags.
+
+        The notice file is never a game event or replay/job identity input. Flush
+        outside the mode lock, then recheck lifecycle and report before publish.
+        """
+        game_id = _game_id(game_id)
+        reviews = self.root/'reviews'
+        reviews.mkdir(parents=True, exist_ok=True)
+        with _shared_lock((reviews/f'.{game_id}.notice.lock').resolve(), 'Review notice receipt is busy'):
+            report_path = reviews/f'{game_id}.json'
+            version = _file_version(report_path)
+            stored = self.read_review(game_id)
+            if not stored or stored['review']['report_id'] != receipt['report_id']:
+                raise ValueError('Review report was superseded')
+            path = reviews/f'{game_id}.notice.json'
+            existing = json.loads(path.read_text()) if path.exists() else {'receipts':[]}
+            key = ('report_id','job_id','surface')
+            if any(all(row[name]==receipt[name] for name in key) for row in existing['receipts']):
+                return next(row for row in existing['receipts'] if all(row[name]==receipt[name] for name in key))
+            rows = existing['receipts'] if existing.get('report_id')==receipt['report_id'] else []
+            value = {'schema_version':1,'report_id':receipt['report_id'],'receipts':rows+[receipt]}
+            temporary = path.with_suffix(f'.{uuid4().hex}.tmp')
+            try:
+                with temporary.open('w',encoding='utf-8') as output:
+                    json.dump(value,output,allow_nan=False)
+                    output.flush(); os.fsync(output.fileno())
+                with self._lock:
+                    game = next((row for row in self.list_games() if row['game_id']==game_id),None)
+                    if cancelled() or self.active_game_id or not game or game['review_locked']:
+                        raise ValueError('Review notice lifecycle changed')
+                    if _file_version(report_path)!=version:
+                        raise ValueError('Review report was superseded')
+                    os.replace(temporary,path)
+                return receipt
+            finally:
+                temporary.unlink(missing_ok=True)
+
     def set_review_tag(self, game_id: str | int, decision_id: str, tag: str) -> None:
         if tag not in {"agree", "disagree", "unsure"}:
             raise ValueError("tag must be agree, disagree or unsure")

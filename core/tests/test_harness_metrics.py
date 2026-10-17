@@ -165,6 +165,8 @@ def natural_shop_game(tmp_path, *, paid_roll=False, stale_origin=None):
     path = tmp_path/'patch'/'static.toml'
     config = tomllib.loads(path.read_text())
     config['fields']['round_order']['value'] = ['1-1', '3-1', '3-2', '4-1', '5-1', '6-1']
+    # This capped-level fixture declares no passive XP; all gold income remains sourced.
+    config['fields']['rules_flags']['value']['passive_xp'] = 0
     path.write_text(tomli_w.dumps(config))
     refreshed = store.refresh(path.parent, now=NOW+timedelta(seconds=1), sources=(GuideFeed(),))
     assert refreshed.error is None
@@ -185,6 +187,7 @@ def natural_shop_game(tmp_path, *, paid_roll=False, stale_origin=None):
                 sessions.append_event('roll', {'cost': 2, 'round_id': '4-1'}, timestamp=at.isoformat())
         raw = log_snapshot(data, at=at, snapshot_id=f'roll-policy-{index}', gold=gold, level=10,
             board=Board((Unit('unit', stars=stars),)), shop=shop, comp_lock='guide',
+            owned_copies={'unit':1 if stars==1 else 3},
             remaining_effects=[], remaining_effects_complete=True, held_augments=[], held_augments_complete=True)
         raw['round_id'] = round_id
         if index == 0 and stale_origin:

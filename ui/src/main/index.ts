@@ -16,7 +16,7 @@ import { CoreLink } from './coreLink'
 import { CoreSupervisor } from './coreSupervisor'
 import { CoachTray } from './tray'
 import {currentLiveMember,validEvidencePath} from '../shared/liveCommands'
-import type {LiveSurfaceShown,LivePreviewShown,PinLine,RequestEvidencePage,RequestReview} from '../shared/messages'
+import type {LiveSurfaceShown,LivePreviewShown,ReviewNoticeShown,PinLine,RequestEvidencePage,RequestReview} from '../shared/messages'
 import { CoachOverlay } from './overlayWindow'
 
 const REPO_ROOT = resolve(app.getAppPath(), '..')
@@ -152,7 +152,7 @@ function startCore(): CoreSupervisor {
         if(!['InProgress','Reconnect','PreEndOfGame'].includes(state.gameflow?.phase??''))setState({reviewReady:message})
         break
       case 'error':
-        setState({ error: message.message })
+        setState({ error: message.message,...(message.code==='review_notice_rejected'?{reviewReady:null}:{}) })
         log(`core rejected a message: ${message.code}: ${message.message}`)
         break
     }
@@ -197,6 +197,14 @@ function startCore(): CoreSupervisor {
     },
   )
 
+  ipcMain.on('review-notice-shown',(event,input:unknown)=>{
+    if(state.core!=='running'||!state.reviewReady||['InProgress','Reconnect','PreEndOfGame'].includes(state.gameflow?.phase??'')||typeof input!=='object'||input===null)return
+    const row=input as Omit<ReviewNoticeShown,'v'|'type'>,ready=state.reviewReady
+    if(!['baseline','live'].includes(ready.mode)||!['game_id','report_id','evidence_id','job_id','notice_id'].every(key=>row[key as keyof typeof row]===ready[key as keyof typeof ready]))return
+    if((row.surface==='status'&&event.sender!==statusWindow?.webContents)||(row.surface==='overlay'&&!overlay.owns(event.sender))||!['status','overlay'].includes(row.surface))return
+    if(typeof row.timestamp!=='string'||!Number.isFinite(Date.parse(row.timestamp))||Date.parse(row.timestamp)<Date.parse(ready.ready_at))return
+    link.reviewNoticeShown({game_id:row.game_id,report_id:row.report_id,evidence_id:row.evidence_id,job_id:row.job_id,notice_id:row.notice_id,surface:row.surface,timestamp:row.timestamp})
+  })
   ipcMain.on('live-preview-shown',(_event,input:unknown)=>{
     if(!__LIVE_ENABLED__||state.core!=='running'||state.mode!=='live'||!currentLiveMember(state.live,input))return
     const row=input as Omit<LivePreviewShown,'v'|'type'>

@@ -2525,9 +2525,115 @@
       "title": "ReviewGames",
       "type": "object"
     },
+    "ReviewNoticeShown": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_id": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "game_id": {
+          "pattern": "^[1-9][0-9]*$",
+          "title": "Game Id",
+          "type": "string"
+        },
+        "job_id": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Job Id",
+          "type": "string"
+        },
+        "notice_id": {
+          "pattern": "^[0-9a-f]{32}$",
+          "title": "Notice Id",
+          "type": "string"
+        },
+        "report_id": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Report Id",
+          "type": "string"
+        },
+        "surface": {
+          "enum": [
+            "status",
+            "overlay"
+          ],
+          "title": "Surface",
+          "type": "string"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "title": "Timestamp",
+          "type": "string"
+        },
+        "type": {
+          "const": "review_notice_shown",
+          "default": "review_notice_shown",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "type",
+        "game_id",
+        "report_id",
+        "evidence_id",
+        "job_id",
+        "notice_id",
+        "surface",
+        "timestamp"
+      ],
+      "title": "ReviewNoticeShown",
+      "type": "object"
+    },
     "ReviewReady": {
       "additionalProperties": false,
       "properties": {
+        "display_late": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Display Late"
+        },
+        "display_latency_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Display Latency Seconds"
+        },
+        "displayed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Displayed At"
+        },
         "ended_at": {
           "format": "date-time",
           "title": "Ended At",
@@ -2541,6 +2647,11 @@
         "game_id": {
           "pattern": "^[1-9][0-9]*$",
           "title": "Game Id",
+          "type": "string"
+        },
+        "job_id": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Job Id",
           "type": "string"
         },
         "late": {
@@ -2558,6 +2669,11 @@
             "live"
           ],
           "title": "Mode",
+          "type": "string"
+        },
+        "notice_id": {
+          "pattern": "^[0-9a-f]{32}$",
+          "title": "Notice Id",
           "type": "string"
         },
         "ready_at": {
@@ -2590,6 +2706,11 @@
         "mode",
         "report_id",
         "evidence_id",
+        "job_id",
+        "notice_id",
+        "display_latency_seconds",
+        "display_late",
+        "displayed_at",
         "ended_at",
         "ready_at",
         "latency_seconds",
@@ -3084,6 +3205,7 @@
           "request_review": "#/$defs/RequestReview",
           "request_review_games": "#/$defs/RequestReviewGames",
           "request_surface_geometry": "#/$defs/RequestSurfaceGeometry",
+          "review_notice_shown": "#/$defs/ReviewNoticeShown",
           "select_guide": "#/$defs/SelectGuide",
           "set_session_mode": "#/$defs/SetSessionMode",
           "surface_shown": "#/$defs/SurfaceShown"
@@ -3093,6 +3215,9 @@
       "oneOf": [
         {
           "$ref": "#/$defs/Hello"
+        },
+        {
+          "$ref": "#/$defs/ReviewNoticeShown"
         },
         {
           "$ref": "#/$defs/SetSessionMode"

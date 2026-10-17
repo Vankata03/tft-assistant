@@ -37,7 +37,7 @@ def test_production_reader_disagreement_reaches_protected_debug_with_keyframe(tm
     assert stamp['items'][0]['value'] == at
 
 
-def adoption_game(tmp_path, *, lock=False, incomplete=False, stale=False):
+def adoption_game(tmp_path, *, lock=False, incomplete=False, stale=False, on_snapshot=None, mode=None, phases=None):
     import json
     import tomllib
     import tomli_w
@@ -63,11 +63,15 @@ def adoption_game(tmp_path, *, lock=False, incomplete=False, stale=False):
 
     data = store.refresh(path, sources=(TwoGuides(),), now=NOW).snapshot
     sessions = SessionStore(tmp_path/'logs', tmp_path/'config', live_installed=True)
-    sessions.set_mode('baseline')
+    if mode is None:
+        sessions.set_mode('baseline')
+    else:
+        sessions.set_mode(mode)
     sessions.start_game('901', patch=data.patch, data_snapshot_id=data.snapshot_id, timestamp=NOW.isoformat())
-    for index, round_id in enumerate(('3-2','3-3','3-4')):
+    phases=phases or (('3-2','unit'),('3-3','other'),('3-4','other'))
+    for index, (round_id,unit_id) in enumerate(phases):
         at = NOW+timedelta(seconds=index)
-        fields = {'board':Board((Unit('unit' if index == 0 else 'other', 2),))}
+        fields = {'board':Board((Unit(unit_id, 2),))}
         if lock:
             fields['comp_lock'] = 'guide'
         if incomplete and index:
@@ -76,6 +80,8 @@ def adoption_game(tmp_path, *, lock=False, incomplete=False, stale=False):
         if stale and index:
             snapshot['fields']['board']['read_at'] = (NOW-timedelta(seconds=10)).isoformat()
         sessions.append_event('snapshot', snapshot, timestamp=at.isoformat())
+        if on_snapshot:
+            on_snapshot(index,sessions,store)
     sessions.end_game(timestamp=(NOW+timedelta(seconds=4)).isoformat())
     return sessions, store
 
@@ -109,3 +115,43 @@ def test_unqualified_or_locked_board_never_becomes_observed_adoption(tmp_path, g
     for index in range(page['total']):
         status = service.detail('901', path=('surface','plan_timeline',index,'called_status'))
         assert status['items'][0]['value'] != 'taken_without_call'
+
+
+@pytest.mark.parametrize('shown_seconds',[1,1.4])
+def test_call_after_first_positive_movement_cannot_retroactively_motivate_adoption(tmp_path, shown_seconds):
+    from tft_engine import Advice, ScoredOption, DomainHook
+    from tft_review import ReplayProducer, ReviewPolicy
+    from tests.test_review_attribution import log_delivery, log_shown
+    def pivot(context):
+        if context.snapshot.round_id != '3-3': return ()
+        return (Advice('pivot','Pivot','act_this_phase',.9,'fixture',option_id='other-guide',
+            payload={'target':'other-guide','from':'guide'},options=(
+            ScoredOption('other-guide','comp',{'comp_id':'other-guide'},3),
+            ScoredOption('guide','comp',{'comp_id':'guide'},4))),)
+    hooks=(DomainHook('late-pivot',(),advice=pivot),)
+    def after(index,sessions,store):
+        if index!=1:return
+        batch=ReplayProducer(sessions,store,repository=ROOT,hooks=hooks).produce('901')
+        record=next(row for row in batch.records if row.decision=='pivot')
+        at=NOW+timedelta(seconds=shown_seconds)
+        log_delivery(sessions,decision_id=record.decision_id,option_id='other-guide',domain='pivot',snapshot_id='phase-1',at=at)
+        log_shown(sessions,decision_id=record.decision_id,option_id='other-guide',at=at)
+    sessions,store=adoption_game(tmp_path,on_snapshot=after,mode='live')
+    batch=ReplayProducer(sessions,store,repository=ROOT,hooks=hooks).produce('901')
+    report=ReviewPolicy(min_cost=.05).build(batch)
+    adopted=next(row for row in report.plan_timeline if row.get('observed_transition'))
+    assert adopted['called_status']=='taken_without_call'
+    assert adopted['observed_transition']['onset_at']==(NOW+timedelta(seconds=1)).isoformat()
+    assert adopted['log_seq']>adopted['observed_transition']['onset_log_seq']
+    assert len([row for row in report.timeline if row['category']=='pivot'])==1
+
+
+def test_observed_adoption_onset_restarts_after_a_same_round_return_to_original_target(tmp_path):
+    from tft_review import ReplayProducer, ReviewPolicy
+    sessions,store=adoption_game(tmp_path,phases=(('3-2','unit'),('3-3','other'),
+        ('3-3','unit'),('3-3','other'),('3-4','other')))
+    batch=ReplayProducer(sessions,store,repository=ROOT).produce('901')
+    report=ReviewPolicy(min_cost=.05).build(batch)
+    adopted=next(row for row in report.plan_timeline if row.get('observed_transition'))
+    assert adopted['observed_transition']['onset_at']==(NOW+timedelta(seconds=3)).isoformat()
+    assert adopted['called_status']=='taken_without_call'

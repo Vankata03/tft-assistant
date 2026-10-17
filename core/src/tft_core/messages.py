@@ -179,12 +179,28 @@ class LiveState(_Message):
         return self
 
 
+class ReviewNoticeShown(_Message):
+    type: Literal['review_notice_shown'] = 'review_notice_shown'
+    game_id: str = Field(pattern=r'^[1-9][0-9]*$')
+    report_id: str = Field(pattern=r'^sha256:[0-9a-f]{64}$')
+    evidence_id: str = Field(pattern=r'^sha256:[0-9a-f]{64}$')
+    job_id: str = Field(pattern=r'^[0-9a-f]{64}$')
+    notice_id: str = Field(pattern=r'^[0-9a-f]{32}$')
+    surface: Literal['status','overlay']
+    timestamp: AwareDatetime
+
+
 class ReviewReady(_Message):
     type: Literal['review_ready'] = 'review_ready'
     game_id: str = Field(pattern=r'^[1-9][0-9]*$')
     mode: Literal['baseline','live']
     report_id: str = Field(pattern=r'^sha256:[0-9a-f]{64}$')
     evidence_id: str = Field(pattern=r'^sha256:[0-9a-f]{64}$')
+    job_id: str = Field(pattern=r'^[0-9a-f]{64}$')
+    notice_id: str = Field(pattern=r'^[0-9a-f]{32}$')
+    display_latency_seconds: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    display_late: bool | None = None
+    displayed_at: AwareDatetime | None = None
     ended_at: AwareDatetime
     ready_at: AwareDatetime
     latency_seconds: float = Field(ge=0, allow_inf_nan=False)
@@ -268,7 +284,7 @@ class ReviewResponse(_Message):
 class UiMessage(
     RootModel[
         Annotated[
-            Hello | SetSessionMode | RequestBaselineState | SelectGuide | SurfaceShown | RequestLiveState | RequestEvidencePage | LiveSurfaceShown | LivePreviewShown | PinLine | RequestSurfaceGeometry | RequestReview | RequestReviewGames,
+            Hello | ReviewNoticeShown | SetSessionMode | RequestBaselineState | SelectGuide | SurfaceShown | RequestLiveState | RequestEvidencePage | LiveSurfaceShown | LivePreviewShown | PinLine | RequestSurfaceGeometry | RequestReview | RequestReviewGames,
             Field(discriminator="type"),
         ]
     ]
@@ -307,7 +323,7 @@ def _check_version(raw: str | bytes) -> object:
 
 def parse_ui_message(
     raw: str | bytes,
-) -> Hello | SetSessionMode | RequestBaselineState | SelectGuide | SurfaceShown:
+) -> Hello | ReviewNoticeShown | SetSessionMode | RequestBaselineState | SelectGuide | SurfaceShown:
     """Parse a message from the shell; raises UnsupportedVersion or pydantic.ValidationError."""
     return _ui_adapter.validate_python(_check_version(raw)).root
 

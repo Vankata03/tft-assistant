@@ -194,6 +194,7 @@ async function reviewValue(message:Omit<RequestReview,'v'|'type'|'request_id'>):
  return {path,kind:Array.isArray(value)?'array':typeof value==='object'?'object':'value',items,total:entries.length,cursor:message.cursor,next_cursor:end<entries.length?end:null,integer_paths:[]}
 }
 window.coach = {
+ reviewNoticeShown:()=>{},
   livePreviewShown: message => {
     if(state.mode!=='live'||state.live?.revision!==message.revision)return
     reports.textContent=`Synthetic preview shown · ${message.surface} · ${message.timestamp}`

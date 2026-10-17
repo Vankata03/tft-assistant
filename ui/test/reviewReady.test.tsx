@@ -4,7 +4,7 @@ import {it,expect} from 'vitest'
 import {ReviewReadyNotice} from '../src/renderer/src/review/ReviewReadyNotice'
 import {parseCoreMessage} from '../src/shared/protocol'
 import type {ShellState} from '../src/shared/state'
-const ready={v:1 as const,type:'review_ready' as const,game_id:'123',mode:'baseline' as const,report_id:'sha256:'+('a'.repeat(64)),evidence_id:'sha256:'+('a'.repeat(64)),ended_at:'2026-10-14T08:00:00Z',ready_at:'2026-10-14T08:00:20Z',latency_seconds:20,late:false}
+const ready={v:1 as const,type:'review_ready' as const,game_id:'123',mode:'baseline' as const,report_id:'sha256:'+('a'.repeat(64)),evidence_id:'sha256:'+('a'.repeat(64)),job_id:'b'.repeat(64),notice_id:'c'.repeat(32),ended_at:'2026-10-14T08:00:00Z',ready_at:'2026-10-14T08:00:20Z',latency_seconds:20,late:false,displayed_at:null,display_late:null,display_latency_seconds:null}
 const state:ShellState={core:'running',mode:'silent',gameflow:{clientRunning:true,phase:'EndOfGame'},reviewReady:ready}
 it('review-ready notice follows finished mode and requires real calibrated overlay geometry',()=>{
  expect(parseCoreMessage(JSON.stringify(ready))).not.toBeNull()

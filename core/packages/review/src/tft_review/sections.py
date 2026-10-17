@@ -125,17 +125,24 @@ def sections(batch, data=None, *, policies=None, timeline=()):
                 if row.log_seq <= context.log_seq and row.evaluation is not None
                 and row.snapshot['round_id'] in (transition['observed_since_round'], transition['confirmed_round'])
                 and row.evaluation['plan'].get('player_label') == transition['to'])
+            onset = next((row for row in batch.contexts
+                if row.log_seq <= context.log_seq and row.evaluation is not None
+                and row.snapshot['snapshot_id'] == transition['onset_snapshot_id']
+                and row.evaluation['plan'].get('player_label') == transition['to']), context)
+            transition['onset_log_seq'] = onset.log_seq
+            transition['onset_at'] = onset.timestamp
+            # A later call cannot motivate an already observed movement.
             # This is an observed adoption, never a synthetic recommendation or cost.
             prior_calls = [row for row in timeline if row['category'] == 'pivot'
-                and row['log_seq'] < context.log_seq
+                and row['log_seq'] < onset.log_seq
                 and row['shown'].get('shown_option_id') == transition['to']
-                and _at(row['shown']['shown_at']) <= _at(context.timestamp)
-                and any(event['kind'] == 'ui_show' and event['seq'] < context.log_seq
+                and _at(row['shown']['shown_at']) <= _at(onset.timestamp)
+                and any(event['kind'] == 'ui_show' and event['seq'] < onset.log_seq
                     and event['timestamp'] == row['shown']['shown_at']
                     and event['payload'].get('decision_id') == row['engine_decision_id']
                     and event['payload'].get('delivery_revision') == row['shown']['delivery_revision']
                     for event in batch.observations)]
-            if not called and not prior_calls:
+            if not prior_calls:
                 called_status = 'taken_without_call'
         plans.append({'log_seq': context.log_seq, 'round_id': context.snapshot['round_id'],
             **dict(plan), 'observed_transition': transition, 'called_status': called_status,

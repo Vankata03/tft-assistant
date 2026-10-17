@@ -38,6 +38,7 @@ export type JsonValue = unknown
  */
 export type UiMessage =
   | Hello
+  | ReviewNoticeShown
   | SetSessionMode
   | RequestBaselineState
   | SelectGuide
@@ -593,12 +594,17 @@ export interface ReviewGames {
  * via the `definition` "ReviewReady".
  */
 export interface ReviewReady {
+  display_late: boolean | null
+  display_latency_seconds: number | null
+  displayed_at: string | null
   ended_at: string
   evidence_id: string
   game_id: string
+  job_id: string
   late: boolean
   latency_seconds: number
   mode: 'baseline' | 'live'
+  notice_id: string
   ready_at: string
   report_id: string
   type: 'review_ready'
@@ -730,6 +736,21 @@ export interface RequestReviewGames {
  */
 export interface RequestSurfaceGeometry {
   type: 'request_surface_geometry'
+  v: 1
+}
+/**
+ * This interface was referenced by `Messages`'s JSON-Schema
+ * via the `definition` "ReviewNoticeShown".
+ */
+export interface ReviewNoticeShown {
+  evidence_id: string
+  game_id: string
+  job_id: string
+  notice_id: string
+  report_id: string
+  surface: 'status' | 'overlay'
+  timestamp: string
+  type: 'review_notice_shown'
   v: 1
 }
 /**

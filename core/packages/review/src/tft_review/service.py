@@ -92,7 +92,7 @@ class ReviewService:
         if self.job_identity(game_id) != job:
             raise ValueError('Review job identity changed during evaluation')
         self.sessions.write_review(str(game_id), {'schema_version': 1,
-            'report_id': graph.root_id, 'evidence_graph': graph.to_dict(),
+            'report_id': graph.root_id, 'job_id': job['job_id'], 'evidence_graph': graph.to_dict(),
             'decision_ids': [row['moment_id'] for row in report.moments]},
             engine_version=batch.identity['commit'], data_snapshot_id=batch.identity['data_snapshot_id'],
             expected_log_hash=batch.identity['log_hash'])

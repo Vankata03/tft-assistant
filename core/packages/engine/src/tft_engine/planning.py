@@ -29,6 +29,7 @@ class GamePlan:
     target_similarity: float = 0.0
     pivot_round: str | None = None
     observed_transition: Mapping | None = None
+    divergence_snapshot_id: str | None = None
     def __post_init__(self):
         if self.observed_transition is not None:
             object.__setattr__(self, 'observed_transition', freeze(self.observed_transition))
@@ -222,6 +223,7 @@ def _choose_plan(snapshot,data,previous,fits,guards=None):
     rejected=previous.rejected_target
     pivot_from=pivot_to=None
     divergence=previous.divergence_round
+    divergence_snapshot_id=previous.divergence_snapshot_id
     pivot_round=previous.pivot_round
     adopt=False
     new_phase=snapshot.round_id!=previous.planning_round
@@ -236,15 +238,20 @@ def _choose_plan(snapshot,data,previous,fits,guards=None):
         elif previous.player_label==label and divergence and new_phase:
             rejected=target; target=label; divergence=None; adopt=True
         elif not moving:
-            divergence=divergence or snapshot.round_id
+            if not divergence or previous.player_label != label:
+                divergence=snapshot.round_id
+                divergence_snapshot_id=snapshot.snapshot_id
         else:
             divergence=None
     else:
         divergence=None
     observed_transition = ({'from': previous.target, 'to': target,
         'reason': 'observed_player_adoption', 'observed_since_round': previous.divergence_round,
+        'onset_snapshot_id': previous.divergence_snapshot_id or snapshot.snapshot_id,
         'confirmed_round': snapshot.round_id, 'snapshot_id': snapshot.snapshot_id}
         if adopt else None)
+    if divergence is None:
+        divergence_snapshot_id=None
     if status=='committed' and not adopt:
         challenger=next((id for id in ordered if id!=target),None)
         if challenger:
@@ -262,7 +269,7 @@ def _choose_plan(snapshot,data,previous,fits,guards=None):
         target=lock; status='committed'
     backup=next((id for id in ordered if id!=target),None) if status=='committed' else None
     candidates=ordered[:cap] if status=='open' else tuple(id for id in (target,backup) if id)
-    return GamePlan(status,target,backup,candidates,previous.line,pivot_from,pivot_to,rejected,label,divergence,snapshot.round_id,similarities.get(target,0),pivot_round,observed_transition)
+    return GamePlan(status,target,backup,candidates,previous.line,pivot_from,pivot_to,rejected,label,divergence,snapshot.round_id,similarities.get(target,0),pivot_round,observed_transition,divergence_snapshot_id)
 
 
 def _line_choice(snapshot,data,previous,plan,results):

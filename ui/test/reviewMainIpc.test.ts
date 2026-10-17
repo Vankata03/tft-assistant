@@ -6,7 +6,7 @@ import {expect, it, vi} from 'vitest'
 import type {CoachApi} from '../src/preload'
 
 const native = vi.hoisted(() => ({
-  ui: '', root: '', stopped: false, quit: () => {}, coach: null as CoachApi | null,
+  ui: '', root: '', stopped: false, quit: () => {}, showStatus:()=>{}, sender:null as unknown, coach: null as CoachApi | null,
   handlers: new Map<string, (event: unknown, input?: unknown) => unknown>(),
 }))
 
@@ -15,6 +15,7 @@ const native = vi.hoisted(() => ({
 vi.mock('electron', async () => {
   const {EventEmitter} = await import('node:events')
   const app = new EventEmitter()
+  native.showStatus=()=>{app.emit('second-instance')}
   native.quit = () => {
     let prevented = false
     app.emit('before-quit', {preventDefault: () => {prevented = true}})
@@ -29,6 +30,8 @@ vi.mock('electron', async () => {
     app,
     BrowserWindow: class extends EventEmitter {
       webContents = {on: () => {}, send: () => {}}
+      constructor(){super();native.sender=this.webContents}
+      show(){} focus(){}
       loadFile() {return Promise.resolve()}
       close() {this.emit('closed')}
     },
@@ -37,8 +40,8 @@ vi.mock('electron', async () => {
     nativeImage: {createFromBitmap: () => ({addRepresentation: () => {}})},
     screen: {getAllDisplays: () => []},
     globalShortcut: {register: () => {}, unregisterAll: () => {}},
-    ipcMain: {on: () => {}, handle: (channel: string, handler: (event: unknown, input?: unknown) => unknown) => native.handlers.set(channel, handler)},
-    ipcRenderer: {invoke: (channel: string, input?: unknown) => native.handlers.get(channel)!({}, input)},
+    ipcMain: {on: (channel:string,handler:(event:unknown,input?:unknown)=>unknown)=>native.handlers.set(channel,handler), handle: (channel: string, handler: (event: unknown, input?: unknown) => unknown) => native.handlers.set(channel, handler)},
+    ipcRenderer: {send:(channel:string,input?:unknown)=>native.handlers.get(channel)?.({sender:native.sender},input), invoke: (channel: string, input?: unknown) => native.handlers.get(channel)!({}, input)},
     contextBridge: {exposeInMainWorld: (_name: string, api: CoachApi) => {native.coach = api}},
   }
 })
@@ -86,9 +89,25 @@ print(sessions.log_path('901'))
     await vi.waitFor(async () => {
       expect((await native.coach!.getState()).reviewReady?.game_id).toBe('901')
     }, {timeout: 20000})
+    native.showStatus()
+    const notice=(await native.coach!.getState()).reviewReady!
+    const receipt={game_id:notice.game_id,report_id:notice.report_id,evidence_id:notice.evidence_id,job_id:notice.job_id,notice_id:notice.notice_id,surface:'status' as const,timestamp:new Date().toISOString()}
+    // A renderer from an unowned window cannot acknowledge another surface.
+    native.handlers.get('review-notice-shown')!({sender:{}},receipt)
+    native.coach!.reviewNoticeShown(receipt)
+    await vi.waitFor(()=>{
+      const durable=JSON.parse(readFileSync(join(root,'logs','reviews','901.notice.json'),'utf8'))
+      expect(durable.receipts).toHaveLength(1)
+      expect(durable.receipts[0].report_id).toBe(notice.report_id)
+      expect(durable.receipts[0].job_id).toBe(notice.job_id)
+    },{timeout:10000})
+    native.coach!.reviewNoticeShown(receipt)
     const summary = await native.coach!.requestReview(request)
     expect(summary.value.report_id).toBe(initial.value.report_id)
     expect(readFileSync(actualLog)).toEqual(before)
+    native.coach!.reviewNoticeShown({...receipt,timestamp:new Date(Date.now()+60000).toISOString()})
+    await vi.waitFor(async()=>expect((await native.coach!.getState()).reviewReady).toBeNull())
+    expect(JSON.parse(readFileSync(join(root,'logs','reviews','901.notice.json'),'utf8')).receipts).toHaveLength(1)
   } finally {
     if (native.handlers.has('get-state')) {
       native.quit()
