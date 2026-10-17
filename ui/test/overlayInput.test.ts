@@ -3,14 +3,15 @@ import type {ShellState} from '../src/shared/state'
 import type {SurfaceGeometryState} from '../src/shared/messages'
 import fixture from './fixtures/live.json'
 
-const native=vi.hoisted(()=>({windows:[] as {visible:boolean;ignoreMouseEvents:boolean;webContents:{on:()=>void;send:()=>void}}[]}))
+const native=vi.hoisted(()=>({windows:[] as {visible:boolean;ignoreMouseEvents:boolean;ignoreCalls:[boolean,{forward?:boolean}|undefined][];webContents:{on:()=>void;send:()=>void}}[]}))
 vi.mock('electron',()=>({
  BrowserWindow:class {
   visible=false
   ignoreMouseEvents=true
   webContents={on:()=>{},send:()=>{}}
   constructor(){native.windows.push(this)}
-  setIgnoreMouseEvents(value:boolean){this.ignoreMouseEvents=value}
+  ignoreCalls:[boolean,{forward?:boolean}|undefined][]=[]
+  setIgnoreMouseEvents(value:boolean,options?:{forward?:boolean}){this.ignoreMouseEvents=value;this.ignoreCalls.push([value,options])}
   setContentProtection(){}
   on(){}
   loadURL(){return Promise.resolve()}
@@ -67,6 +68,33 @@ it.each(['silent','geometry','disconnect','toggle','combat','invalidated','missi
   expect(window.visible).toBe(true)
   expect(window.ignoreMouseEvents).toBe(true)
   overlay.setInteractive(window.webContents as never,true)
+  expect(window.ignoreMouseEvents).toBe(true)
+ }finally{overlay.close()}
+})
+
+it('keeps forwarding pointer movement whenever the overlay ignores native input, so tags can show hover tooltips',()=>{
+ vi.useFakeTimers();vi.setSystemTime(new Date('2026-10-15T08:00:00Z'))
+ Object.defineProperty(process,'platform',{value:'win32',configurable:true})
+ const at=new Date().toISOString()
+ const geometry:SurfaceGeometryState={v:1,type:'surface_geometry',mode:'live',status:'external native fixture',
+  geometry:{window_id:'positive-window',coordinate_space:'physical_pixels',client_bounds:{x:0,y:0,width:1920,height:1080},read_at:at,source:'Win32-client-rectangle',layout_read_at:at,layout_source_sha256:'b'.repeat(64),window_mode:'borderless',ui_scale:1,profile_sha256:'a'.repeat(64),calibration:{client_size:[1920,1080],ui_scale:1}},
+  anchors:[{kind:'line',index:0,x:.2,y:.2,width:.1,height:.05},{kind:'shop',index:0,x:.3,y:.8,width:.1,height:.05}]}
+ const state:ShellState={core:'running',mode:'live',gameflow:{clientRunning:true,phase:'InProgress'},
+  live:fixture as unknown as ShellState['live'],surfaceGeometry:geometry}
+ const overlay=new CoachOverlay()
+ try{
+  overlay.update(state)
+  const window=native.windows[0]!
+  expect(window.visible).toBe(true)
+  expect(window.ignoreMouseEvents).toBe(true)
+  overlay.setInteractive(window.webContents as never,true)
+  overlay.setInteractive(window.webContents as never,false)
+  overlay.update({...state,mode:'baseline',surfaceGeometry:{...geometry,mode:'baseline'},baseline:{mode:'baseline',content:{}} as ShellState['baseline']})
+  vi.advanceTimersByTime(500)
+  overlay.toggle()
+  const ignoring=window.ignoreCalls.filter(([ignore])=>ignore)
+  expect(ignoring.length).toBeGreaterThan(2)
+  expect(ignoring.every(([,options])=>options?.forward===true)).toBe(true)
   expect(window.ignoreMouseEvents).toBe(true)
  }finally{overlay.close()}
 })
