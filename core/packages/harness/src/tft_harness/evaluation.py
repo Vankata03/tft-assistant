@@ -62,12 +62,12 @@ class EvaluationHarness:
         return hand_set_checks(self, game_ids, limit=limit)
 
     def fit(self, parameter_grid, *, metric='fight_log_loss', bootstrap_seed=0, bootstrap_draws=2000,
-            max_candidates=256):
+            max_candidates=256, **options):
         if metric not in FITTED_METRICS:
             raise ValueError('Report-only metrics cannot be fitted')
         from .fitting import fit
         return fit(self,parameter_grid,metric=metric,bootstrap_seed=bootstrap_seed,
-            bootstrap_draws=bootstrap_draws,max_candidates=max_candidates)
+            bootstrap_draws=bootstrap_draws,max_candidates=max_candidates, **options)
 
     def evaluate(self, game_ids=None, *, candidate=None, bootstrap_seed=0, bootstrap_draws=2000):
         accepted, rows = self._evaluate(game_ids, self.data_store)
@@ -108,7 +108,7 @@ class EvaluationHarness:
                 'reason': None if comparable else against['reason'] or naive['reason'],
                 'sample_unit': 'game', 'eligible_game_ids': tuple(sorted({row['game_id'] for row in original})),
                 'bootstrap_seed': bootstrap_seed, 'bootstrap_draws': bootstrap_draws,
-                'interval_convention': 'percentile95; nearest-rank2.5/97.5',
+                'interval_convention': 'percentile95; nearest-rank 2.5 and 97.5',
                 'no_regression': regression, 'beats_naive': beats_naive,
                 'candidate_minus_accepted': against, 'candidate_minus_naive': naive}
         if holdout:
@@ -120,7 +120,7 @@ class EvaluationHarness:
                 for domain in proposed.metrics['flip_rates']})
         return replace(proposed, gates=gates, provenance=dict(proposed.provenance)|{
             'candidate': candidate, 'candidate_id': overlay.identity,
-            'comparison_reference': 'historical effective tunables; immutable static/source pins retained',
+            'comparison_reference': 'accepted effective tunables; immutable static and source pins retained',
             'gate_policy': 'no significant regression versus accepted; upper95 loss difference below zero versus naive'})
 
     def _evaluate(self, game_ids, data_store, *, hook_version='default'):
@@ -248,13 +248,13 @@ class EvaluationHarness:
         return HarnessReport(metrics, gates, counts, tuple(examples), tuple(manifest), {
             'current_set': self.current_set,
             'set_filter': 'current set only; missing legacy set metadata uses historical data pin',
-            'chronological_policy': 'oldest80/newest20; holdout_count=ceil(N*.2); timestamp,numeric_id tie-break',
+            'chronological_policy': 'oldest 80 and newest 20 percent; holdout_count=ceil(N*.2); timestamp,numeric_id tie-break',
             'training_game_ids': training, 'holdout_game_ids': holdout,
             'evaluation_scope': 'all eligible rows; gates use holdout only',
             'metric_weighting': 'equal games; mean eligible rows within each game',
-            'outcome_policy': 'win/loss Bernoulli; draw is explicitly excluded',
+            'outcome_policy': 'win or loss Bernoulli; draw is explicitly excluded',
             'placement_naive': 'fresh positively complete alive lobby; average rank for tied HP',
-            'report_only_policy': 'only FITTED_METRICS enter fitting/generic loss gates; flips have their own nonincrease gate',
+            'report_only_policy': 'only FITTED_METRICS enter fitting and generic loss gates; flips have their own nonincrease gate',
             'sighting_naive': 'same joint support; persistence disabled'}), rows
 
     def _outcome(self, game_id):
