@@ -45,6 +45,7 @@ export type UiMessage =
   | RequestLiveState
   | RequestEvidencePage
   | LiveSurfaceShown
+  | LivePreviewShown
   | PinLine
   | RequestSurfaceGeometry
   | RequestReview
@@ -612,6 +613,23 @@ export interface ReviewReady {
 export interface Hello {
   token: string
   type: 'hello'
+  v: 1
+}
+/**
+ * Display evidence for a scheduled preview, outside actionable attribution.
+ *
+ * This interface was referenced by `Messages`'s JSON-Schema
+ * via the `definition` "LivePreviewShown".
+ */
+export interface LivePreviewShown {
+  data_snapshot_id: string
+  game_id: string
+  preview: LiveNextPlanningPreview
+  revision: string
+  round_id: string
+  surface: 'overlay'
+  timestamp: string
+  type: 'live_preview_shown'
   v: 1
 }
 /**

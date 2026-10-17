@@ -285,6 +285,45 @@ class LiveDeliveryController:
             "received_at": now.isoformat()}, timestamp=message.timestamp.isoformat())
         self._shown.add(key)
 
+    def preview_shown(self, message, mode):
+        """Record only the current, visible scheduled point; never an action."""
+        state, _, delivered_at = self._member(message.game_id, message.revision, mode)
+        preview = state.content.next_planning
+        if (message.revision != self.current.revision or preview is None or not preview.available
+            or message.preview != preview or message.data_snapshot_id != state.content.data_snapshot_id
+            or message.round_id != state.content.round_id):
+            raise ValueError("Preview is not the current delivered scheduled point")
+        if (not self.sessions.live_installed or self.sessions.mode.value != "live"
+            or not self._observation_seen or self.observation is None or self.observed_data is None
+            or self._next_planning_invalid()):
+            raise ValueError("Preview no longer applies to active capture")
+        now = datetime.now(UTC)
+        from tft_engine.planning import field_age
+        # Relative field freshness alone cannot qualify a frozen capture.
+        phase_age = field_age(self.observed_data, "phase", self.observation)
+        capture_age = (now - self.observation.captured_at).total_seconds()
+        if capture_age < -1 or capture_age > phase_age:
+            raise ValueError("Preview capture is stale")
+        for name in ("phase", "planning_phase"):
+            field = self.observation.fields.get(name)
+            if (field is None or field.read_at > self.observation.captured_at
+                or (now-field.read_at).total_seconds() > field_age(self.observed_data, name, self.observation)):
+                raise ValueError("Preview phase evidence is stale")
+        if message.timestamp < datetime.fromisoformat(delivered_at) or (message.timestamp-now).total_seconds() > 1:
+            raise ValueError("Shown timestamp is outside the delivery interval")
+        key = (message.revision, "next_planning", message.surface)
+        if key in self._shown:
+            return
+        self.sessions.append_event("preview_shown", {
+            "schema_version": 1, "mode": mode.value, "surface": message.surface,
+            "game_id": message.game_id, "data_snapshot_id": message.data_snapshot_id,
+            "round_id": message.round_id, "snapshot_id": state.content.snapshot_id,
+            "delivery_revision": message.revision, "evidence_id": state.content.evidence_id,
+            "preview": preview.model_dump(mode="json"), "delivered_at": delivered_at,
+            "received_at": now.isoformat()}, timestamp=message.timestamp.isoformat(),
+            expected_game_id=message.game_id, expected_mode="live")
+        self._shown.add(key)
+
     def pin_line(self, message, mode):
         self._member(message.game_id, message.revision, mode)
         if message.revision != self.current.revision:

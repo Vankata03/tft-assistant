@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { SessionMode } from '../shared/protocol'
-import type {EvidencePage,LiveSurfaceShown,PinLine,RequestEvidencePage,RequestReview,ReviewResponse,ReviewGames} from '../shared/messages'
+import type {EvidencePage,LiveSurfaceShown,LivePreviewShown,PinLine,RequestEvidencePage,RequestReview,ReviewResponse,ReviewGames} from '../shared/messages'
 import type { ShellState } from '../shared/state'
 
 const coach = {
@@ -18,6 +18,7 @@ const coach = {
   ): void => ipcRenderer.send('surface-shown', surface, contentId, timestamp),
   selectGuide: (guideId: string): void =>
     ipcRenderer.send('select-guide', guideId),
+  livePreviewShown: (message:Omit<LivePreviewShown,'v'|'type'>):void => ipcRenderer.send('live-preview-shown',message),
   liveShown: (message:Omit<LiveSurfaceShown,'v'|'type'>):void => ipcRenderer.send('live-shown',message),
   pinLine: (message:Omit<PinLine,'v'|'type'>):void => ipcRenderer.send('pin-line',message),
   evidencePage: (message:Omit<RequestEvidencePage,'v'|'type'|'request_id'>):Promise<EvidencePage> => ipcRenderer.invoke('evidence-page',message),

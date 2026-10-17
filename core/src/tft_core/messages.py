@@ -13,7 +13,7 @@ from typing import Annotated, Literal
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, RootModel, TypeAdapter, JsonValue, StrictInt, model_validator
 
 from tft_core.baseline.contracts import BaselineState
-from tft_core.live_contracts import LiveContent
+from tft_core.live_contracts import LiveContent, LiveNextPlanningPreview
 from tft_core.surface_geometry import SurfaceGeometry, LiveSurfaceAnchor
 
 SCHEMA_VERSION = 1
@@ -95,6 +95,18 @@ class LiveSurfaceShown(_Message):
     decision_id: str = Field(min_length=1, max_length=500)
     option_id: str = Field(max_length=500)
     surface: Literal["cockpit", "overlay", "voice"]
+    timestamp: AwareDatetime
+
+
+class LivePreviewShown(_Message):
+    """Display evidence for a scheduled preview, outside actionable attribution."""
+    type: Literal["live_preview_shown"] = "live_preview_shown"
+    game_id: str = Field(pattern=r"^[1-9][0-9]*$")
+    revision: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    data_snapshot_id: str = Field(min_length=1, max_length=500)
+    round_id: str = Field(min_length=1, max_length=100)
+    preview: LiveNextPlanningPreview
+    surface: Literal["overlay"]
     timestamp: AwareDatetime
 
 
@@ -256,7 +268,7 @@ class ReviewResponse(_Message):
 class UiMessage(
     RootModel[
         Annotated[
-            Hello | SetSessionMode | RequestBaselineState | SelectGuide | SurfaceShown | RequestLiveState | RequestEvidencePage | LiveSurfaceShown | PinLine | RequestSurfaceGeometry | RequestReview | RequestReviewGames,
+            Hello | SetSessionMode | RequestBaselineState | SelectGuide | SurfaceShown | RequestLiveState | RequestEvidencePage | LiveSurfaceShown | LivePreviewShown | PinLine | RequestSurfaceGeometry | RequestReview | RequestReviewGames,
             Field(discriminator="type"),
         ]
     ]
