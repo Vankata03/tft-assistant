@@ -123,7 +123,7 @@ def test_per_stage_scale_starts_pooled_and_splits_only_past_the_fight_threshold_
     assert scales['4'] == scales['1'] == pooled
     raw = stages['3']['unshrunk']['win_scale_by_stage']
     assert min(raw, pooled) < scales['3'] < max(raw, pooled)
-    assert report.solver['shrinkage'] == 'n/(n+12) toward pooled'
+    assert report.solver['shrinkage'] == 'fights divided by (fights plus 12) toward pooled'
 
 
 def test_fit_uses_only_games_of_the_current_set(tmp_path):
@@ -199,7 +199,7 @@ def test_nested_star_mix_simplex_fits_real_opponent_predictions(tmp_path):
     assert all(0 < p < 1 for p in mix) and sum(mix) == pytest.approx(1.)
     assert report.training_objective['candidate'] < report.training_objective['reference']
     assert report.training_objective['candidate'] == pytest.approx(.69314718056,abs=1e-5)
-    assert set(report.solver['ranges']) == {'opponent_star_mix/1-1/1/0','opponent_star_mix/1-1/1/1'}
+    assert set(report.solver['ranges']) == {'opponent_star_mix.1-1.1.0','opponent_star_mix.1-1.1.1'}
     assert report.solver['evaluations'] <= 100
 
 
@@ -212,7 +212,7 @@ def test_nested_prior_maps_preserve_fixed_cells_and_replay_predictions(tmp_path)
     }, max_evaluations=20, bootstrap_draws=20)
     assert report.parameters['emblem_count_prior']['1'] == .1
     assert report.parameters['size_level_prior']['1']['2'] == .1
-    assert set(report.solver['ranges']) == {'emblem_count_prior/0','size_level_prior/1/1'}
+    assert set(report.solver['ranges']) == {'emblem_count_prior.0','size_level_prior.1.1'}
     assert report.training_objective['candidate'] is not None
     assert report.holdout_game_ids == ('905',)
 

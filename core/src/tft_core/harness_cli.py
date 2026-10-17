@@ -73,7 +73,7 @@ def _offline(args):
                 if args.prior_evidence:
                     raise ValueError('Public prior evidence requires --priors')
                 search = _read_json(args.search) if args.search else {'fight_scale': {'low': .01, 'high': 20.0}}
-                parameters = _search_parameters(search)
+                parameters = _search_parameters(search, reference.fields)
                 fixed = _read_json(args.fixed) if args.fixed else {}
                 fitted = fit(harness, parameters, metric=args.metric, bootstrap_seed=args.seed,
                     bootstrap_draws=args.bootstrap_draws, max_evaluations=args.max_evaluations, fixed=fixed)
@@ -114,19 +114,39 @@ def _offline(args):
         return 2
 
 
-def _search_parameters(search):
+def _search_parameters(search, accepted=None):
+    from math import isfinite
+    from tft_data.models import plain
     from tft_harness.fitting import ContinuousRange, SimplexRange
-    def node(value):
+
+    def accepted_start(name, path):
+        # A flat or weak profile retains its start, so an omitted start is the
+        # accepted committed value rather than an arbitrary range midpoint.
+        field = (accepted or {}).get(name)
+        value = plain(field.value) if field is not None else None
+        for key in path:
+            value = value.get(key) if isinstance(value, dict) else None
+        if name.endswith('_by_stage') and not path and isinstance(value, dict):
+            stages = set(value.values())
+            value = stages.pop() if len(stages) == 1 else None
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value):
+            return None
+        return value
+
+    def node(value, name, path):
         if isinstance(value, dict):
             if 'simplex' in value:
                 if set(value) != {'simplex'} or not isinstance(value['simplex'], dict):
                     raise ValueError('Simplex search requires a simplex parameter object')
                 return SimplexRange(**value['simplex'])
             if {'low', 'high'} <= value.keys():
-                return ContinuousRange(**value)
-            return {key: node(item) for key, item in value.items()}
+                start = None if 'start' in value else accepted_start(name, path)
+                within = start is not None and all(isinstance(value[key], (int, float))
+                    and not isinstance(value[key], bool) for key in ('low', 'high')) and value['low'] <= start <= value['high']
+                return ContinuousRange(**value, **({'start': start} if within else {}))
+            return {key: node(item, name, path+(key,)) for key, item in value.items()}
         return value
-    return {name: node(value) for name, value in search.items()}
+    return {name: node(value, name, ()) for name, value in search.items()}
 
 
 def _read_json(path):

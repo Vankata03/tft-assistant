@@ -78,6 +78,11 @@ def _contains_range(value):
     return isinstance(value, dict) and any(_contains_range(v) for v in value.values())
 
 
+def _label(path):
+    """Dotted coordinate label; private aggregate reports scrub any path separator."""
+    return '.'.join(map(str, path))
+
+
 class _SearchSpace:
     """Flatten declared nested maps into identifiable bounded scalar coordinates."""
 
@@ -125,7 +130,7 @@ class _SearchSpace:
         return build(self.template, ())
 
     def description(self):
-        return {'/'.join(map(str, path)): {'low': value.low, 'high': value.high, 'start': value.start}
+        return {_label(path): {'low': value.low, 'high': value.high, 'start': value.start}
             for path, value in self.coordinates.items()}
 
 
@@ -347,12 +352,12 @@ def _continuous(harness, objective, ranges, training, *, stage_split_min_fights,
         for path, declared in space.coordinates.items():
             point, loss, bound, diagnostic = search(lambda value: objective(expand(space.expand(current | {path: value}))),
                 declared, starts[path])
-            coordinate_report['/'.join(map(str, path))] = diagnostic
+            coordinate_report[_label(path)] = diagnostic
             if not isfinite(loss):
                 break
             moved = max(moved, abs(point-current[path])/(declared.high-declared.low))
             current[path] = point
-            label = '/'.join(map(str, path))
+            label = _label(path)
             (at_bound.add if bound is not None else at_bound.discard)(label)
             if objective.exhausted:
                 break
@@ -397,7 +402,7 @@ def _continuous(harness, objective, ranges, training, *, stage_split_min_fights,
     return candidate, value, {'pooled': pooled, 'at_bound': sorted(at_bound),
         'coordinates': coordinate_report,
         'stages': stage_report if by_stage else {},
-        'shrinkage': f'n/(n+{stage_split_min_fights}) toward pooled' if by_stage else None}
+        'shrinkage': f'fights divided by (fights plus {stage_split_min_fights}) toward pooled' if by_stage else None}
 
 
 def _retain_flat_grid(objective, parameters, best):

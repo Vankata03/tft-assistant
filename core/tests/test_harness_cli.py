@@ -2,6 +2,8 @@
 import os
 import json
 
+import pytest
+
 from tests.test_harness_baseline import external_matches
 from tft_core.storage import SessionStore
 
@@ -175,6 +177,54 @@ def test_fit_cli_writes_unaccepted_toml_with_holdout_diagnostics(tmp_path, monke
     assert partial['scope'].startswith('family-1 search candidate before margins')
     assert partial['gates'] and set(partial['gates']) <= set(section('Gates'))
     assert (repository/'data/18.2/tunables.toml').read_bytes() == before
+
+
+def fit_cli_report(tmp_path, monkeypatch, search, *extra):
+    import tomllib
+    from tests.test_harness import combat_logs
+    from tests.test_harness_tunables_io import committed_repository
+    from tft_core.harness_cli import main
+    (tmp_path/'games').mkdir()
+    (tmp_path/'accepted').mkdir()
+    sessions, store = combat_logs(tmp_path/'games', results=('win','win','loss','win','loss'))
+    repository = committed_repository(tmp_path/'accepted')
+    monkeypatch.setenv('TFT_ASSISTANT_DATA_ROOT', str(sessions.root))
+    monkeypatch.setenv('TFT_ASSISTANT_CONFIG_ROOT', str(sessions.config_root))
+    arguments = []
+    if search is not None:
+        (tmp_path/'search.json').write_text(json.dumps(search))
+        arguments = ['--search', str(tmp_path/'search.json')]
+    output = tmp_path/'reports'
+    assert main(['fit', '--repository', str(repository), '--snapshots', str(store.root),
+        '--output', str(output), '--bootstrap-draws', '20', '--model-draws', '2', *arguments, *extra]) == 0
+    report = next(output.glob('*.md')).read_text()
+    def section(title):
+        return json.loads(report.split('## '+title+'\n\n```json\n')[1].split('\n```')[0])
+    return report, section, tomllib.loads(next(output.glob('*.toml')).read_text())
+
+
+@pytest.mark.parametrize('search', [None, {'fight_scale': {'low': .1, 'high': 5}}])
+def test_flat_cli_range_without_start_retains_the_accepted_value_not_the_midpoint(tmp_path, monkeypatch, search):
+    # The accepted 18.2 fixture value is 2.0; these fixture fights make fight_scale flat.
+    _, section, candidate = fit_cli_report(tmp_path, monkeypatch, search, '--max-evaluations', '8')
+    solver = section('Fit diagnostics')['solver']
+    assert solver['coordinates']['fight_scale']['status'] == 'objective_flat_retained_start'
+    assert solver['ranges']['fight_scale']['start'] == 2.0
+    assert candidate['fields']['fight_scale']['value'] == 2.0
+
+
+@pytest.mark.parametrize('search', [
+    {'win_scale_by_stage': {'low': .05, 'high': 20}},
+    {'opponent_star_mix': {'1-1': {'1': {'simplex': {'size': 3, 'low': -1, 'high': 1}},
+        **{str(cost): [1, 0, 0] for cost in range(2, 6)}}}}])
+def test_fit_markdown_keeps_harness_stage_and_coordinate_labels(tmp_path, monkeypatch, search):
+    report, section, _ = fit_cli_report(tmp_path, monkeypatch, search, '--max-evaluations', '24')
+    solver = section('Fit diagnostics')['solver']
+    assert 'details omitted from aggregate artifact' not in report
+    if 'win_scale_by_stage' in search:
+        assert solver['shrinkage'].startswith('fights')
+    else:
+        assert solver['at_bound'] and set(solver['at_bound']) <= set(solver['ranges'])
 
 
 def test_priors_cli_uses_qualified_public_counts_and_preserves_source(tmp_path, monkeypatch):
