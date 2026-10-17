@@ -15,8 +15,50 @@ def line_header(result):
         'projections': result.get('projections', ())}
 
 
+def _at(value):
+    return datetime.fromisoformat(value)
+
+
+def timeline_with_gaps(batch, decisions, gap_events):
+    """Decision rows in replay order with each logged capture gap at its start.
+
+    Snapshots captured inside a gap are never evaluated, so no decision row can
+    fall inside one. A gap precedes the first decision captured at or after its
+    start; a gap with an unknown start covers everything before its end.
+    """
+    captured = {context.log_seq: _at(context.snapshot['captured_at']) for context in batch.contexts}
+    gaps = []
+    for index, event in enumerate(gap_events):
+        payload = event['payload']
+        start, end = payload.get('start'), payload.get('end')
+        anchor = _at(start if start is not None else end)
+        before = [context for context in batch.contexts if captured[context.log_seq] < anchor]
+        after = [context for context in batch.contexts if captured[context.log_seq] >= _at(end)]
+        gaps.append((anchor, event['seq'], {'kind': 'capture_gap', 'log_seq': event['seq'],
+            'cause': payload.get('reason'), 'start': start, 'end': end,
+            'start_round_id': before[-1].snapshot['round_id'] if before else None,
+            'end_round_id': after[0].snapshot['round_id'] if after else None,
+            'unreviewed_snapshot_count': sum(any(row['log_seq'] == event['seq']
+                for row in context.validity_annotations if row['kind'] == 'capture_gap')
+                for context in batch.contexts),
+            'reason': 'decisions_inside_capture_gap_not_reviewed',
+            'evidence_path': ['debug', 'gap_events', index]}))
+    gaps.sort(key=lambda row: (row[0], row[1]))
+    rows, pending = [], list(gaps)
+    for row in decisions:
+        while pending and pending[0][0] <= captured[row['log_seq']]:
+            rows.append(pending.pop(0)[2])
+        rows.append({'kind': 'decision'} | {name: row[name] for name in ('moment_id',
+            'engine_decision_id', 'log_seq', 'round_id', 'category', 'cost', 'paired_uncertainty',
+            'close_call', 'differed', 'shown', 'reason', 'unavailable', 'evidence_path')})
+    return tuple(rows + [row for _, _, row in pending])
+
+
 def surface_sections(detail, timeline):
-    """Small descriptive records for normal review; raw evidence stays separate."""
+    """Small descriptive records for normal review; raw evidence stays separate.
+
+    `timeline` is the ordered normal timeline, decisions interleaved with gaps.
+    """
     lines = []
     for index, row in enumerate(detail['lines']):
         actual = row['actual_policy']
@@ -38,10 +80,7 @@ def surface_sections(detail, timeline):
             'winner_unit_count_source', 'unavailable')}
             | {'evidence_path': ['fights', index]}
             for index, row in enumerate(detail['fights'])),
-        'timeline': tuple({name: row[name] for name in ('moment_id', 'engine_decision_id',
-            'log_seq', 'round_id', 'category', 'cost', 'paired_uncertainty', 'close_call',
-            'differed', 'shown', 'reason', 'unavailable', 'evidence_path')}
-            for row in timeline),
+        'timeline': tuple(timeline),
         'positioning': tuple({'log_seq': row['log_seq'],
             'engine_decision_id': row['engine_decision_id'], 'cost': None, 'reason': row['reason'],
             'action': row['advice']['action'], 'confidence': row['advice']['confidence'],

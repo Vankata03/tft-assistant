@@ -317,3 +317,109 @@ def test_report_keeps_plan_lines_fights_debug_and_positioning_as_separate_authen
     assert report.debug['gap_events'] == ()
     assert not any(row['category'] == 'positioning' for row in report.moments)
     assert report.to_dict()['evidence']['replay']['observations'] == batch.to_dict()['observations']
+
+
+def surface_rows(service, game_id, path, fields):
+    """Read typed section rows through bounded protected pages, one scalar at a time."""
+    rows, cursor = [], 0
+    while cursor is not None:
+        page = service.detail(game_id, path=path, cursor=cursor, limit=2, max_bytes=2048)
+        for item in page['items']:
+            members = service.detail(game_id, path=item['path'], limit=64, max_bytes=8192)['items']
+            values = {member['path'][-1]: [row['value'] for row in service.detail(game_id,
+                path=member['path'], max_bytes=2048)['items']] if member.get('reference')
+                else member.get('value') for member in members}
+            rows.append({name: values.get(name) for name in fields})
+        cursor = page['next_cursor']
+    return rows
+
+
+def restart_core(sessions, data, at):
+    """A new core process reattaches the unfinished log after a crash."""
+    from tft_core.storage import SessionStore
+    resumed = SessionStore(sessions.root, sessions.config_root, live_installed=True)
+    resumed.start_game('901', patch=data.patch, data_snapshot_id=data.snapshot_id,
+        model_version='reader-fixture-v1', engine_version='historical-engine', timestamp=at.isoformat())
+    return resumed
+
+
+def test_full_timeline_shows_a_crash_gap_in_order_without_decisions_inside_it(tmp_path):
+    import pytest
+    from tft_review import ReviewService
+
+    sessions, store, data, before = logged_game(tmp_path, finish=False, mode='baseline')
+    lost = sessions.append_event('snapshot', log_snapshot(data, at=NOW+timedelta(seconds=1),
+        snapshot_id='lost-in-crash', gold=9), timestamp=(NOW+timedelta(seconds=1)).isoformat())
+    sessions = restart_core(sessions, data, NOW+timedelta(seconds=3))
+    after = sessions.append_event('snapshot', log_snapshot(data, at=NOW+timedelta(seconds=4),
+        snapshot_id='after-restart', gold=7), timestamp=(NOW+timedelta(seconds=4)).isoformat())
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=5)).isoformat())
+    service = ReviewService(sessions, store, repository=ROOT)
+    service.produce('901')
+    rows = surface_rows(service, '901', ['surface', 'timeline'],
+        ('kind', 'log_seq', 'cause', 'start', 'end', 'category', 'evidence_path'))
+    kinds = [row['kind'] for row in rows]
+    assert kinds.count('capture_gap') == 1
+    gap = rows[kinds.index('capture_gap')]
+    assert gap['cause'] == 'core_restart'
+    assert gap['start'] == (NOW+timedelta(seconds=1)).isoformat()
+    assert gap['end'] == (NOW+timedelta(seconds=3)).isoformat()
+    decisions = [row for row in rows if row['kind'] == 'decision']
+    assert decisions and all(row['category'] for row in decisions)
+    # Decisions before the crash precede the gap; decisions after the restart follow it.
+    assert {row['log_seq'] for row in rows[:kinds.index('capture_gap')]} == {before['seq']}
+    assert {row['log_seq'] for row in rows[kinds.index('capture_gap')+1:]} == {after['seq']}
+    assert not any(row['log_seq'] == lost['seq'] for row in decisions)
+    # The gap row links to its logged Debug evidence.
+    event = service.detail('901', path=tuple(gap['evidence_path']), max_bytes=2048)['items']
+    assert {row['path'][-1]: row.get('value') for row in event}['kind'] == 'capture_gap'
+
+    locked = tmp_path / 'locked'
+    locked.mkdir()
+    sessions, store, data, _ = logged_game(locked, finish=False)
+    sessions = restart_core(sessions, data, NOW+timedelta(seconds=3))
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=5)).isoformat())
+    service = ReviewService(sessions, store, repository=ROOT)
+    assert service.produce('901')['locked'] is True
+    with pytest.raises(PermissionError, match='locked'):
+        service.detail('901', path=('surface', 'timeline'))
+
+
+def test_full_timeline_shows_a_legacy_stats_less_end_gap_after_the_last_reviewed_decision(tmp_path):
+    """An older log's interval-less stats-less marker appears as a bounded gap row."""
+    from tft_review import ReviewService
+
+    sessions, store, data, first = logged_game(tmp_path, finish=False, mode='baseline')
+    later = NOW+timedelta(seconds=1)
+    last = sessions.append_event('snapshot', log_snapshot(data, at=later, snapshot_id='later', gold=7),
+        timestamp=later.isoformat())
+    marker = sessions.append_event('capture_gap', {'reason': 'game_ended_without_stats'},
+        timestamp=(NOW+timedelta(seconds=3)).isoformat())
+    sessions.end_game(timestamp=(NOW+timedelta(seconds=4)).isoformat())
+    raw = sessions.read_events('901')
+    service = ReviewService(sessions, store, repository=ROOT)
+    job = service.job_identity('901')
+
+    service.produce('901')
+
+    rows = surface_rows(service, '901', ['surface', 'timeline'],
+        ('kind', 'log_seq', 'cause', 'start', 'end', 'start_round_id', 'end_round_id',
+         'unreviewed_snapshot_count', 'evidence_path'))
+    kinds = [row['kind'] for row in rows]
+    assert kinds.count('capture_gap') == 1 and kinds[-1] == 'capture_gap'
+    gap = rows[-1]
+    assert gap['log_seq'] == marker['seq'] and gap['cause'] == 'game_ended_without_stats'
+    # Projected from the log: last capture (inclusive) to the marker's logged time.
+    assert gap['start'] == later.isoformat() and gap['end'] == (NOW+timedelta(seconds=3)).isoformat()
+    assert gap['end_round_id'] is None and gap['unreviewed_snapshot_count'] == 1
+    assert {row['log_seq'] for row in rows[:-1]} == {first['seq']}
+    assert not any(row['log_seq'] == last['seq'] for row in rows if row['kind'] == 'decision')
+    event = {row['path'][-1]: row.get('value') for row in service.detail('901',
+        path=tuple(gap['evidence_path']), max_bytes=2048)['items']}
+    assert event['kind'] == 'capture_gap'
+    payload = {row['path'][-1]: row.get('value') for row in service.detail('901',
+        path=tuple(gap['evidence_path'])+('payload',), max_bytes=2048)['items']}
+    assert payload['bounds'] == 'derived_from_log'
+    # The committed log and the job's log hash are unchanged by the projection.
+    assert [row for row in sessions.read_events('901') if row['kind'] != 'replay_cache'] == raw
+    assert service.job_identity('901')['log_hash'] == job['log_hash']

@@ -26,7 +26,9 @@ def validate_events(events, game_id):
         metadata = events[0]['payload']
         if str(metadata['game_id']) != str(game_id):
             raise ValueError('game_start belongs to another game')
-        for index, event in enumerate(events):
+        # Validate the derived view too, before identity/cache access or consumers.
+        # Return the original events so projection never changes the log hash.
+        for index, event in enumerate(bound_legacy_gaps(events)):
             frozen_json(event)
             if type(event['v']) is not int or event['v'] != 1 or type(event['seq']) is not int or event['seq'] != index:
                 raise ValueError('invalid event version or sequence')
@@ -59,6 +61,29 @@ def validate_events(events, game_id):
     return events
 
 
+def _legacy_stats_less_end(payload):
+    """Older cores logged a stats-less game end as a gap without bounds."""
+    return payload == {'reason': 'game_ended_without_stats'}
+
+
+def bound_legacy_gaps(events):
+    """Project legacy stats-less end markers onto the span the log left unobserved.
+
+    The span runs from the last earlier logged capture (or the log start) to the
+    marker's own logged time, as the current core records it. The committed log
+    and its hash keep the original payload.
+    """
+    projected, last_capture = [], events[0]['timestamp'] if events else None
+    for event in events:
+        if event['kind'] == 'capture_gap' and _legacy_stats_less_end(event['payload']):
+            event = event | {'payload': event['payload'] | {'start': last_capture,
+                'end': event['timestamp'], 'bounds': 'derived_from_log'}}
+        elif event['kind'] == 'snapshot':
+            last_capture = event['payload']['captured_at']
+        projected.append(event)
+    return projected
+
+
 class ReplayProducer:
     def __init__(self, sessions, data_store, *, repository, hooks=None, hook_version='default', decision_segmentation='every_snapshot'):
         self.sessions, self.data_store = sessions, data_store
@@ -86,6 +111,7 @@ class ReplayProducer:
                     raise ValueError('Replay cache identity mismatch')
                 self._check_unchanged(game_id, data, identity)
                 return batch
+        events = bound_legacy_gaps(events)
         contexts, records = [], []
         previous_fingerprint, evaluation_log_seq = None, None
         controls = SessionControlLog(events)
