@@ -2,6 +2,7 @@ import {useState} from 'react'
 import type {LiveAdviceDisplay,LiveState,LiveSurfaceAnchor,LiveLineDisplay} from '../shared/messages'
 import type {ShellState} from '../shared/state'
 import {useLiveShown} from './shown'
+import {NextPlanningChip} from './NextPlanningChip'
 
 function advicePaused(row:LiveAdviceDisplay,view:LiveState,now:number):boolean{
  return Boolean(row.payload.paused)||Boolean(view.invalidated?.[row.decision_id])||(row.valid_until!==null&&(!Number.isFinite(Date.parse(row.valid_until))||Date.parse(row.valid_until)<now))
@@ -52,6 +53,7 @@ export function LiveOverlay({state,onPin,now}:{state:ShellState;onPin:(line:Live
   {['planning','roll_down'].includes(phase)?content.opponents.filter(row=>view.roster_qualified!==false&&content.roster_valid_until!==null&&Date.parse(content.roster_valid_until)>=now&&row.scout_due&&Number.isInteger(row.player_row_index)).map(row=>{const at=anchor('player',Number(row.player_row_index));return at?<div key={String(row.opponent_id)} className="overlay-tag scout-eye" style={{left:`${at.x*100}%`,top:`${at.y*100}%`}}>◉ {row.age_rounds===null?'never':`${row.age_rounds}r`}<span className="overlay-tooltip">Scout {String(row.name)} · trait-only sighting</span></div>:null}):null}
   {phase==='planning'&&target&&layout?layout.map((row,index)=>{const at=anchor('hex',row.cell);return at?<AdviceTag key={`hex:${index}`} tag={{row:target,anchor:at,text:names[row.unit_id]??row.unit_id}} view={view} now={now} onPin={onPin}/>:null}):null}
   {phase==='planning'&&target&&!advicePaused(target,view,now)&&arrows?<svg className="layout-arrows" viewBox="0 0 100 100" preserveAspectRatio="none"><defs><marker id="arrowhead" markerWidth="4" markerHeight="4" refX="3" refY="2" orient="auto"><path d="M0,0 L4,2 L0,4" fill="currentColor"/></marker></defs>{arrows.map((row,index)=>{const from=anchor('hex',row.from),to=anchor('hex',row.to);return from&&to?<line key={index} x1={(from.x+from.width/2)*100} y1={(from.y+from.height/2)*100} x2={(to.x+to.width/2)*100} y2={(to.y+to.height/2)*100} markerEnd="url(#arrowhead)"/>:null})}</svg>:null}
+  {phase==='combat'?<NextPlanningChip view={view} anchor={anchor('line',0)??anchor('level',0)}/>:null}
   {phase==='roll_down'&&trackerFresh&&content.roll_tracker?.available?<div className="roll-tracker">Floor {String(content.roll_tracker.gold_floor)} · {String(content.roll_tracker.rolls_left)} rolls left · {(content.roll_tracker.units as {unit_id:string;copies:number;goal:number;in_shop:boolean;hit_probability:number}[]).map(row=><span key={row.unit_id}>{names[row.unit_id]??row.unit_id} {row.copies}/{row.goal} · {Math.round(row.hit_probability*100)}%{row.in_shop?' · in shop':''}</span>)}</div>:null}
  </div>
 }

@@ -13,7 +13,7 @@ from typing import Annotated, Literal
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, RootModel, TypeAdapter, JsonValue, StrictInt, model_validator
 
 from tft_core.baseline.contracts import BaselineState
-from tft_core.live_contracts import LiveContent
+from tft_core.live_contracts import LiveContent, LiveNextPlanningPreview
 from tft_core.surface_geometry import SurfaceGeometry, LiveSurfaceAnchor
 
 SCHEMA_VERSION = 1
@@ -98,6 +98,18 @@ class LiveSurfaceShown(_Message):
     timestamp: AwareDatetime
 
 
+class LivePreviewShown(_Message):
+    """Display evidence for a scheduled preview, outside actionable attribution."""
+    type: Literal["live_preview_shown"] = "live_preview_shown"
+    game_id: str = Field(pattern=r"^[1-9][0-9]*$")
+    revision: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    data_snapshot_id: str = Field(min_length=1, max_length=500)
+    round_id: str = Field(min_length=1, max_length=100)
+    preview: LiveNextPlanningPreview
+    surface: Literal["overlay"]
+    timestamp: AwareDatetime
+
+
 class PinLine(_Message):
     type: Literal["pin_line"] = "pin_line"
     game_id: str = Field(pattern=r"^[1-9][0-9]*$")
@@ -154,6 +166,7 @@ class LiveState(_Message):
     content: LiveContent | None = None
     pin: dict[str, str] | None = None
     invalidated: dict[str, str] = {}
+    next_planning_invalidated: str | None = None
     roster_qualified: bool | None = None
     ownership_qualified: bool | None = None
     observed_phase: Literal['planning','roll_down','augment','carousel','combat','end','unknown'] | None = None
@@ -255,7 +268,7 @@ class ReviewResponse(_Message):
 class UiMessage(
     RootModel[
         Annotated[
-            Hello | SetSessionMode | RequestBaselineState | SelectGuide | SurfaceShown | RequestLiveState | RequestEvidencePage | LiveSurfaceShown | PinLine | RequestSurfaceGeometry | RequestReview | RequestReviewGames,
+            Hello | SetSessionMode | RequestBaselineState | SelectGuide | SurfaceShown | RequestLiveState | RequestEvidencePage | LiveSurfaceShown | LivePreviewShown | PinLine | RequestSurfaceGeometry | RequestReview | RequestReviewGames,
             Field(discriminator="type"),
         ]
     ]

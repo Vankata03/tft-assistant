@@ -9,7 +9,7 @@ from .identity import digest
 
 # Display acknowledgements and media do not change Engine information. Captured
 # actions, sightings, gaps and outcomes do, even when the next shop looks alike.
-_NON_INPUT_EVENTS = {'snapshot', 'keyframe', 'video', 'ui_show', 'advice_delivery',
+_NON_INPUT_EVENTS = {'snapshot', 'keyframe', 'video', 'ui_show', 'preview_shown', 'advice_delivery',
     'replay_cache', 'capture_status', 'reader_tracker_disagreement'}
 
 

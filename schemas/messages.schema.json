@@ -1042,6 +1042,17 @@
           ],
           "title": "Model Hash"
         },
+        "next_planning": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LiveNextPlanningPreview"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "opponents": {
           "default": [],
           "items": {
@@ -1171,6 +1182,7 @@
         "ownership_valid_until",
         "opponents",
         "roll_tracker",
+        "next_planning",
         "confidence_medium_min",
         "entity_names",
         "warnings",
@@ -1299,6 +1311,137 @@
       "title": "LiveLineDisplay",
       "type": "object"
     },
+    "LiveNextPlanningPreview": {
+      "additionalProperties": false,
+      "description": "Combat's preview of the next planning call: a scheduled point, never projected state.",
+      "properties": {
+        "available": {
+          "title": "Available",
+          "type": "boolean"
+        },
+        "comp_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Comp Id"
+        },
+        "evidence_path": {
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "title": "Evidence Path",
+          "type": "array"
+        },
+        "gold_floor": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Gold Floor"
+        },
+        "level": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Level"
+        },
+        "line_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Line Id"
+        },
+        "pinned": {
+          "title": "Pinned",
+          "type": "boolean"
+        },
+        "planning_round": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Planning Round"
+        },
+        "planning_snapshot_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Planning Snapshot Id"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reason"
+        },
+        "round_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Round Id"
+        }
+      },
+      "required": [
+        "available",
+        "reason",
+        "comp_id",
+        "line_id",
+        "pinned",
+        "planning_round",
+        "planning_snapshot_id",
+        "round_id",
+        "level",
+        "gold_floor",
+        "evidence_path"
+      ],
+      "title": "LiveNextPlanningPreview",
+      "type": "object"
+    },
     "LiveOptionDisplay": {
       "additionalProperties": false,
       "properties": {
@@ -1368,6 +1511,72 @@
         "evidence_path"
       ],
       "title": "LiveOptionDisplay",
+      "type": "object"
+    },
+    "LivePreviewShown": {
+      "additionalProperties": false,
+      "description": "Display evidence for a scheduled preview, outside actionable attribution.",
+      "properties": {
+        "data_snapshot_id": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Data Snapshot Id",
+          "type": "string"
+        },
+        "game_id": {
+          "pattern": "^[1-9][0-9]*$",
+          "title": "Game Id",
+          "type": "string"
+        },
+        "preview": {
+          "$ref": "#/$defs/LiveNextPlanningPreview"
+        },
+        "revision": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Revision",
+          "type": "string"
+        },
+        "round_id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Round Id",
+          "type": "string"
+        },
+        "surface": {
+          "const": "overlay",
+          "title": "Surface",
+          "type": "string"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "title": "Timestamp",
+          "type": "string"
+        },
+        "type": {
+          "const": "live_preview_shown",
+          "default": "live_preview_shown",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "type",
+        "game_id",
+        "revision",
+        "data_snapshot_id",
+        "round_id",
+        "preview",
+        "surface",
+        "timestamp"
+      ],
+      "title": "LivePreviewShown",
       "type": "object"
     },
     "LiveProjectionDisplay": {
@@ -1447,6 +1656,18 @@
         },
         "mode": {
           "$ref": "#/$defs/SessionMode"
+        },
+        "next_planning_invalidated": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Next Planning Invalidated"
         },
         "observed_phase": {
           "anyOf": [
@@ -1546,6 +1767,7 @@
         "content",
         "pin",
         "invalidated",
+        "next_planning_invalidated",
         "roster_qualified",
         "ownership_qualified",
         "observed_phase"
@@ -2853,6 +3075,7 @@
       "discriminator": {
         "mapping": {
           "hello": "#/$defs/Hello",
+          "live_preview_shown": "#/$defs/LivePreviewShown",
           "live_surface_shown": "#/$defs/LiveSurfaceShown",
           "pin_line": "#/$defs/PinLine",
           "request_baseline_state": "#/$defs/RequestBaselineState",
@@ -2891,6 +3114,9 @@
         },
         {
           "$ref": "#/$defs/LiveSurfaceShown"
+        },
+        {
+          "$ref": "#/$defs/LivePreviewShown"
         },
         {
           "$ref": "#/$defs/PinLine"

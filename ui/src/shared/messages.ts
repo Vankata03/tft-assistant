@@ -45,6 +45,7 @@ export type UiMessage =
   | RequestLiveState
   | RequestEvidencePage
   | LiveSurfaceShown
+  | LivePreviewShown
   | PinLine
   | RequestSurfaceGeometry
   | RequestReview
@@ -316,6 +317,7 @@ export interface LiveState {
     [k: string]: string
   }
   mode: SessionMode
+  next_planning_invalidated: string | null
   observed_phase:
     ('planning' | 'roll_down' | 'augment' | 'carousel' | 'combat' | 'end' | 'unknown') | null
   ownership_qualified: boolean | null
@@ -346,6 +348,7 @@ export interface LiveContent {
   game_id: string
   lines: LiveLineDisplay[]
   model_hash: string | null
+  next_planning: LiveNextPlanningPreview | null
   opponents: {
     [k: string]: JsonValue
   }[]
@@ -435,6 +438,25 @@ export interface LiveLineDisplay {
   }
   seed: string
   standard_error: number
+}
+/**
+ * Combat's preview of the next planning call: a scheduled point, never projected state.
+ *
+ * This interface was referenced by `Messages`'s JSON-Schema
+ * via the `definition` "LiveNextPlanningPreview".
+ */
+export interface LiveNextPlanningPreview {
+  available: boolean
+  comp_id: string | null
+  evidence_path: (string | number)[]
+  gold_floor: number | null
+  level: number | null
+  line_id: string | null
+  pinned: boolean
+  planning_round: string | null
+  planning_snapshot_id: string | null
+  reason: string | null
+  round_id: string | null
 }
 /**
  * This interface was referenced by `Messages`'s JSON-Schema
@@ -591,6 +613,23 @@ export interface ReviewReady {
 export interface Hello {
   token: string
   type: 'hello'
+  v: 1
+}
+/**
+ * Display evidence for a scheduled preview, outside actionable attribution.
+ *
+ * This interface was referenced by `Messages`'s JSON-Schema
+ * via the `definition` "LivePreviewShown".
+ */
+export interface LivePreviewShown {
+  data_snapshot_id: string
+  game_id: string
+  preview: LiveNextPlanningPreview
+  revision: string
+  round_id: string
+  surface: 'overlay'
+  timestamp: string
+  type: 'live_preview_shown'
   v: 1
 }
 /**

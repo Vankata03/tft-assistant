@@ -44,6 +44,7 @@ class LiveDeliveryController:
         self.epoch = 0
         self.roster_qualified = None
         self.ownership_qualified = None
+        self._current_epoch = None
 
     def prepare(self, delivery):
         """Validate a bounded summary on the owner loop, without file I/O."""
@@ -98,6 +99,7 @@ class LiveDeliveryController:
                 self._shown = {key for key in self._shown if key[0] != removed}
                 self._invalidated_logged = {key for key in self._invalidated_logged if key[0] != removed}
         self.current = state
+        self._current_epoch = self.epoch
         self._invalidate_changed_fields()
         return state
 
@@ -110,6 +112,7 @@ class LiveDeliveryController:
         if mode.value != "live" or self.current is None or not self.sessions or self.current.content.game_id != self.sessions.active_game_id:
             return LiveState(mode=mode.value, status=self.status)
         return self.current.model_copy(update={"pin": self.pin, "invalidated": self.invalidated,
+                                               "next_planning_invalidated": self._next_planning_invalid(),
                                                "observed_phase": self.observed_phase,"roster_qualified":self.roster_qualified,"ownership_qualified":self.ownership_qualified})
 
     def clear(self, reason):
@@ -168,6 +171,32 @@ class LiveDeliveryController:
             self.clear("Live advice paused · capture or pinned data unavailable")
         else:
             self._invalidate_changed_fields()
+
+    def _next_planning_invalid(self):
+        """Combat's preview expires with its round, phase, pinned data, plan and reached level."""
+        preview = self.current.content.next_planning
+        if preview is None or not preview.available:
+            return None
+        if self.epoch != self._current_epoch:
+            return "plan changed"
+        if not self._observation_seen:
+            return None
+        state, data = self.observation, self.observed_data
+        if state is None or data is None:
+            return "capture unavailable"
+        if state.game_id != self.current.content.game_id or state.round_id != self.current.content.round_id:
+            return "round or game changed"
+        if data.snapshot_id != self.current.content.data_snapshot_id:
+            return "pinned data changed"
+        if self.observed_phase in ("planning", "roll_down"):
+            return "new planning evidence"
+        if self.observed_phase != "combat":
+            return "combat phase unread" if self.observed_phase == "unknown" else "combat ended"
+        from tft_engine.planning import read
+        level = read(state, data, "level")
+        if preview.level is not None and level is not None and int(level) >= preview.level:
+            return "level reached"
+        return None
 
     def _invalidate_changed_fields(self):
         from tft_engine.models import _encode
@@ -254,6 +283,45 @@ class LiveDeliveryController:
             "decision_id": message.decision_id, "option_id": message.option_id,
             "evidence_id": state.content.evidence_id, "delivered_at": delivered_at,
             "received_at": now.isoformat()}, timestamp=message.timestamp.isoformat())
+        self._shown.add(key)
+
+    def preview_shown(self, message, mode):
+        """Record only the current, visible scheduled point; never an action."""
+        state, _, delivered_at = self._member(message.game_id, message.revision, mode)
+        preview = state.content.next_planning
+        if (message.revision != self.current.revision or preview is None or not preview.available
+            or message.preview != preview or message.data_snapshot_id != state.content.data_snapshot_id
+            or message.round_id != state.content.round_id):
+            raise ValueError("Preview is not the current delivered scheduled point")
+        if (not self.sessions.live_installed or self.sessions.mode.value != "live"
+            or not self._observation_seen or self.observation is None or self.observed_data is None
+            or self._next_planning_invalid()):
+            raise ValueError("Preview no longer applies to active capture")
+        now = datetime.now(UTC)
+        from tft_engine.planning import field_age
+        # Relative field freshness alone cannot qualify a frozen capture.
+        phase_age = field_age(self.observed_data, "phase", self.observation)
+        capture_age = (now - self.observation.captured_at).total_seconds()
+        if capture_age < -1 or capture_age > phase_age:
+            raise ValueError("Preview capture is stale")
+        for name in ("phase", "planning_phase"):
+            field = self.observation.fields.get(name)
+            if (field is None or field.read_at > self.observation.captured_at
+                or (now-field.read_at).total_seconds() > field_age(self.observed_data, name, self.observation)):
+                raise ValueError("Preview phase evidence is stale")
+        if message.timestamp < datetime.fromisoformat(delivered_at) or (message.timestamp-now).total_seconds() > 1:
+            raise ValueError("Shown timestamp is outside the delivery interval")
+        key = (message.revision, "next_planning", message.surface)
+        if key in self._shown:
+            return
+        self.sessions.append_event("preview_shown", {
+            "schema_version": 1, "mode": mode.value, "surface": message.surface,
+            "game_id": message.game_id, "data_snapshot_id": message.data_snapshot_id,
+            "round_id": message.round_id, "snapshot_id": state.content.snapshot_id,
+            "delivery_revision": message.revision, "evidence_id": state.content.evidence_id,
+            "preview": preview.model_dump(mode="json"), "delivered_at": delivered_at,
+            "received_at": now.isoformat()}, timestamp=message.timestamp.isoformat(),
+            expected_game_id=message.game_id, expected_mode="live")
         self._shown.add(key)
 
     def pin_line(self, message, mode):

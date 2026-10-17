@@ -16,7 +16,7 @@ import { CoreLink } from './coreLink'
 import { CoreSupervisor } from './coreSupervisor'
 import { CoachTray } from './tray'
 import {currentLiveMember,validEvidencePath} from '../shared/liveCommands'
-import type {LiveSurfaceShown,PinLine,RequestEvidencePage,RequestReview} from '../shared/messages'
+import type {LiveSurfaceShown,LivePreviewShown,PinLine,RequestEvidencePage,RequestReview} from '../shared/messages'
 import { CoachOverlay } from './overlayWindow'
 
 const REPO_ROOT = resolve(app.getAppPath(), '..')
@@ -197,6 +197,11 @@ function startCore(): CoreSupervisor {
     },
   )
 
+  ipcMain.on('live-preview-shown',(_event,input:unknown)=>{
+    if(!__LIVE_ENABLED__||state.core!=='running'||state.mode!=='live'||!currentLiveMember(state.live,input))return
+    const row=input as Omit<LivePreviewShown,'v'|'type'>
+    if(row.surface==='overlay'&&typeof row.timestamp==='string'&&row.data_snapshot_id===state.live!.content!.data_snapshot_id&&row.round_id===state.live!.content!.round_id&&state.live!.content!.next_planning?.available&&!state.live!.next_planning_invalidated)link.livePreviewShown(row)
+  })
   ipcMain.on('live-shown',(_event,input:unknown)=>{
     if(!__LIVE_ENABLED__||state.core!=='running'||state.mode!=='live'||!currentLiveMember(state.live,input))return
     const row=input as Omit<LiveSurfaceShown,'v'|'type'>

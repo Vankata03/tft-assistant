@@ -39,7 +39,7 @@ from tft_core.messages import (
 from tft_core.delivery_queue import ClientWriter
 from tft_core.storage import SessionStore
 from tft_core.live_delivery import LiveDeliveryController
-from tft_core.messages import RequestLiveState, RequestEvidencePage, LiveSurfaceShown, EvidencePage, PinLine
+from tft_core.messages import RequestLiveState, RequestEvidencePage, LiveSurfaceShown, LivePreviewShown, EvidencePage, PinLine
 from tft_core.messages import RequestSurfaceGeometry, SurfaceGeometryState
 from contextlib import asynccontextmanager
 from tft_core.io_worker import OwnedIO
@@ -406,12 +406,14 @@ class CoreServer:
             self._geometry_clients.add(ws)
             await self._send(ws, dump(self._geometry_state()))
             return
-        if isinstance(message, (RequestEvidencePage, LiveSurfaceShown, PinLine)):
+        if isinstance(message, (RequestEvidencePage, LiveSurfaceShown, LivePreviewShown, PinLine)):
             try:
                 if isinstance(message, RequestEvidencePage):
                     page = evidence_wire_page(self.live.page(message, self._mode))
                     await self._send(ws, dump(EvidencePage(request_id=message.request_id,
                         game_id=message.game_id, revision=message.revision, page=page)))
+                elif isinstance(message, LivePreviewShown):
+                    self.live.preview_shown(message, self._mode)
                 elif isinstance(message, LiveSurfaceShown):
                     self.live.shown(message, self._mode)
                 else:
