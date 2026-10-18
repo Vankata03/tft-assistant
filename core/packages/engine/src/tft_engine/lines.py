@@ -28,7 +28,29 @@ class Line:
         return _encode(self)
     @classmethod
     def from_dict(cls,value):
+        if value.get('observed_rolls'):
+            return ObservedLine(value['id'],value.get('levels',{}),value.get('rolls',{}),
+                value.get('stabilize',False),tuple(value.get('floor_options',())),
+                value.get('family_id'),value['observed_rolls'])
         return cls(value['id'],value.get('levels',{}),value.get('rolls',{}),value.get('stabilize',False),tuple(value.get('floor_options',())),value.get('family_id'))
+
+@dataclass(frozen=True)
+class ObservedLine(Line):
+    """Offline action-count program; never generated as a recommendation or floor.
+
+    Buy toward the original target with the ordinary simulated shop policy, then
+    attempt the observed paid refresh count even when keys hit. Unaffordable
+    refreshes and actions after death are truncated. Do not invent roll sales.
+    """
+    observed_rolls: Mapping[str,int] = field(default_factory=dict)
+    def __post_init__(self):
+        super().__post_init__()
+        if self.rolls or self.stabilize or self.floor_options:
+            raise DataError('Observed programs cannot contain recommended floor policies')
+        if any(type(count) is not int or count < 1 for count in self.observed_rolls.values()):
+            raise DataError('Observed refresh counts must be positive integers')
+        object.__setattr__(self,'observed_rolls',freeze(self.observed_rolls))
+
 
 @dataclass(frozen=True)
 class SimulationEffects:
@@ -320,6 +342,8 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
             # Optimistic reason-only counterfactual: key copies arrive at the Guide
             # deadline without shop uncertainty. It never selects or prices an action.
             copies[:,goal_indices]=np.where(alive[:,None],np.maximum(copies[:,goal_indices],goal_values),copies[:,goal_indices])
+        remaining_paid=np.repeat([getattr(line,'observed_rolls',{}).get(round_id,0) for line in lines],count)
+        counted=np.repeat([round_id in getattr(line,'observed_rolls',{}) for line in lines],count)
         rolling=alive & has_floor
         if ri==0 and current_shop is not None:
             # Positively captured offers are deterministic inputs; unread offers do
@@ -341,7 +365,7 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
                     wanted=np.where(stabilizing,(prepared.power(proposal,level,equipment_retained=equipment_retained,round_id=round_id)>prepared.power(copies,level,equipment_retained=equipment_retained,round_id=round_id))&prepared.supported[index],wanted)
                 interest=static(data,'interest')
                 reserve=np.minimum(gold,float(interest['cap'])/float(interest['gold_per_interest'])*float(interest['gold_per_tick']))
-                minimum=0 if key_mask[index] else np.where(has_floor,floor,reserve)
+                minimum=0 if key_mask[index] else np.where(has_floor,floor,np.where(counted,0,reserve))
                 buying=alive&wanted&(stabilizing|(copies[:,index]<desired[index]))&(gold-price>=minimum)
                 gold-=buying*price; copies[:,index]+=buying
         # Each later round supplies one free natural shop; current unknown shop is not fabricated.
@@ -349,7 +373,9 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
         refresh=0
         while refresh<max_shops:
             stopped=np.where(stabilizing,False,hit())
-            paid=rolling&~stopped&(gold>=np.where(has_floor,floor,0)+roll_cost)&(free_rolls<=0)
+            paid=((rolling&~stopped&(gold>=np.where(has_floor,floor,0)+roll_cost))
+                | (alive&counted&~natural&(remaining_paid>0)&(gold>=roll_cost)))&(free_rolls<=0)
+            remaining_paid-=paid&counted
             free=alive&(free_rolls>0)&~stopped
             active=natural|paid|free
             if not active.any():
@@ -379,7 +405,7 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
                 need=stabilizing[rows]|(copies[rows,picked]<desired[picked])
                 interest=static(data,'interest')
                 reserve=np.minimum(gold[rows],float(interest['cap'])/float(interest['gold_per_interest'])*float(interest['gold_per_tick']))
-                min_gold=np.where(key_mask[picked],0,np.where(has_floor[rows],floor[rows],reserve))
+                min_gold=np.where(key_mask[picked],0,np.where(has_floor[rows],floor[rows],np.where(counted[rows],0,reserve)))
                 buy=(totals>0)&wanted&need&(gold[rows]-prepared.costs[picked]>=min_gold)
                 gold[rows]-=buy*prepared.costs[picked]
                 copies[rows,picked]+=buy

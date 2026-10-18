@@ -172,7 +172,7 @@ it('leaves Baseline tags click-through and lets only the finished review toast r
  expect(coach.overlayInteractive).not.toHaveBeenCalled()
  act(()=>root!.unmount());root=null;document.body.replaceChildren()
  const finished={...baseline,gameflow:{clientRunning:true,phase:'EndOfGame'},
-  reviewReady:{v:1,type:'review_ready',game_id:'123',mode:'baseline',report_id:'sha256:'+'a'.repeat(64),evidence_id:'sha256:'+'a'.repeat(64),ended_at:'2026-10-07T00:00:00Z',ready_at:'2026-10-07T00:00:20Z',latency_seconds:20,late:false},
+  reviewReady:{v:1,type:'review_ready',game_id:'123',mode:'baseline',report_id:'sha256:'+'a'.repeat(64),evidence_id:'sha256:'+'a'.repeat(64),ended_at:'2026-10-07T00:00:00Z',ready_at:'2026-10-07T00:00:20Z',job_id:'b'.repeat(64),notice_id:'c'.repeat(32),displayed_at:null,display_late:null,display_latency_seconds:null,latency_seconds:20,late:false},
   overlayGeometry:{bounds:{x:0,y:0,width:1000,height:500},displayId:1,reason:null,anchors:[{kind:'review',index:0,x:.4,y:.4,width:.2,height:.05}]}} as unknown as ShellState
  const second=await mount(finished)
  const toast=second.host.querySelector('.review-ready-toast')!

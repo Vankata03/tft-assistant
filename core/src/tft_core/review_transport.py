@@ -37,7 +37,11 @@ class ReviewTransport:
         graph=EvidenceGraph.from_dict(body['evidence_graph'])
         if graph.root_id!=body['report_id'] or graph.resolve(path=('game_id',))!=str(game_id):
             raise ValueError('Review belongs to another game or evidence identity')
-        return {'game_id':str(game_id),'mode':mode,'report_id':graph.root_id,
+        from tft_review.identity import digest
+        job_id = body.get('job_id') or digest({'report_id':graph.root_id,
+            'engine_version':stored['engine_version'],'data_snapshot_id':stored['data_snapshot_id'],
+            'log_hash':stored.get('log_hash')})
+        return {'game_id':str(game_id),'mode':mode,'report_id':graph.root_id,'job_id':job_id,
                 'evidence_id':graph.root_id,'ended_at':end['timestamp']}
 
     def call(self,operation,game_id,**arguments):

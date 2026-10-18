@@ -25,6 +25,7 @@ from tft_core.baseline.contracts import BaselineState
 from tft_core.messages import (
     ErrorMessage,
     ReviewReady,
+    ReviewNoticeShown,
     Gameflow,
     Hello,
     RequestBaselineState,
@@ -126,18 +127,52 @@ class CoreServer:
 
     async def publish_review_ready(self,game_id):
         """Publish only a checked finished report, using that game's final mode."""
-        from datetime import UTC,datetime
-        if not self.sessions or self.sessions.active_game_id:return None
+        if (not self.sessions or self.sessions.active_game_id
+            or self._gameflow.phase in {'InProgress','Reconnect','PreEndOfGame'}):return None
         record=await self.io.call(self.review.ready,str(game_id))
         if record is None or self.sessions.active_game_id:return None
         self.review.permitted(str(game_id))
         now=datetime.now(UTC)
         elapsed=(now-datetime.fromisoformat(record['ended_at'])).total_seconds()
         if elapsed<0:raise ValueError('Review game-end timestamp is in the future')
-        ready=ReviewReady(**record,ready_at=now,latency_seconds=elapsed,late=elapsed>30)
+        from uuid import uuid4
+        ready=ReviewReady(**record,notice_id=uuid4().hex,ready_at=now,latency_seconds=elapsed,late=elapsed>30)
         self._review_ready=ready
         self._broadcast(self._clients,dump(ready))
         return ready
+
+    async def review_notice_shown(self, message):
+        ready = self._review_ready
+        if (ready is None or not self.sessions or self.sessions.active_game_id
+            or self._gameflow.phase in {'InProgress','Reconnect','PreEndOfGame'}
+            or any(getattr(message,name)!=getattr(ready,name)
+                   for name in ('game_id','report_id','evidence_id','job_id','notice_id'))):
+            raise ValueError('Review notice is not the current finished report')
+        now = datetime.now(UTC)
+        if message.timestamp < ready.ready_at or not 0 <= (now-message.timestamp).total_seconds() <= 5:
+            raise ValueError('Review notice timestamp is outside the visible receipt interval')
+        current = await self.io.call(self.review.ready,message.game_id)
+        if (current is None or any(current[name]!=getattr(ready,name)
+                                  for name in ('game_id','report_id','evidence_id','job_id','mode'))
+            or self._review_ready is not ready or self.sessions.active_game_id):
+            raise ValueError('Review notice membership changed')
+        elapsed = (message.timestamp-ready.ended_at).total_seconds()
+        receipt = message.model_dump(mode='json') | {'received_at':now.isoformat(),
+            'ended_at':ready.ended_at.isoformat(),'ready_at':ready.ready_at.isoformat(),
+            'latency_seconds':elapsed,'late':elapsed>30,'mode':ready.mode}
+        def persist(*,cancelled):
+            return self.sessions.write_review_notice(message.game_id,receipt,
+                cancelled=lambda: cancelled() or self._review_ready is not ready
+                or self._gameflow.phase in {'InProgress','Reconnect','PreEndOfGame'})
+        accepted = await self.io.call(persist,cooperative=True)
+        if self._review_ready is not ready or self.sessions.active_game_id:
+            return
+        # First visible receipt determines notice latency; other surfaces stay durable.
+        if ready.displayed_at is None:
+            ready = ready.model_copy(update={'displayed_at':datetime.fromisoformat(accepted['timestamp']),
+                'display_latency_seconds':accepted['latency_seconds'],'display_late':accepted['late']})
+            self._review_ready = ready
+        self._broadcast(self._clients,dump(ready))
 
     def publish_runtime_error(self,code,message) -> None:
         """Expose a runtime supervisor failure without changing lifecycle guards."""
@@ -361,6 +396,12 @@ class CoreServer:
         return False
 
     async def _review_receive(self,ws,message):
+        if isinstance(message, ReviewNoticeShown):
+            try:
+                await self.review_notice_shown(message)
+            except (ValueError, OSError, KeyError, PermissionError) as error:
+                await self._send(ws,dump(ErrorMessage(code='review_notice_rejected',message=str(error))))
+            return
         if isinstance(message,RequestReviewGames):
             try:
                 if self.sessions and self.sessions.active_game_id and self.sessions.mode is SessionMode.SILENT:
@@ -410,10 +451,10 @@ class CoreServer:
                 dump(ErrorMessage(code="invalid_message", message=str(error)))
             )
             return
-        if isinstance(message,(RequestReviewGames,RequestReview)):
+        if isinstance(message,(RequestReviewGames,RequestReview,ReviewNoticeShown)):
             try:self._review_requests[ws].submit(message)
             except ValueError as error:
-                await self._send(ws,dump(ErrorMessage(code='review_request_rejected',request_id=message.request_id,message=str(error))))
+                await self._send(ws,dump(ErrorMessage(code='review_request_rejected',request_id=getattr(message,'request_id',None),message=str(error))))
             return
         if isinstance(message, RequestBaselineState):
             self._baseline_clients.add(ws)

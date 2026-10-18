@@ -1,7 +1,7 @@
 // The shell's end of the localhost WebSocket. The main process is the only
 // client; it relays state to the windows over IPC.
 import { randomUUID } from 'node:crypto'
-import type {EvidencePage,LiveSurfaceShown,LivePreviewShown,PinLine,RequestEvidencePage,RequestReview,ReviewResponse,ReviewGames} from '../shared/messages'
+import type {EvidencePage,LiveSurfaceShown,LivePreviewShown,ReviewNoticeShown,PinLine,RequestEvidencePage,RequestReview,ReviewResponse,ReviewGames} from '../shared/messages'
 import { EventEmitter } from 'node:events'
 import {
   type CoreMessage,
@@ -56,6 +56,7 @@ export class CoreLink extends EventEmitter<{
 
   requestLive(): void {this.send({v:SCHEMA_VERSION,type:'request_live_state'})}
   requestGeometry(): void {this.send({v:SCHEMA_VERSION,type:'request_surface_geometry'})}
+  reviewNoticeShown(message:Omit<ReviewNoticeShown,'type'|'v'>):void {this.send({...message,v:SCHEMA_VERSION,type:'review_notice_shown'})}
   livePreviewShown(message:Omit<LivePreviewShown,'type'|'v'>): void {this.send({v:SCHEMA_VERSION,type:'live_preview_shown',...message})}
   liveShown(message:Omit<LiveSurfaceShown,'type'|'v'>): void {this.send({v:SCHEMA_VERSION,type:'live_surface_shown',...message})}
   pinLine(message:Omit<PinLine,'type'|'v'>): void {this.send({v:SCHEMA_VERSION,type:'pin_line',...message})}

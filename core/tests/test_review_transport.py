@@ -1,5 +1,6 @@
 """Authenticated post-game access uses real durable logs and review locks."""
 import asyncio,json,base64
+import pytest
 from PIL import Image
 from websockets.asyncio.client import connect
 from tft_core.server import CoreServer
@@ -235,3 +236,152 @@ def test_locked_finished_review_cannot_be_manually_regenerated(tmp_path):
     logs, _, _, _ = logged_game(tmp_path)
     with pytest.raises(ValueError, match='locked'):
         ReviewTransport(logs).call('regenerate', '901')
+
+
+def test_visible_review_notice_receipt_is_durable_late_and_preserves_review_input(tmp_path, monkeypatch):
+    from datetime import datetime, UTC, timedelta
+    from tft_engine.evidence import EvidenceGraph
+    import tft_core.server as server_module
+    clock = datetime.now(UTC)
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None): return clock
+    monkeypatch.setattr(server_module, 'datetime', Clock)
+    async def scenario():
+        nonlocal clock
+        logs = SessionStore(tmp_path/'app', tmp_path/'config', live_installed=True)
+        logs.set_mode('baseline'); logs.start_game('123',timestamp=(clock-timedelta(seconds=20)).isoformat())
+        logs.end_game(timestamp=(clock-timedelta(seconds=10)).isoformat())
+        graph = EvidenceGraph.factor({'game_id':'123','summary':{'top5':[]},'moments':[]})
+        logs.write_review('123',{'schema_version':1,'report_id':graph.root_id,'evidence_graph':graph.to_dict()},engine_version='fixture',data_snapshot_id='fixture')
+        before = logs.log_path('123').read_bytes()
+        report_before = logs.read_review('123')
+        server = CoreServer('token',sessions=logs)
+        async with server.listen() as listener:
+            async with connect(f'ws://127.0.0.1:{listener.sockets[0].getsockname()[1]}') as ws:
+                await ws.send(dump(Hello(token='token'))); await ws.recv(); await ws.recv()
+                await server.publish_review_ready('123')
+                ready = json.loads(await ws.recv())
+                assert ready['late'] is False
+                clock += timedelta(seconds=25)
+                receipt = {key:ready[key] for key in ('game_id','report_id','evidence_id','job_id','notice_id')}
+                receipt.update(v=1,type='review_notice_shown',surface='status',timestamp=clock.isoformat())
+                await ws.send(json.dumps(receipt))
+                response = json.loads(await ws.recv())
+                assert response['type']=='review_ready', response
+                assert response['display_late'] is True
+                assert response['display_latency_seconds']==35
+                stored = json.loads((logs.root/'reviews'/'123.notice.json').read_text())
+                assert stored['receipts'][0]['surface']=='status'
+                assert stored['receipts'][0]['late'] is True
+                await ws.send(json.dumps(receipt))
+                assert json.loads(await ws.recv())['type']=='review_ready'
+                assert len(json.loads((logs.root/'reviews'/'123.notice.json').read_text())['receipts'])==1
+                for change in ({'notice_id':'a'*32},{'report_id':'sha256:'+'b'*64},
+                               {'game_id':'999'},{'job_id':'f'*64},
+                               {'timestamp':(clock+timedelta(seconds=1)).isoformat()},
+                               {'timestamp':(clock-timedelta(seconds=6)).isoformat()}):
+                    await ws.send(json.dumps(receipt|change))
+                    error=json.loads(await ws.recv())
+                    assert error['code']=='review_notice_rejected', error
+                logs.set_mode('baseline');logs.start_game('124',timestamp=clock.isoformat())
+                await ws.send(json.dumps(receipt))
+                assert json.loads(await ws.recv())['code']=='review_notice_rejected'
+                assert logs.log_path('123').read_bytes()==before
+                assert logs.read_review('123')==report_before
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('invalidate',['new_game','republished_notice'])
+def test_slow_notice_flush_keeps_same_socket_mode_responsive_and_cancels_on_new_game(tmp_path, monkeypatch, invalidate):
+    import threading
+    import tft_core.storage as storage
+    from datetime import datetime, UTC
+    from tft_engine.evidence import EvidenceGraph
+    entered, release = threading.Event(), threading.Event()
+    original = storage.os.fsync
+    def fsync(fd):
+        if threading.current_thread().name.startswith('tft-io'):
+            entered.set()
+            if not release.wait(3):raise TimeoutError('fixture notice flush timed out')
+        return original(fd)
+    async def scenario():
+        logs=SessionStore(tmp_path/'app',tmp_path/'config',live_installed=True)
+        logs.set_mode('baseline');logs.start_game('123');logs.end_game()
+        graph=EvidenceGraph.factor({'game_id':'123','summary':{'top5':[]},'moments':[]})
+        logs.write_review('123',{'schema_version':1,'report_id':graph.root_id,'evidence_graph':graph.to_dict()},engine_version='fixture',data_snapshot_id='fixture')
+        server=CoreServer('token',sessions=logs)
+        async with server.listen() as listener:
+            async with connect(f'ws://127.0.0.1:{listener.sockets[0].getsockname()[1]}') as ws:
+                await ws.send(dump(Hello(token='token')));await ws.recv();await ws.recv()
+                await server.publish_review_ready('123');ready=json.loads(await ws.recv())
+                monkeypatch.setattr(storage.os,'fsync',fsync)
+                receipt={key:ready[key] for key in ('game_id','report_id','evidence_id','job_id','notice_id')}
+                receipt.update(v=1,type='review_notice_shown',surface='status',timestamp=datetime.now(UTC).isoformat())
+                try:
+                    await ws.send(json.dumps(receipt))
+                    for _ in range(100):
+                        if entered.is_set():break
+                        await asyncio.sleep(.01)
+                    assert entered.is_set()
+                    await ws.send(json.dumps({'v':1,'type':'set_session_mode','mode':'baseline'}))
+                    response=json.loads(await asyncio.wait_for(ws.recv(),.5))
+                    assert response['type']=='session_mode',response
+                    if invalidate=='new_game':logs.start_game('124')
+                    else:
+                        await server.publish_review_ready('123')
+                        assert json.loads(await ws.recv())['type']=='review_ready'
+                finally:release.set()
+                error=json.loads(await asyncio.wait_for(ws.recv(),1))
+                assert error['code']=='review_notice_rejected'
+                assert not (logs.root/'reviews'/'123.notice.json').exists()
+    asyncio.run(scenario())
+
+
+def test_malformed_notice_metadata_rejects_without_killing_same_socket_review_requests(tmp_path):
+    from datetime import datetime, UTC
+    from tft_engine.evidence import EvidenceGraph
+    async def scenario():
+        logs=SessionStore(tmp_path/'app',tmp_path/'config',live_installed=True)
+        logs.set_mode('baseline');logs.start_game('123');logs.end_game()
+        graph=EvidenceGraph.factor({'game_id':'123','summary':{'top5':[]},'moments':[]})
+        logs.write_review('123',{'schema_version':1,'report_id':graph.root_id,'evidence_graph':graph.to_dict()},engine_version='fixture',data_snapshot_id='fixture')
+        before=logs.log_path('123').read_bytes(),logs.read_review('123')
+        server=CoreServer('token',sessions=logs)
+        async with server.listen() as listener:
+            async with connect(f'ws://127.0.0.1:{listener.sockets[0].getsockname()[1]}') as ws:
+                async def receive():return json.loads(await asyncio.wait_for(ws.recv(),1))
+                await ws.send(dump(Hello(token='token')));await receive();await receive()
+                await server.publish_review_ready('123');ready=await receive()
+                receipt={key:ready[key] for key in ('game_id','report_id','evidence_id','job_id','notice_id')}
+                receipt.update(v=1,type='review_notice_shown',surface='status',timestamp=datetime.now(UTC).isoformat())
+                await ws.send(json.dumps(receipt));assert (await receive())['type']=='review_ready'
+                path=logs.root/'reviews'/'123.notice.json'
+                valid=json.loads(path.read_text());row=valid['receipts'][0]
+                invalid=[{'receipts':None},None,[],valid|{'receipts':[None]},valid|{'receipts':[[]]},
+                         valid|{'receipts':[row|{'job_id':[]}]},valid|{'receipts':[row|{'timestamp':'broken'}]},
+                         valid|{'receipts':[row|{'timestamp':None}]},valid|{'receipts':[row|{'received_at':'broken'}]},
+                         valid|{'receipts':[row|{'latency_seconds':[]} ]},valid|{'receipts':[row|{'late':'yes'}]},
+                         valid|{'receipts':[row|{'notice_id':123}]},valid|{'receipts':[{}]},
+                         valid|{'receipts':[row,row]},valid|{'report_id':[]},valid|{'schema_version':2},
+                         valid|{'receipts':[row|{'game_id':'999'}]},
+                         valid|{'receipts':[row|{'timestamp':'2026-10-17T00:00:00'}]},
+                         valid|{'receipts':[row|{'latency_seconds':-1}]},
+                         valid|{'receipts':[row|{'ended_at':row['received_at']}]},
+                         valid|{'receipts':[row|{'mode':[]}]}]
+                for index,value in enumerate(invalid):
+                    raw=json.dumps(value);path.write_text(raw)
+                    await ws.send(json.dumps(receipt))
+                    error=await receive()
+                    assert error['code']=='review_notice_rejected',error
+                    assert error['message']=='Review notice metadata is invalid',error
+                    assert path.read_text()==raw
+                    await ws.send(json.dumps({'v':1,'type':'request_review_games','request_id':str(index)}))
+                    response=await receive()
+                    assert response['type']=='review_games' and response['request_id']==str(index),response
+                path.write_text(json.dumps(valid))
+                await ws.send(json.dumps(receipt|{'surface':'overlay','timestamp':datetime.now(UTC).isoformat()}))
+                assert (await receive())['type']=='review_ready'
+                assert [row['surface'] for row in json.loads(path.read_text())['receipts']]==['status','overlay']
+                assert (logs.log_path('123').read_bytes(),logs.read_review('123'))==before
+    asyncio.run(scenario())

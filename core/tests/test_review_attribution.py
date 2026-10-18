@@ -357,6 +357,31 @@ def test_semantically_same_deviation_groups_when_scored_option_id_changes(tmp_pa
     assert moments[0]['cost'] == -2
 
 
+def qualified_line_game(tmp_path, *, mode):
+    """Public log fixture with sourced finances rather than arbitrary round gold."""
+    import tomllib, tomli_w
+    from tft_core.storage import SessionStore
+    from tests.test_replay_contracts import historical_data, GuideFeed
+    store,_=historical_data(tmp_path)
+    path=tmp_path/'patch'/'static.toml'
+    values=tomllib.loads(path.read_text())
+    values['fields']['rules_flags']['value']['passive_xp']=0
+    path.write_text(tomli_w.dumps(values))
+    data=store.refresh(path.parent,sources=(GuideFeed(),),now=NOW).snapshot
+    sessions=SessionStore(tmp_path/'logs',tmp_path/'config',live_installed=True)
+    sessions.set_mode(mode)
+    sessions.start_game('901',patch=data.patch,data_snapshot_id=data.snapshot_id,timestamp=NOW.isoformat())
+    sessions.append_event('snapshot',qualified_line_snapshot(data),timestamp=NOW.isoformat())
+    return sessions,store,data,None
+
+
+def qualified_line_snapshot(data, **changes):
+    from tests.test_replay_contracts import log_snapshot
+    fields={'remaining_effects':[],'remaining_effects_complete':True,'held_augments':[],
+            'held_augments_complete':True,'owned_copies':{'unit':1}}
+    return log_snapshot(data,**(fields|changes))
+
+
 @pytest.mark.parametrize(('schedule_key', 'schedule_value', 'second_round', 'members'), [
     ('levels', 2, '3-4', [1, 1]),
     ('rolls', 10, '3-4', [1, 1]),
@@ -370,21 +395,24 @@ def test_line_grouping_preserves_round_schedules_and_ignores_option_ids(
     from tft_engine import Line, ScoredOption, simulate_lines
     from tft_review import ReplayProducer, ReviewPolicy
     from tft_review.contracts import json_value
-    from tests.test_replay_contracts import log_snapshot
+    log_snapshot = qualified_line_snapshot
 
-    sessions, store, data, _ = logged_game(tmp_path, finish=False, mode='baseline')
+    sessions, store, data, _ = qualified_line_game(tmp_path, mode='baseline')
     at = NOW+timedelta(seconds=.25)
-    sessions.append_event('snapshot', log_snapshot(data, at=at, snapshot_id='second', gold=19),
+    sessions.append_event('snapshot', log_snapshot(data, at=at, snapshot_id='second', gold=18),
         timestamp=at.isoformat())
     rounds = list(data.value('round_order'))
+    gold=18
     for index, round_id in enumerate(rounds[rounds.index('3-3'):rounds.index('4-7')+1]):
         at = NOW+timedelta(seconds=index+1)
+        gold += 5 + min(gold//10,5)
         if index == 0:
+            gold -= 8
             sessions.append_event('level_up', {'before': {'level': 1, 'xp': 0, 'xp_to_level': 2},
-                'after': {'level': 3, 'xp': 0, 'xp_to_level': 6}, 'before_read_at': NOW.isoformat(),
+                'after': {'level': 3, 'xp': 2, 'xp_to_level': 6}, 'before_read_at': NOW.isoformat(),
                 'after_read_at': at.isoformat(), 'confidence': .95,
                 'sources': {'level': 'external-fixture'}}, timestamp=at.isoformat())
-        sessions.append_event('snapshot', log_snapshot(data, at=at, snapshot_id=round_id, level=3)
+        sessions.append_event('snapshot', log_snapshot(data, at=at, snapshot_id=round_id, level=3,xp=2,gold=gold)
             | {'round_id': round_id}, timestamp=at.isoformat())
     sessions.end_game(timestamp=(at+timedelta(seconds=1)).isoformat())
     batch = ReplayProducer(sessions, store, repository=ROOT).produce('901')
@@ -525,9 +553,9 @@ def test_observed_line_display_must_precede_confirmed_level_action_bounds(
     from tft_engine import Line, ScoredOption, simulate_lines
     from tft_review import ReplayProducer, ReviewPolicy
     from tft_review.contracts import json_value
-    from tests.test_replay_contracts import log_snapshot
+    log_snapshot = qualified_line_snapshot
 
-    sessions, store, data, _ = logged_game(tmp_path, finish=False, mode='live')
+    sessions, store, data, _ = qualified_line_game(tmp_path, mode='live')
     original = ReplayProducer(sessions, store, repository=ROOT).produce('901')
     context = original.contexts[0]
     record = next(row for row in original.records if row.decision == 'econ')
@@ -544,15 +572,18 @@ def test_observed_line_display_must_precede_confirmed_level_action_bounds(
     log_shown(sessions, decision_id=record.decision_id, option_id='late-hold' if earlier_valid else line.id,
         at=NOW+timedelta(seconds=shown_seconds), revision='sha256:'+('3' if earlier_valid else '1')*64)
     rounds = list(data.value('round_order'))
+    gold=18
     for index, round_id in enumerate(rounds[rounds.index('3-3'):rounds.index('4-7')+1]):
         at = NOW+timedelta(seconds=index+1)
+        gold += 5 + min(gold//10,5)
         if index < 2:
+            gold -= 4
             before_at = NOW+timedelta(seconds=.25 if index == 0 else 1.25)
-            sessions.append_event('level_up', {'before': {'level': index+1, 'xp': 0, 'xp_to_level': 2},
-                'after': {'level': index+2, 'xp': 0, 'xp_to_level': 6},
+            sessions.append_event('level_up', {'before': {'level': index+1, 'xp': 0 if index==0 else 2, 'xp_to_level': 2},
+                'after': {'level': index+2, 'xp': 2, 'xp_to_level': 6},
                 'before_read_at': before_at.isoformat(), 'after_read_at': at.isoformat(),
                 'confidence': .95, 'sources': {'level': 'external-fixture'}}, timestamp=at.isoformat())
-        sessions.append_event('snapshot', log_snapshot(data, at=at, snapshot_id=round_id, level=min(index+2, 3))
+        sessions.append_event('snapshot', log_snapshot(data, at=at, snapshot_id=round_id, level=min(index+2, 3),xp=2,gold=gold)
             | {'round_id': round_id}, timestamp=at.isoformat())
     sessions.end_game(timestamp=(NOW+timedelta(seconds=21)).isoformat())
     batch = ReplayProducer(sessions, store, repository=ROOT).produce('901')
@@ -780,9 +811,9 @@ def test_unchanged_line_display_uses_completion_when_no_action_onset_or_sequence
 ):
     from dataclasses import replace
     from tft_engine import Line
-    from tests.test_replay_contracts import log_snapshot
+    log_snapshot = qualified_line_snapshot
     from tft_review import ReplayProducer, ReviewPolicy
-    sessions, store, data, _ = logged_game(tmp_path, finish=False, mode='live')
+    sessions, store, data, _ = qualified_line_game(tmp_path, mode='live')
     batch = ReplayProducer(sessions, store, repository=ROOT).produce('901')
     econ = next(row for row in batch.records if row.decision == 'econ')
     log_delivery(sessions, decision_id=econ.decision_id, option_id=econ.advice['option_id'], domain='econ', payload=econ.to_dict()['advice']['payload'])
@@ -793,9 +824,11 @@ def test_unchanged_line_display_uses_completion_when_no_action_onset_or_sequence
     at = NOW+timedelta(seconds=1)
     sessions.append_event('snapshot', log_snapshot(data, at=at, snapshot_id='confirmed-hold'), timestamp=at.isoformat())
     rounds = list(data.value('round_order'))
+    gold=18
     for index, round_id in enumerate(rounds[rounds.index('3-2')+1:rounds.index('4-7')+1]):
+        gold += 5 + min(gold//10,5)
         at = NOW+timedelta(seconds=index+2)
-        sessions.append_event('snapshot', log_snapshot(data, at=at, snapshot_id=round_id)|{'round_id': round_id}, timestamp=at.isoformat())
+        sessions.append_event('snapshot', log_snapshot(data, at=at, snapshot_id=round_id,gold=gold)|{'round_id': round_id}, timestamp=at.isoformat())
     shown_at = NOW+timedelta(seconds=.4) if display_when == 'before' else at+timedelta(seconds=display_when == 'after')
     log_shown(sessions, decision_id=econ.decision_id, option_id='late-level' if earlier_valid else econ.advice['option_id'],
         at=shown_at, revision='sha256:'+('3' if earlier_valid else '1')*64)
@@ -818,8 +851,8 @@ def test_unchanged_line_display_uses_completion_when_no_action_onset_or_sequence
 def _board_game(tmp_path, *, unchanged_read_at=None, show_at=.5):
     """Positioning and pivot calls whose board change is first read at NOW+1s."""
     from tft_engine import Board, Unit, DomainHook
-    from tests.test_replay_contracts import log_snapshot
-    sessions, store, data, _ = logged_game(tmp_path, finish=False, mode='live')
+    log_snapshot = qualified_line_snapshot
+    sessions, store, data, _ = qualified_line_game(tmp_path, mode='live')
     hooks = (DomainHook('board-calls', (), advice=board_calls),)
     ids = {kind: _decision_id(sessions, store, kind, hooks) for kind in ('positioning', 'pivot')}
     for kind, option in (('positioning', 'layout'), ('pivot', 'new-comp')):

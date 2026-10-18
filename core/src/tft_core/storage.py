@@ -21,7 +21,7 @@ from uuid import uuid4
 from weakref import WeakValueDictionary
 from time import monotonic, sleep
 
-from tft_core.messages import SessionMode
+from tft_core.messages import SessionMode, ReviewNoticeShown
 
 _MODE_RANK = {SessionMode.SILENT: 0, SessionMode.BASELINE: 1, SessionMode.LIVE: 2}
 _STORE_LOCKS = WeakValueDictionary()
@@ -29,6 +29,42 @@ _STORE_LOCKS_GUARD = threading.Lock()
 # Application I/O policy, not a game rule. A busy store must fail visibly so
 # startup/shutdown can reconcile a child rather than wait on it indefinitely.
 _STORE_LOCK_TIMEOUT_SECONDS = 1.0
+
+
+def _notice_metadata(value):
+    """Reject damaged transport metadata intact; never repair immutable inputs."""
+    invalid = 'Review notice metadata is invalid'
+    if (not isinstance(value, dict) or type(value.get('schema_version')) is not int
+        or value['schema_version'] != 1 or not isinstance(value.get('report_id'), str)
+        or re.fullmatch(r'sha256:[0-9a-f]{64}', value['report_id']) is None
+        or not isinstance(value.get('receipts'), list)):
+        raise ValueError(invalid)
+    seen = set()
+    for row in value['receipts']:
+        if not isinstance(row, dict):
+            raise ValueError(invalid)
+        try:
+            receipt = ReviewNoticeShown.model_validate({name: row[name] for name in ReviewNoticeShown.model_fields})
+            times = [datetime.fromisoformat(row[name]) for name in
+                     ('timestamp', 'received_at', 'ended_at', 'ready_at')]
+            shown, received, ended, ready = times
+            if any(time.utcoffset() is None for time in times):
+                raise ValueError(invalid)
+            latency = (shown-ended).total_seconds()
+            if (row['report_id'] != value['report_id'] or type(row['late']) is not bool
+                or type(row['latency_seconds']) not in (int, float)
+                or latency < 0 or row['latency_seconds'] != latency
+                or row['late'] != (latency > 30) or shown < ready
+                or not 0 <= (received-shown).total_seconds() <= 5
+                or row['mode'] not in ('silent', 'baseline', 'live')):
+                raise ValueError(invalid)
+            key = (receipt.report_id, receipt.job_id, receipt.surface)
+            if key in seen:
+                raise ValueError(invalid)
+            seen.add(key)
+        except (ValueError, TypeError, KeyError):
+            raise ValueError(invalid) from None
+    return value
 
 
 class _StoreLock:
@@ -692,6 +728,52 @@ class SessionStore:
                 raise ValueError('review log evidence changed; regeneration required')
         review['tags']=tags
         return review
+
+    def write_review_notice(self, game_id, receipt, *, cancelled=lambda: False):
+        """Durable transport metadata, separate from immutable review input and tags.
+
+        The notice file is never a game event or replay/job identity input. Flush
+        outside the mode lock, then recheck lifecycle and report before publish.
+        """
+        game_id = _game_id(game_id)
+        reviews = self.root/'reviews'
+        reviews.mkdir(parents=True, exist_ok=True)
+        with _shared_lock((reviews/f'.{game_id}.notice.lock').resolve(), 'Review notice receipt is busy'):
+            report_path = reviews/f'{game_id}.json'
+            version = _file_version(report_path)
+            stored = self.read_review(game_id)
+            if not stored or stored['review']['report_id'] != receipt['report_id']:
+                raise ValueError('Review report was superseded')
+            path = reviews/f'{game_id}.notice.json'
+            if path.exists():
+                try:
+                    existing = _notice_metadata(json.loads(path.read_text()))
+                except json.JSONDecodeError:
+                    raise ValueError('Review notice metadata is invalid') from None
+                if any(row['game_id'] != game_id for row in existing['receipts']):
+                    raise ValueError('Review notice metadata is invalid')
+            else:
+                existing = {'receipts':[]}
+            key = ('report_id','job_id','surface')
+            if any(all(row[name]==receipt[name] for name in key) for row in existing['receipts']):
+                return next(row for row in existing['receipts'] if all(row[name]==receipt[name] for name in key))
+            rows = existing['receipts'] if existing.get('report_id')==receipt['report_id'] else []
+            value = {'schema_version':1,'report_id':receipt['report_id'],'receipts':rows+[receipt]}
+            temporary = path.with_suffix(f'.{uuid4().hex}.tmp')
+            try:
+                with temporary.open('w',encoding='utf-8') as output:
+                    json.dump(value,output,allow_nan=False)
+                    output.flush(); os.fsync(output.fileno())
+                with self._lock:
+                    game = next((row for row in self.list_games() if row['game_id']==game_id),None)
+                    if cancelled() or self.active_game_id or not game or game['review_locked']:
+                        raise ValueError('Review notice lifecycle changed')
+                    if _file_version(report_path)!=version:
+                        raise ValueError('Review report was superseded')
+                    os.replace(temporary,path)
+                return receipt
+            finally:
+                temporary.unlink(missing_ok=True)
 
     def set_review_tag(self, game_id: str | int, decision_id: str, tag: str) -> None:
         if tag not in {"agree", "disagree", "unsure"}:

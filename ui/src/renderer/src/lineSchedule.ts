@@ -4,9 +4,9 @@ const shown=(value:unknown):string=>typeof value==='number'||typeof value==='str
 
 export function describeSchedule(schedule:unknown):string{
  const row=typeof schedule==='object'&&schedule!==null?schedule as Record<string,unknown>:{}
- const levels=entries(row.levels),rolls=entries(row.rolls)
+ const levels=entries(row.levels),rolls=entries(row.rolls),observed=entries(row.observed_rolls)
  return [
   levels.length?`Levels ${levels.map(([round,level])=>`${round} → ${shown(level)}`).join(', ')}`:'No level-ups',
-  rolls.length?`roll-downs ${rolls.map(([round,floor])=>`${round} to ${shown(floor)} gold`).join(', ')}`:'no roll-down',
+  rolls.length?`roll-downs ${rolls.map(([round,floor])=>`${round} to ${shown(floor)} gold`).join(', ')}`:observed.length?`observed paid refreshes ${observed.map(([round,count])=>`${round} × ${shown(count)}`).join(', ')}`:'no roll-down',
  ].join(' · ')
 }
