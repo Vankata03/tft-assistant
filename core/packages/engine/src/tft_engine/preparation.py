@@ -33,15 +33,42 @@ def patch_calculation(function):
         scope = _current.get()
         if scope is None:
             return function(*args, **kwargs)
-        data = args[data_index] if len(args) > data_index else kwargs['data']
-        identity = id(data)
-        if identity not in scope:
+        if len(args) > data_index:
+            data = args[data_index]
+            rest = args[:data_index] + args[data_index+1:]
+        else:
+            data = kwargs['data']
+            rest = args
+        entry = scope.get(id(data))
+        if entry is None:
             # Retain the object, so temporary choice data cannot recycle its id.
-            scope[identity] = (data, {})
-        memo = scope[identity][1]
-        key = (function, args[:data_index] + args[data_index+1:],
-               tuple((name, value) for name, value in sorted(kwargs.items()) if name != 'data'))
-        if key not in memo:
-            memo[key] = function(*args, **kwargs)
-        return memo[key]
+            entry = scope[id(data)] = (data, {})
+        memo = entry[1]
+        key = (function, rest,
+               tuple((name, value) for name, value in sorted(kwargs.items()) if name != 'data') if kwargs else ())
+        try:
+            return memo[key]
+        except KeyError:
+            value = memo[key] = function(*args, **kwargs)
+            return value
     return cached
+
+
+def scoped_reuse(data, key, build):
+    """Return one object per hashable key and data identity in the current scope.
+
+    The object may memoize pure results of its own construction inputs; every
+    input that changes those results must be part of ``key``. Pass ``None`` as
+    data for values that do not depend on a DataSnapshot.
+    """
+    scope = _current.get()
+    if scope is None:
+        return build()
+    identity = id(data)
+    if identity not in scope:
+        scope[identity] = (data, {})
+    memo = scope[identity][1]
+    key = (scoped_reuse, key)
+    if key not in memo:
+        memo[key] = build()
+    return memo[key]

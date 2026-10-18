@@ -11,7 +11,7 @@ from .models import Board, Unit, _encode
 from .power import static, tunable, keyed, sigmoid, strength, estimate_strength
 from .growth import growth_curve_lookup, standard_level
 from .opponents import round_index
-from .preparation import evaluation_scope
+from .preparation import evaluation_scope, scoped_reuse, patch_calculation
 
 @dataclass(frozen=True)
 class Line:
@@ -164,13 +164,30 @@ def current_level_target(line,round_id,data,level):
     return max(level,line.levels[max(eligible,key=lambda r:round_index(r,data))]) if eligible else level
 
 
-def normalize_xp(level,xp,data):
+@patch_calculation
+def _xp_lookup(data):
     table=static(data,'xp_table')
     upper=max(map(int,table),default=0)+1
     lookup=np.full(upper+1,np.inf)
     for id,amount in table.items():
         lookup[int(id)]=float(amount)
-    for _ in range(len(table)):
+    lookup.flags.writeable=False
+    return upper,lookup,len(table)
+
+
+def _random_tape(seed,shape,*address):
+    """Uniform draws for one tape address; equal addresses always yield equal draws."""
+    def build():
+        entropy=np.random.SeedSequence([seed,*address]) if address else seed
+        values=np.random.default_rng(entropy).random(shape)
+        values.flags.writeable=False
+        return values
+    return scoped_reuse(None,('random_tape',seed,shape,address),build)
+
+
+def normalize_xp(level,xp,data):
+    upper,lookup,steps=_xp_lookup(data)
+    for _ in range(steps):
         required=lookup[np.minimum(level,upper)]
         increase=xp>=required
         if not increase.any():
@@ -178,6 +195,10 @@ def normalize_xp(level,xp,data):
         xp=np.where(increase,xp-required,xp)
         level=level+increase.astype(int)
     return level,xp
+
+
+# Below this many shopping rollouts, one full-width scan beats per-cost dispatch.
+GROUPED_PICK_ROWS=256
 
 
 def _np_sigmoid(value):
@@ -238,7 +259,10 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
     CapacityModel(data).check(owned_board(snapshot,data),read(snapshot,data,'level'),
         evidence_from_snapshot(snapshot,data),check_observed=True)
     capacity=evidence_from_snapshot(snapshot,data,item_bench=effects.item_bench_state)
-    prepared=RolloutBoard(board,data,guide,level=int(read(snapshot,data,'level')),capacity=capacity)
+    # Equal construction inputs share one prepared board and its exact power memo.
+    prepared=scoped_reuse(data,('rollout_board',comp_id,int(read(snapshot,data,'level')),board.units,board.bench,
+        None if board.trait_counts is None else tuple(sorted(board.trait_counts.items())),capacity),
+        lambda: RolloutBoard(board,data,guide,level=int(read(snapshot,data,'level')),capacity=capacity))
     initial=strength(board,int(read(snapshot,data,'level')),data,capacity=capacity)
     confidence=min(prepared.confidence,estimate_strength(board,int(read(snapshot,data,'level')),data,capacity=capacity).confidence)
     for name in ('terminal_gold_weight','terminal_hp_weight','fight_scale','survivor_scale_by_stage'):
@@ -249,20 +273,23 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
     ids=tuple(hp_map)
     health=tuple(hp_map.values())
     by_id={p.opponent_id:p for p in opponents}
-    fight_draws=np.random.default_rng(seed).random((count,len(rounds),2))
+    fight_draws=_random_tape(seed,(count,len(rounds),2))
     # Shop draws are addressed by round and refresh, independent of purchases and Line actions.
     contested={}
     for opponent in opponents:
         for id,copies in opponent.expected_copies.items():
             contested[id]=contested.get(id,0)+copies
-    pool=np.array([float(keyed(static(data,'pool_sizes'),int(c))) for c in prepared.costs])
+    pool_sizes={int(c):float(keyed(static(data,'pool_sizes'),int(c))) for c in np.unique(prepared.costs)}
+    pool=np.array([pool_sizes[int(c)] for c in prepared.costs])
     pool-=np.array([contested.get(id,0) for id in prepared.ids])
     pool=np.maximum(pool,0)
     total_income=sum(float(static(data,'gold_by_round').get(r,static(data,'gold_by_round').get('default',0)))+float(static(data,'interest')['cap'])+max(map(float,static(data,'streak_gold').values()),default=0)+float(rules['combat_win_gold'])+float(rules['pve_orb_gold'].get(r,0))+max(0,effects.gold_per_round)+max(0,float(effects.round_income.get(r,{}).get('gold',0))) for r in rounds)
     roll_cost=min(float(rules['roll_cost'])+effects.roll_cost_delta+float(effects.round_modifiers.get(r,{}).get('roll_cost_delta',0)) for r in rounds)
     if roll_cost<=0:
         raise DataError('Modified roll cost must be positive')
-    max_shops=int(ceil((float(read(snapshot,data,'gold'))+max(0,effects.gold_delta)+total_income)/roll_cost))+effects.free_rolls+1+int(sum(max(sale_value(u,data,effects.round_modifiers.get(r,{})) for r in rounds) for u in board.bench)/roll_cost)
+    unmodified_sale=tuple(sale_value(u,data,{}) for u in board.bench)
+    bench_sale={r:tuple(sale_value(u,data,effects.round_modifiers[r]) for u in board.bench) if r in effects.round_modifiers else unmodified_sale for r in rounds}
+    max_shops=int(ceil((float(read(snapshot,data,'gold'))+max(0,effects.gold_delta)+total_income)/roll_cost))+effects.free_rolls+1+int(sum(max(bench_sale[r][i] for r in rounds) for i in range(len(board.bench)))/roll_cost)
     base_slots=float(read(snapshot,data,'slot_count') if read(snapshot,data,'slot_count') is not None else rules['unknown_wisp_slots'])+effects.shop_slots_delta
     possible_slots=tuple(base_slots+float(effects.round_modifiers.get(r,{}).get('shop_slots_delta',0)) for r in rounds)
     slots=min(possible_slots)
@@ -274,7 +301,10 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
     from .bench import roll_sale_indices
     sale_indices=roll_sale_indices(board,data,target=comp_id,backup=backup_id)
     sale_units=tuple(board.bench[i] for i in sale_indices)
-    sale_copies=np.array([sum(3**(u.stars-1) for u in sale_units if canonical_id(u.unit_id,data)==id) for id in prepared.ids])
+    sold={}
+    for u in sale_units:
+        sold[canonical_id(u.unit_id,data)]=sold.get(canonical_id(u.unit_id,data),0)+3**(u.stars-1)
+    sale_copies=np.array([sold.get(id,0) for id in prepared.ids])
     deadline=main_roll_down(guide,data)
     goal_indices=np.array([prepared.index[id] for id in goals],dtype=int)
     goal_values=np.array(list(goals.values()))
@@ -288,6 +318,10 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
     total_odds=odds_lookup.sum(axis=1)
     odds_lookup=np.divide(odds_lookup,total_odds[:,None],out=np.zeros_like(odds_lookup),where=total_odds[:,None]>0)
     cumulative_odds=np.cumsum(odds_lookup,axis=1)
+    # Integral pool weights sum exactly in any order, so a draw can scan only
+    # its cost's roster; fractional contested pools keep the full-width scan.
+    integral_pool=bool((pool==np.floor(pool)).all())
+    cost_members={int(c):np.flatnonzero(prepared.costs==c) for c in np.unique(prepared.costs)}
     desired=np.array([goals.get(id,1) for id in prepared.ids])
     key_mask=np.array([id in goals for id in prepared.ids])
     current_shop=read(snapshot,data,'shop') if not required(snapshot,data,('shop',)) else None
@@ -303,6 +337,9 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
         return ()
     runs=count*len(lines)
     stabilizing=np.repeat([line.stabilize for line in lines],count)
+    any_stabilizing=bool(stabilizing.any())
+    interest=static(data,'interest')
+    reserve_cap=float(interest['cap'])/float(interest['gold_per_interest'])*float(interest['gold_per_tick'])
     gold=np.full(runs,float(read(snapshot,data,'gold'))+effects.gold_delta-effects.gold_reduction)
     hp=np.full(runs,float(read(snapshot,data,'hp')))
     level=np.full(runs,int(read(snapshot,data,'level')),dtype=int)
@@ -323,7 +360,7 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
         modifiers=effects.round_modifiers.get(round_id,{})
         roll_cost=float(rules['roll_cost'])+effects.roll_cost_delta+float(modifiers.get('roll_cost_delta',0))
         slots=base_slots+float(modifiers.get('shop_slots_delta',0))
-        sale_gold=sum(sale_value(u,data,modifiers) for u in sale_units)
+        sale_gold=sum(bench_sale[round_id][i] for i in sale_indices)
         alive=hp>0
         floor=np.repeat(np.array([line.rolls.get(round_id,np.nan) for line in lines]),count)
         has_floor=np.isfinite(floor)
@@ -332,7 +369,8 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
         copies-=selling[:,None]*sale_copies
         equipment_retained&=~(selling[:,None]&equipment_sales)
         bench_sold|=selling
-        target=np.repeat([current_level_target(line,round_id,data,int(level.reshape(len(lines),count)[i].min())) for i,line in enumerate(lines)],count)
+        lowest=level.reshape(len(lines),count).min(axis=1)
+        target=np.repeat([current_level_target(line,round_id,data,int(lowest[i])) for i,line in enumerate(lines)],count)
         cost=float(rules['xp_buy_cost']); amount=float(rules['xp_buy_amount'])
         if cost<=0 or amount<=0:
             raise DataError('XP purchase amounts must be positive')
@@ -385,28 +423,49 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
                 break
             gold-=paid*roll_cost
             free_rolls-=free
-            draws=np.tile(np.random.default_rng(np.random.SeedSequence([seed,ri,refresh,0x53484F50])).random((count,max_slots*2+1)),(len(lines),1))
+            draws=np.tile(_random_tape(seed,(count,max_slots*2+1),ri,refresh,0x53484F50),(len(lines),1))
             active_slots=np.floor(slots)+(draws[:,-1]<(slots-int(slots)))
+            # Levels are fixed while shopping; every slot's rows are within slot zero's.
+            shopping=level[active&(active_slots>0)]
+            if len(shopping) and (shopping.max()>=len(odds_lookup) or (total_odds[shopping]<=0).any()):
+                raise DataError('Shop odds contain no available roster cost or level')
+            slot_costs=np.sum(draws[:,0:max_slots*2:2,None]>cumulative_odds[np.minimum(level,len(odds_lookup)-1)][:,None,:],axis=2)+1
             for slot in range(max_slots):
                 rows=np.flatnonzero(active&(slot<active_slots))
                 if not len(rows):
                     continue
-                if level[rows].max()>=len(odds_lookup) or (total_odds[level[rows]]<=0).any():
-                    raise DataError('Shop odds contain no available roster cost or level')
-                remaining=np.maximum(pool[None,:]-copies[rows],0)
-                cost=np.sum(draws[rows,slot*2,None]>cumulative_odds[level[rows]],axis=1)+1
-                weights=np.where(prepared.costs[None,:]==cost[:,None],remaining,0)
-                totals=weights.sum(axis=1)
-                cumulative=np.cumsum(weights,axis=1)
-                picked=np.minimum(np.sum(draws[rows,slot*2+1,None]*totals[:,None]>=cumulative,axis=1),len(prepared.ids)-1)
+                cost=slot_costs[rows,slot]
+                if integral_pool and len(rows)>=GROUPED_PICK_ROWS:
+                    # Same selection as the full-width cumulative scan: the first
+                    # entry above the threshold is a positive member of this cost.
+                    totals=np.zeros(len(rows)); picked=np.full(len(rows),len(prepared.ids)-1)
+                    unit_draws=draws[rows,slot*2+1]
+                    order=np.argsort(cost,kind='stable')
+                    values,starts=np.unique(cost[order],return_index=True)
+                    for value,start,stop in zip(values.tolist(),starts.tolist(),starts[1:].tolist()+[len(order)]):
+                        members=cost_members.get(value)
+                        if members is None:
+                            continue
+                        group=order[start:stop]
+                        cumulative=np.cumsum(np.maximum(pool[members]-copies[rows[group,None],members],0),axis=1)
+                        totals[group]=cumulative[:,-1]
+                        position=np.sum(unit_draws[group,None]*cumulative[:,-1:]>=cumulative,axis=1)
+                        picked[group]=np.where(position<len(members),members[np.minimum(position,len(members)-1)],len(prepared.ids)-1)
+                else:
+                    remaining=np.maximum(pool[None,:]-copies[rows],0)
+                    weights=np.where(prepared.costs[None,:]==cost[:,None],remaining,0)
+                    totals=weights.sum(axis=1)
+                    cumulative=np.cumsum(weights,axis=1)
+                    picked=np.minimum(np.sum(draws[rows,slot*2+1,None]*totals[:,None]>=cumulative,axis=1),len(prepared.ids)-1)
                 wanted=prepared.target[picked]
-                if stabilizing[rows].any():
+                if any_stabilizing and stabilizing[rows].any():
                     proposal=copies[rows].copy(); proposal[np.arange(len(rows)),picked]+=1
                     improvement=(prepared.power(proposal,level[rows],equipment_retained=equipment_retained[rows],round_id=round_id)>prepared.power(copies[rows],level[rows],equipment_retained=equipment_retained[rows],round_id=round_id))&prepared.supported[picked]
                     wanted=np.where(stabilizing[rows],improvement,wanted)
-                need=stabilizing[rows]|(copies[rows,picked]<desired[picked])
-                interest=static(data,'interest')
-                reserve=np.minimum(gold[rows],float(interest['cap'])/float(interest['gold_per_interest'])*float(interest['gold_per_tick']))
+                need=copies[rows,picked]<desired[picked]
+                if any_stabilizing:
+                    need|=stabilizing[rows]
+                reserve=np.minimum(gold[rows],reserve_cap)
                 min_gold=np.where(key_mask[picked],0,np.where(has_floor[rows],floor[rows],np.where(counted[rows],0,reserve)))
                 buy=(totals>0)&wanted&need&(gold[rows]-prepared.costs[picked]>=min_gold)
                 gold[rows]-=buy*prepared.costs[picked]
@@ -415,6 +474,7 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
             refresh+=1
         forced=bool(deadline and round_index(round_id,data)>=round_index(deadline,data))
         power=prepared.power(copies,level,forced=forced,equipment_retained=equipment_retained,round_id=round_id)
+        fight_level=level
         other_powers=[curve[round_id]+offsets[id] for id in ids]
         kind=static(data,'round_types').get(round_id)
         if kind is None:
@@ -464,7 +524,7 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
         xp+=alive*(float(rules['passive_xp'])+effects.xp_per_round+float(reward.get('xp',0)))
         level,xp=normalize_xp(level,xp,data)
         # Passive XP can raise the terminal unit cap after the current fight.
-        terminal_power=prepared.power(copies,level,forced=forced,equipment_retained=equipment_retained,round_id=round_id)
+        terminal_power=power if np.array_equal(level,fight_level) else prepared.power(copies,level,forced=forced,equipment_retained=equipment_retained,round_id=round_id)
         terminal=_terminal(terminal_power,hp,other_powers,health,stage,data)
         # Held gold approximates future buying capacity beyond this bounded horizon.
         # This explicit family-1 coefficient remains default/carried until fitted.

@@ -15,7 +15,18 @@ class DataError(ValueError):
     """Invalid or unavailable data; callers retain their last good snapshot."""
 
 
+_SCALARS = frozenset((str, int, float, bool, type(None)))
+
+
 def freeze(value: Any) -> Any:
+    # Exact builtin types take the same branch as the general checks below.
+    kind = type(value)
+    if kind in _SCALARS:
+        return value
+    if kind is dict or kind is MappingProxyType:
+        return MappingProxyType({str(k): freeze(v) for k, v in value.items()})
+    if kind is tuple or kind is list:
+        return tuple(freeze(v) for v in value)
     if isinstance(value, Mapping):
         return MappingProxyType({str(k): freeze(v) for k, v in value.items()})
     if isinstance(value, (tuple, list)):

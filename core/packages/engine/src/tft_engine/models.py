@@ -4,13 +4,32 @@ from dataclasses import dataclass, field, fields, is_dataclass
 from collections.abc import Sequence
 from operator import index as sequence_index
 from datetime import datetime
+import json
+import weakref
+from types import MappingProxyType
 from typing import Any, Literal, Mapping
 from tft_data.models import freeze
 
 Mode = Literal['baseline', 'live', 'silent', 'review']
 
 
+_SCALARS = frozenset((str, int, float, bool, type(None)))
+_DATACLASS_FIELDS: dict[type, tuple[str, ...]] = {}
+
+
 def _encode(value: Any) -> Any:
+    # Exact builtin types and already-seen dataclasses take the same branch the
+    # general checks below would take; subclasses still use those checks.
+    kind = type(value)
+    if kind in _SCALARS:
+        return value
+    if kind is tuple or kind is list:
+        return [_encode(v) for v in value]
+    if kind is dict or kind is MappingProxyType:
+        return {k: _encode(v) for k, v in value.items()}
+    names = _DATACLASS_FIELDS.get(kind)
+    if names is not None:
+        return {name: _encode(getattr(value, name)) for name in names}
     if isinstance(value, GameHistory):
         return {'snapshots': _encode(value.snapshots), 'sightings': _encode(value.sightings)}
     if isinstance(value, HistoryWindow):
@@ -18,7 +37,10 @@ def _encode(value: Any) -> Any:
     if isinstance(value, datetime):
         return value.isoformat()
     if is_dataclass(value):
-        return {f.name: _encode(getattr(value, f.name)) for f in fields(value)}
+        names = tuple(f.name for f in fields(value))
+        if not isinstance(value, type):
+            _DATACLASS_FIELDS[kind] = names
+        return {name: _encode(getattr(value, name)) for name in names}
     if isinstance(value, Mapping):
         return {k: _encode(v) for k, v in value.items()}
     if isinstance(value, (tuple, list)):
@@ -240,3 +262,50 @@ class Advice:
 def rank_advice(items):
     priority = {'act_this_phase': 0, 'soon': 1, 'information': 2}
     return tuple(sorted(items, key=lambda a: (priority[a.urgency], -a.placement_impact, a.decision, a.action)))
+
+
+_ELEMENT_ENCODINGS: dict[tuple[int, str], tuple[weakref.ref, Any]] = {}
+_ELEMENT_ENCODERS = {
+    'json': lambda value: json.dumps(_encode(value), sort_keys=True, separators=(',', ':'), allow_nan=False),
+    'frozen': lambda value: freeze(_encode(value)),
+}
+
+
+def _element_encoding(value, kind):
+    """Exact encoding of one history element, retained while the element lives.
+
+    Snapshots and sightings freeze their contents, so one object always encodes
+    identically. Other element types are encoded on every call.
+    """
+    if type(value) not in (GameSnapshot, TraitSighting):
+        return _ELEMENT_ENCODERS[kind](value)
+    key = (id(value), kind)
+    entry = _ELEMENT_ENCODINGS.get(key)
+    if entry is not None and entry[0]() is value:
+        return entry[1]
+    result = _ELEMENT_ENCODERS[kind](value)
+
+    def forget(reference, key=key):
+        current = _ELEMENT_ENCODINGS.get(key)
+        if current is not None and current[0] is reference:
+            del _ELEMENT_ENCODINGS[key]
+    _ELEMENT_ENCODINGS[key] = (weakref.ref(value, forget), result)
+    return result
+
+
+def history_json(history: GameHistory) -> str:
+    """Compact key-sorted JSON of ``_encode(history)``, reusing element encodings."""
+    if type(history) is not GameHistory:
+        return json.dumps(_encode(history), sort_keys=True, separators=(',', ':'), allow_nan=False)
+    sightings = ','.join(_element_encoding(value, 'json') for value in history.sightings)
+    snapshots = ','.join(_element_encoding(value, 'json') for value in history.snapshots)
+    return '{"sightings":[' + sightings + '],"snapshots":[' + snapshots + ']}'
+
+
+def frozen_history(history: GameHistory):
+    """``freeze(_encode(history))``, reusing element encodings."""
+    if type(history) is not GameHistory:
+        return freeze(_encode(history))
+    return MappingProxyType({
+        'snapshots': tuple(_element_encoding(value, 'frozen') for value in history.snapshots),
+        'sightings': tuple(_element_encoding(value, 'frozen') for value in history.sightings)})

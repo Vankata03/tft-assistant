@@ -515,11 +515,12 @@ def history_evidence(context):
     import json
 
     if '_history_evidence' not in context.__dict__:
+        from .models import frozen_history, history_json
         if context.history.source_reference is None:
-            value=freeze(_encode(context.history))
+            value=frozen_history(context.history)
         else:
             source=dict(context.history.source_reference) | {'round_id': context.snapshot.round_id}
-            encoded=json.dumps(_encode(context.history),sort_keys=True,separators=(',',':'),allow_nan=False)
+            encoded=history_json(context.history)
             value=freeze({'source': source,'sha256': sha256(encoded.encode()).hexdigest()})
         object.__setattr__(context,'_history_evidence',value)
     return context.__dict__['_history_evidence']

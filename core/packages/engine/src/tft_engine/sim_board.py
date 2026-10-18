@@ -6,6 +6,22 @@ from .power import unit_power, trait_term, tunable, estimate_strength, stage_tun
 from .trait_forms import unit_trait_variants
 from .shop_math import owned_copies, canonical_id
 
+_ROW_MULTIPLIERS=np.random.default_rng(0x524F5753).integers(1,2**63,4096,dtype=np.uint64)|np.uint64(1)
+
+
+def _distinct_rows(packed):
+    """Group identical integer rows. A hash only proposes groups; every row is
+    compared with its representative, and any collision uses exact byte grouping."""
+    if packed.dtype.kind in 'iub' and packed.shape[1]<=len(_ROW_MULTIPLIERS):
+        hashes=packed.astype(np.uint64)@_ROW_MULTIPLIERS[:packed.shape[1]]
+        _,indices,inverse=np.unique(hashes,return_index=True,return_inverse=True)
+        if (packed==packed[indices][inverse]).all():
+            return indices,inverse
+    signature=packed.view(np.dtype((np.void,packed.dtype.itemsize*packed.shape[1]))).reshape(-1)
+    _,indices,inverse=np.unique(signature,return_index=True,return_inverse=True)
+    return indices,inverse
+
+
 class RolloutBoard:
     def __init__(self,board,data,guide,*,level,capacity=None):
         self.data=data
@@ -79,8 +95,7 @@ class RolloutBoard:
         if equipment_retained is None:
             equipment_retained=np.ones((len(copies),len(self.equipment_groups)),dtype=int)
         packed=np.ascontiguousarray(np.column_stack((copies,level,equipment_retained)))
-        signature=packed.view(np.dtype((np.void,packed.dtype.itemsize*packed.shape[1]))).reshape(-1)
-        _,indices,inverse=np.unique(signature,return_index=True,return_inverse=True)
+        indices,inverse=_distinct_rows(packed)
         states=packed[indices]
         keys=[(state.tobytes(),forced,round_id.split('-')[0] if round_id else None) for state in states]
         missing=[i for i,key in enumerate(keys) if key not in self._power_cache]

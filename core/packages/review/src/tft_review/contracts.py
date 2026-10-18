@@ -7,6 +7,7 @@ from datetime import datetime
 import json
 import math
 import re
+from types import MappingProxyType
 
 from tft_data.models import freeze
 
@@ -113,8 +114,19 @@ def history_prefix(observations, *, through_seq, captured_at, controls=None):
         'prefix_through_seq': through_seq, 'captured_at': captured_at, 'projection': 'replay_prefix_v1'})
 
 
+_SCALARS = frozenset((str, int, float, bool, type(None)))
+
+
 def json_value(value):
     """Copy public dataclass contracts to finite JSON values."""
+    # Exact builtin types take the branch the general checks below would take.
+    kind = type(value)
+    if kind in _SCALARS:
+        return value
+    if kind is dict or kind is MappingProxyType:
+        return {str(key): json_value(item) for key, item in value.items()}
+    if kind is tuple or kind is list:
+        return [json_value(item) for item in value]
     if isinstance(value, HistoryWindow):
         return [json_value(item) for item in value]
     if is_dataclass(value):

@@ -14,6 +14,7 @@ def calendar_value(table: Mapping, round_id, data):
     return table[max(eligible,key=lambda r:round_index(r,data))]
 
 
+@patch_calculation
 def standard_level(round_id, data):
     return int(calendar_value(static(data,'level_calendar'),round_id,data))
 
@@ -72,6 +73,17 @@ def par_unit_count(round_id,data):
 
 
 def growth_curve_lookup(round_id, data, *, curve=None, apply_correction=True):
+    if curve is None and apply_correction:
+        return _default_growth_lookup(round_id, data)
+    return _growth_curve_lookup(round_id, data, curve=curve, apply_correction=apply_correction)
+
+
+@patch_calculation
+def _default_growth_lookup(round_id, data):
+    return _growth_curve_lookup(round_id, data)
+
+
+def _growth_curve_lookup(round_id, data, *, curve=None, apply_correction=True):
     if curve is None and 'opponent_growth_curve' in data.tunables:
         curve=tunable(data,'opponent_growth_curve')
     correction = 1.

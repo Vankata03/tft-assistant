@@ -29,6 +29,8 @@ def strongest_owned_board(board,level,data,*,target=None,round_id=None,capacity=
     carry_pools={canonical_id(id,data) for id in guide.carry_ids} if guide else set()
     key_pools={canonical_id(id,data) for id in getattr(guide,'key_ids',())} if guide else set()
     candidates={}; scores={}; states={}
+    # Equal immutable units; built once instead of for every candidate board.
+    unpositioned=tuple(replace(u,position=None) for u in units)
     def progress(indices):
         if not guide:
             return 0
@@ -37,9 +39,9 @@ def strongest_owned_board(board,level,data,*,target=None,round_id=None,capacity=
         key=tuple(sorted(indices))
         if key in candidates:
             return candidates[key]
-        selected=tuple(units[i] if i<len(board.units) else replace(units[i],position=None) for i in sorted(indices))
+        selected=tuple(units[i] if i<len(board.units) else unpositioned[i] for i in key)
         counts=board.trait_counts if selected==board.units else None
-        result=Board(selected,tuple(replace(units[i],position=None) if i<len(board.units) else units[i] for i in range(len(units)) if i not in indices),counts)
+        result=Board(selected,tuple(unpositioned[i] if i<len(board.units) else units[i] for i in range(len(units)) if i not in indices),counts)
         candidates[key]=result
         return result
     def score(indices):
