@@ -76,7 +76,7 @@ Stop-Transcript
 
 Find TFT Assistant in the tray, including hidden tray icons. Click it or choose **Show status**. With no game, the shell should remain connected and report the client phase or client unavailable. An absent capture configuration should leave capture-dependent content unavailable while the shell/core connection remains usable. Open the client, enter a TFT game, and record whether phase changes appear. Phase visibility alone does not establish that the runtime accepted the session as TFT.
 
-Without qualified local assets, expect missing or unavailable advice. Missing configuration is a useful shell smoke test, not a successful capture test. Silent mode must show no game content or voice. Overlay permission remains disabled until checked geometry and anchors are supplied. A selectable mode does not prove Live advice or review jobs are integrated. Quit through the tray menu and retain any shutdown, incomplete-media or recoverable-log warning. The core may take several seconds to finish; a forced close is not a successful flush.
+Without qualified local assets, expect missing or unavailable advice. Missing configuration is a useful shell smoke test, not a successful capture test. Silent mode must show no game content or voice. Overlay permission remains disabled until checked geometry and anchors are supplied. A selectable mode does not qualify Live advice or review jobs on the tested Windows device. Quit through the tray menu and retain any shutdown, incomplete-media or recoverable-log warning. The core may take several seconds to finish; a forced close is not a successful flush.
 
 ## Required inputs for capture
 
@@ -134,6 +134,45 @@ Get-Content (Join-Path $env:LOCALAPPDATA 'tft-assistant\logs\core.log') -Tail 80
 ```
 
 No probe folder, no `poll.jsonl`, missing shutdown artifacts, black screenshots, or repeated native errors need investigation; record which files are absent. Screenshots and environment records can contain account names, desktop content and personal paths. Review and redact before sharing. Never share LCU tokens, API keys or authentication headers. Generated artifacts and credentials must stay out of Git.
+
+## Integrated software checkpoint
+
+The integration branch includes independently reviewed fitting workflows, ordinary-tag hover tooltips, combat planning previews with separate display receipts, and validated legacy review-gap bounds. These are software features awaiting the Windows checks below. Tickets 42, 44, 45 and 55 remain open until their full acceptance conditions are met; production inputs, target-device recognition and performance, and historical native teardown causality remain in tickets 48, 49 and 50.
+
+After setup, check the generated interface and run the complete UI suite before launch:
+
+```powershell
+npm --prefix .\ui run check:types
+if ($LASTEXITCODE -ne 0) { throw 'generated message types are stale' }
+npm --prefix .\ui test
+if ($LASTEXITCODE -ne 0) { throw 'UI tests failed; retain the output' }
+```
+
+The corrective software values a qualified observed Line with counted paid refreshes from the original decision state, exposes production `reader_disagreement` events and available matching keyframes through protected Debug access, and records unsolicited pivot adoption as `taken_without_call` when no matching call preceded the first movement. Later calls cannot retroactively motivate that movement. Observed adoption does not invent a pivot recommendation, display receipt, cost or follow-rate denominator.
+
+Observed-Line valuation requires a complete, fresh, source-accounted financial ledger across the original horizon, including intervals before, between and after roll bursts. Counted refreshes remain additional to natural shops; affordability and death can truncate them. Unknown spending or rewards, unsupported reward timing, sales, grants, Wisp purchases, active effects, XP-only purchases and unsupported same-round leveling after rolling remain unavailable. Source-qualified fixtures do not establish that an ordinary live PvP recording qualifies.
+
+Review-notice qualification requires the complete renderer-to-core path: a visible notice frame, an owned surface, authenticated membership and current report/job/delivery identities, followed by a durable `review_notice_shown` receipt. Publication time alone is not display time. Record the actual display latency from confirmed game end and any late notice after 30 seconds. The receipt belongs in separate `reviews/<game_id>.notice.json` transport metadata; it must not alter game logs, review inputs, reports, tags or job identity, trigger regeneration, become actionable advice or enter a follow-rate denominator. Hidden notices, including transparent ancestors, must produce no visible receipt. A malformed metadata file must yield a bounded error while keeping that client's review requests usable.
+
+Before testing, compare `git rev-parse HEAD` with the final commit SHA supplied in the owner's handoff. Independent review accepted paid-roll and pivot/Debug corrections at `7a80c488568f687ad2f0b34a2cae3e927306db9e` and the final notice visibility and malformed-metadata corrections at `eb5c88d0cdc97619ef9396b18ad1a6c6c2228fe1`. The integrated source matches that accepted candidate. Use the final handoff receipt to verify the pushed commit; this document alone does not prove remote parity.
+
+Default `uv sync --project .\core` installs the `dev` and `live` groups; `train` is explicit. The existing launcher test and typecheck commands remain required. A shell smoke test can proceed without capture assets: record the missing-settings status, connected core, available modes and clean quit. Without reviewed capture inputs, stop at that result. Do not substitute test fixtures for a profile, glyphs, accepted reader pointer or production snapshot. A complete training suite additionally requires the explicit `train` dependency group, verified external reader weights and the supported local tools, including FFmpeg; skips do not qualify those dependencies.
+
+If the external reader cache and FFmpeg are available, run the full training check separately. Use the verified cache path, not an empty directory:
+
+```powershell
+$env:TFT_READER_TEST_MODELS = Read-Host 'Verified external reader model cache path'
+uv sync --project .\core --group train --frozen
+if ($LASTEXITCODE -ne 0) { throw 'training dependencies failed' }
+uv run --project .\core --group train --frozen python -m pytest .\core\tests .\core\packages -q
+if ($LASTEXITCODE -ne 0) { throw 'full software suite failed; retain the output' }
+```
+
+Record passed, failed and skipped counts and process exit status. Windows may skip explicitly POSIX-only fixtures; those skips do not establish Windows equivalents. Missing weights, training dependencies or codec tools must remain explicit.
+
+With reviewed inputs on Windows, check that ordinary tag tooltips appear after dwelling without intercepting game clicks. During combat, the planning chip may show only a scheduled point from a qualified planning observation in the same round. Its separate `preview_shown` receipt is display evidence, not actionable advice or a follow-rate denominator entry. Record unavailable or paused previews, stale geometry, mode suppression and shutdown warnings rather than treating them as successful Live qualification. These checks still need actual game and device evidence.
+
+This handoff does not start an owner run. `tft-harness start-run` is a separate owner-data workflow that needs a deliberate owner action and qualified baseline inputs. Offline `eval`, `fit` and `fit --priors` require their documented committed tunables, immutable snapshots and qualified evidence; generated candidates remain unaccepted until owner review and commit.
 
 ## Verification recorded with this change
 

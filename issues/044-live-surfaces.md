@@ -168,3 +168,10 @@ Public red/green checks reproduced three gaps: the authenticated socket produced
 Focused verification passed 68 Python tests and 31 UI tests across nine files, plus generated types, TypeScript, schema freshness, both import contracts and whitespace checks. Default and public Electron builds passed; the public renderer excludes the preview text and Live assets, and the default build was restored. The current integration tip `a7bf2b6` was merged into the assigned branch and was already an ancestor.
 
 This remains an author-verified correction awaiting fresh independent review. The tests cover mounted DOM visibility, external IPC/WebSocket serialization boundaries, authenticated localhost transport and durable logs. They do not qualify actual Electron/native rendering, Windows/game behavior, current production inputs, latency or resource budgets. Ticket 44 and the wider runtime gates stay open.
+
+
+### 2026-10-18 — Final corrective integration and Windows handoff
+
+Accepted corrective source `eb5c88d0cdc97619ef9396b18ad1a6c6c2228fe1` is integrated through merge `7be66823ac2caa57d0e860c690ebe4b34717d965`. Independent notice review accepted ancestor visibility checks, restoration timing and malformed-sidecar recovery through the authenticated review path. Renderer-visible frames do not establish native compositor visibility. Ordinary tooltips and combat previews still require Windows game/device checks; their separate display receipts do not establish actionable advice or follow attribution. Full ticket acceptance remains open.
+
+Merged-root verification passed 146 focused Python tests in 59.07 seconds, 15 schema/message tests in 0.27 seconds, and all 133 UI tests across 28 files. Typecheck, generated types, production build, seven root-local package imports, frozen lock and whitespace checks passed. The first UI attempt had 132 passes and one `spawnSync uv ENOENT` environment failure; the pinned PATH retry passed without source changes. The exact-source 1113-test full gate remains the complete Python evidence. Windows qualification and unmet ticket requirements remain open.
