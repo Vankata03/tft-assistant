@@ -1,0 +1,583 @@
+{
+  "date": "2026-10-18",
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "python": "3.14.7",
+  "qualification": "Synthetic workstation CPU measurements; not target hardware, capture-to-screen, recognition or gameplay accuracy qualification",
+  "checkout_commits": {
+    "baseline": "aca9768d1af40fdb03b40982c00f839ea7357470",
+    "candidate": "09174bba599969f991b293735a521c6b3d3983e6"
+  },
+  "cases": [
+    {
+      "case": "planning_65_guides",
+      "arguments": [
+        "--guides",
+        "65",
+        "--rollouts",
+        "64",
+        "--repeats",
+        "7"
+      ],
+      "baseline": {
+        "augment_pool": 0,
+        "evaluation_seconds": [
+          0.3219329579733312,
+          0.31798845797311515,
+          0.3165324579458684,
+          0.3168182499939576,
+          0.3115896249655634,
+          0.3086088749114424,
+          0.3089962499216199
+        ],
+        "guides": 65,
+        "projected_comps": 0,
+        "projected_concrete_lines": 0,
+        "qualification": "Mac CPU smoke, synthetic statistics; no Ryzen/live/fitted qualification",
+        "rollouts": 64,
+        "roster_units": 65,
+        "scored_lines": 36,
+        "simulated_comps": 3,
+        "simulation_diagnostics": {
+          "executed_concrete_lines": 39,
+          "executed_rollouts": 2496,
+          "executed_simulation_calls": 6,
+          "simulation_cache_hits": 0,
+          "simulation_requests": 6
+        },
+        "simulation_reuse": true,
+        "two_slot_fixture": false,
+        "workload": {
+          "reason_counterfactual_lines": 3,
+          "rollouts_per_line": 64,
+          "simulated_concrete_lines": 36,
+          "simulation_passes": 3
+        },
+        "median_seconds": 0.3165324579458684
+      },
+      "candidate": {
+        "augment_pool": 0,
+        "evaluation_seconds": [
+          0.27824391692411155,
+          0.2713203749153763,
+          0.26387783302925527,
+          0.2667362919310108,
+          0.263625834020786,
+          0.2674208329990506,
+          0.2646750839194283
+        ],
+        "guides": 65,
+        "projected_comps": 0,
+        "projected_concrete_lines": 0,
+        "qualification": "Mac CPU smoke, synthetic statistics; no Ryzen/live/fitted qualification",
+        "rollouts": 64,
+        "roster_units": 65,
+        "scored_lines": 36,
+        "simulated_comps": 3,
+        "simulation_diagnostics": {
+          "executed_concrete_lines": 39,
+          "executed_rollouts": 2496,
+          "executed_simulation_calls": 6,
+          "simulation_cache_hits": 0,
+          "simulation_requests": 6
+        },
+        "simulation_reuse": true,
+        "two_slot_fixture": false,
+        "workload": {
+          "reason_counterfactual_lines": 3,
+          "rollouts_per_line": 64,
+          "simulated_concrete_lines": 36,
+          "simulation_passes": 3
+        },
+        "median_seconds": 0.2667362919310108
+      },
+      "speedup": 1.1866868795931862,
+      "reduction_percent": 15.731772450133196,
+      "output_sha256": {
+        "baseline": "a8b424579adbbd08c0e0dd7cfbd33651ff2506abb2be4e183285e28f4730758f",
+        "candidate": "a8b424579adbbd08c0e0dd7cfbd33651ff2506abb2be4e183285e28f4730758f"
+      },
+      "exact_output_parity": true
+    },
+    {
+      "case": "combat_65_guides",
+      "arguments": [
+        "--guides",
+        "65",
+        "--rollouts",
+        "64",
+        "--combat",
+        "--repeats",
+        "5"
+      ],
+      "baseline": {
+        "augment_pool": 0,
+        "evaluation_seconds": [
+          0.3442432919982821,
+          0.3287999579915777,
+          0.3300587080884725,
+          0.33065529190935194,
+          0.3305101249134168
+        ],
+        "guides": 65,
+        "projected_comps": 0,
+        "projected_concrete_lines": 0,
+        "qualification": "Mac CPU smoke, synthetic statistics; no Ryzen/live/fitted qualification",
+        "rollouts": 64,
+        "roster_units": 65,
+        "scored_lines": 36,
+        "simulated_comps": 3,
+        "simulation_diagnostics": {
+          "executed_concrete_lines": 39,
+          "executed_rollouts": 2496,
+          "executed_simulation_calls": 6,
+          "simulation_cache_hits": 0,
+          "simulation_requests": 6
+        },
+        "simulation_reuse": true,
+        "two_slot_fixture": false,
+        "workload": {
+          "reason_counterfactual_lines": 3,
+          "rollouts_per_line": 64,
+          "simulated_concrete_lines": 36,
+          "simulation_passes": 3
+        },
+        "median_seconds": 0.3305101249134168
+      },
+      "candidate": {
+        "augment_pool": 0,
+        "evaluation_seconds": [
+          0.2940797080518678,
+          0.2818454160587862,
+          0.28201183397322893,
+          0.2821325840195641,
+          0.2833037910750136
+        ],
+        "guides": 65,
+        "projected_comps": 0,
+        "projected_concrete_lines": 0,
+        "qualification": "Mac CPU smoke, synthetic statistics; no Ryzen/live/fitted qualification",
+        "rollouts": 64,
+        "roster_units": 65,
+        "scored_lines": 36,
+        "simulated_comps": 3,
+        "simulation_diagnostics": {
+          "executed_concrete_lines": 39,
+          "executed_rollouts": 2496,
+          "executed_simulation_calls": 6,
+          "simulation_cache_hits": 0,
+          "simulation_requests": 6
+        },
+        "simulation_reuse": true,
+        "two_slot_fixture": false,
+        "workload": {
+          "reason_counterfactual_lines": 3,
+          "rollouts_per_line": 64,
+          "simulated_concrete_lines": 36,
+          "simulation_passes": 3
+        },
+        "median_seconds": 0.2821325840195641
+      },
+      "speedup": 1.1714709453428394,
+      "reduction_percent": 14.637234156298874,
+      "output_sha256": {
+        "baseline": "65378b127aba3863a96203375fe129b33eb494512aa929de58826242a43ed4ec",
+        "candidate": "65378b127aba3863a96203375fe129b33eb494512aa929de58826242a43ed4ec"
+      },
+      "exact_output_parity": true
+    },
+    {
+      "case": "two_slot_65_guides",
+      "arguments": [
+        "--guides",
+        "65",
+        "--rollouts",
+        "64",
+        "--large-unit",
+        "--repeats",
+        "3"
+      ],
+      "baseline": {
+        "augment_pool": 0,
+        "evaluation_seconds": [
+          0.9253312910441309,
+          0.9124996250029653,
+          0.9104047919390723
+        ],
+        "guides": 65,
+        "projected_comps": 0,
+        "projected_concrete_lines": 0,
+        "qualification": "Mac CPU smoke, synthetic statistics; no Ryzen/live/fitted qualification",
+        "rollouts": 64,
+        "roster_units": 65,
+        "scored_lines": 36,
+        "simulated_comps": 3,
+        "simulation_diagnostics": {
+          "executed_concrete_lines": 39,
+          "executed_rollouts": 2496,
+          "executed_simulation_calls": 6,
+          "simulation_cache_hits": 0,
+          "simulation_requests": 6
+        },
+        "simulation_reuse": true,
+        "two_slot_fixture": true,
+        "workload": {
+          "reason_counterfactual_lines": 3,
+          "rollouts_per_line": 64,
+          "simulated_concrete_lines": 36,
+          "simulation_passes": 3
+        },
+        "median_seconds": 0.9124996250029653
+      },
+      "candidate": {
+        "augment_pool": 0,
+        "evaluation_seconds": [
+          0.585481374990195,
+          0.5717358329566196,
+          0.5723188330885023
+        ],
+        "guides": 65,
+        "projected_comps": 0,
+        "projected_concrete_lines": 0,
+        "qualification": "Mac CPU smoke, synthetic statistics; no Ryzen/live/fitted qualification",
+        "rollouts": 64,
+        "roster_units": 65,
+        "scored_lines": 36,
+        "simulated_comps": 3,
+        "simulation_diagnostics": {
+          "executed_concrete_lines": 39,
+          "executed_rollouts": 2496,
+          "executed_simulation_calls": 6,
+          "simulation_cache_hits": 0,
+          "simulation_requests": 6
+        },
+        "simulation_reuse": true,
+        "two_slot_fixture": true,
+        "workload": {
+          "reason_counterfactual_lines": 3,
+          "rollouts_per_line": 64,
+          "simulated_concrete_lines": 36,
+          "simulation_passes": 3
+        },
+        "median_seconds": 0.5723188330885023
+      },
+      "speedup": 1.5943903507048458,
+      "reduction_percent": 37.280102105615384,
+      "output_sha256": {
+        "baseline": "17b472f17b4607f348d8fdaf2a05e9dc74aae88bd5be7dcb335c2ee301658d28",
+        "candidate": "17b472f17b4607f348d8fdaf2a05e9dc74aae88bd5be7dcb335c2ee301658d28"
+      },
+      "exact_output_parity": true
+    },
+    {
+      "case": "augment_12_pool",
+      "arguments": [
+        "--guides",
+        "8",
+        "--rollouts",
+        "8",
+        "--augment-pool",
+        "12",
+        "--repeats",
+        "3"
+      ],
+      "baseline": {
+        "augment_pool": 12,
+        "evaluation_seconds": [
+          1.8373714999761432,
+          1.8324186248937622,
+          1.821848291088827
+        ],
+        "guides": 8,
+        "projected_comps": 3,
+        "projected_concrete_lines": 36,
+        "qualification": "Mac CPU smoke, synthetic statistics; no Ryzen/live/fitted qualification",
+        "rollouts": 8,
+        "roster_units": 65,
+        "scored_lines": 0,
+        "simulated_comps": 0,
+        "simulation_diagnostics": {
+          "executed_concrete_lines": 507,
+          "executed_rollouts": 4056,
+          "executed_simulation_calls": 78,
+          "simulation_cache_hits": 0,
+          "simulation_requests": 78
+        },
+        "simulation_reuse": true,
+        "two_slot_fixture": false,
+        "workload": {},
+        "median_seconds": 1.8324186248937622
+      },
+      "candidate": {
+        "augment_pool": 12,
+        "evaluation_seconds": [
+          1.6559499169234186,
+          1.6855307089863345,
+          1.6595719170290977
+        ],
+        "guides": 8,
+        "projected_comps": 3,
+        "projected_concrete_lines": 36,
+        "qualification": "Mac CPU smoke, synthetic statistics; no Ryzen/live/fitted qualification",
+        "rollouts": 8,
+        "roster_units": 65,
+        "scored_lines": 0,
+        "simulated_comps": 0,
+        "simulation_diagnostics": {
+          "executed_concrete_lines": 507,
+          "executed_rollouts": 4056,
+          "executed_simulation_calls": 78,
+          "simulation_cache_hits": 0,
+          "simulation_requests": 78
+        },
+        "simulation_reuse": true,
+        "two_slot_fixture": false,
+        "workload": {},
+        "median_seconds": 1.6595719170290977
+      },
+      "speedup": 1.1041513815045076,
+      "reduction_percent": 9.432708526125456,
+      "output_sha256": {
+        "baseline": "65f0532c86c0764ad12b6c0d50390cd09f85a705aba05484c33cc2617d50f69a",
+        "candidate": "65f0532c86c0764ad12b6c0d50390cd09f85a705aba05484c33cc2617d50f69a"
+      },
+      "exact_output_parity": true
+    },
+    {
+      "case": "live_65_guides_reread",
+      "arguments": [
+        "--guides",
+        "65",
+        "--rollouts",
+        "64",
+        "--live",
+        "--repeats",
+        "7"
+      ],
+      "baseline": {
+        "augment_pool": 0,
+        "evaluation_seconds": [
+          0.3596777910133824,
+          0.34392524999566376,
+          0.34673970798030496,
+          0.34412983304355294,
+          0.3446119580185041,
+          0.3446713750017807,
+          0.34534995805006474
+        ],
+        "guides": 65,
+        "live_delivery": {
+          "decision_evidence_sha256": "15ea4e1efc5653ab67a4903e758a932d1939c7df58720477b15bc3c28cca1993",
+          "evidence_records": 84,
+          "simulation_diagnostics": {
+            "executed_concrete_lines": 39,
+            "executed_rollouts": 2496,
+            "executed_simulation_calls": 6,
+            "simulation_cache_hits": 0,
+            "simulation_requests": 6
+          },
+          "summary_bytes": 25429
+        },
+        "projected_comps": 0,
+        "projected_concrete_lines": 0,
+        "qualification": "Mac CPU smoke, synthetic statistics; no Ryzen/live/fitted qualification",
+        "rollouts": 64,
+        "roster_units": 65,
+        "scored_lines": 36,
+        "simulated_comps": 3,
+        "simulation_diagnostics": {
+          "executed_concrete_lines": 39,
+          "executed_rollouts": 2496,
+          "executed_simulation_calls": 6,
+          "simulation_cache_hits": 0,
+          "simulation_requests": 6
+        },
+        "simulation_reuse": true,
+        "two_slot_fixture": false,
+        "workload": {
+          "reason_counterfactual_lines": 3,
+          "rollouts_per_line": 64,
+          "simulated_concrete_lines": 36,
+          "simulation_passes": 3
+        },
+        "median_seconds": 0.3446713750017807
+      },
+      "candidate": {
+        "augment_pool": 0,
+        "evaluation_seconds": [
+          0.3084619170986116,
+          0.059083374915644526,
+          0.059553875005804,
+          0.05898374994285405,
+          0.0596731670666486,
+          0.05962000007275492,
+          0.059382791980169713
+        ],
+        "guides": 65,
+        "live_delivery": {
+          "decision_evidence_sha256": "15ea4e1efc5653ab67a4903e758a932d1939c7df58720477b15bc3c28cca1993",
+          "evidence_records": 84,
+          "simulation_diagnostics": {
+            "executed_concrete_lines": 0,
+            "executed_rollouts": 0,
+            "executed_simulation_calls": 0,
+            "simulation_cache_hits": 6,
+            "simulation_requests": 6
+          },
+          "summary_bytes": 25429
+        },
+        "projected_comps": 0,
+        "projected_concrete_lines": 0,
+        "qualification": "Mac CPU smoke, synthetic statistics; no Ryzen/live/fitted qualification",
+        "rollouts": 64,
+        "roster_units": 65,
+        "scored_lines": 36,
+        "simulated_comps": 3,
+        "simulation_diagnostics": {
+          "executed_concrete_lines": 39,
+          "executed_rollouts": 2496,
+          "executed_simulation_calls": 6,
+          "simulation_cache_hits": 0,
+          "simulation_requests": 6
+        },
+        "simulation_reuse": true,
+        "two_slot_fixture": false,
+        "workload": {
+          "reason_counterfactual_lines": 3,
+          "rollouts_per_line": 64,
+          "simulated_concrete_lines": 36,
+          "simulation_passes": 3
+        },
+        "median_seconds": 0.059553875005804
+      },
+      "speedup": 5.787555805028467,
+      "reduction_percent": 82.72154889407443,
+      "output_sha256": {
+        "baseline": "a8b424579adbbd08c0e0dd7cfbd33651ff2506abb2be4e183285e28f4730758f",
+        "candidate": "a8b424579adbbd08c0e0dd7cfbd33651ff2506abb2be4e183285e28f4730758f"
+      },
+      "exact_output_parity": true,
+      "exact_live_evidence_parity": true
+    },
+    {
+      "case": "live_12_history_reread",
+      "arguments": [
+        "--history",
+        "12",
+        "--repeats",
+        "7"
+      ],
+      "baseline": {
+        "qualification": "Synthetic macOS CPU evaluation and evidence only; no capture/UI/game accuracy qualification",
+        "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+        "python": "3.14.7",
+        "sources": {
+          "tft_engine": "core/packages/engine/src/tft_engine/__init__.py",
+          "tft_live": "core/packages/live/src/tft_live/__init__.py"
+        },
+        "historical_snapshots": 12,
+        "evaluation_seconds": [
+          0.07531174994073808,
+          0.07534179091453552,
+          0.07568091689608991,
+          0.07562591705936939,
+          0.075576875009574,
+          0.07543587498366833,
+          0.07549383293371648
+        ],
+        "median_seconds": 0.07549383293371648,
+        "decision_evidence_sha256": "bdc4051eedad7b564f5bcb8069541fb0ae5cb6924cbf3356bef37c948c1ddf9c",
+        "expanded_evidence_bytes": 124928,
+        "evidence_records": 31
+      },
+      "candidate": {
+        "qualification": "Synthetic macOS CPU evaluation and evidence only; no capture/UI/game accuracy qualification",
+        "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+        "python": "3.14.7",
+        "sources": {
+          "tft_engine": "core/packages/engine/src/tft_engine/__init__.py",
+          "tft_live": "core/packages/live/src/tft_live/__init__.py"
+        },
+        "historical_snapshots": 12,
+        "evaluation_seconds": [
+          0.01732970797456801,
+          0.017298540915362537,
+          0.01793591701425612,
+          0.01736520789563656,
+          0.01728270808234811,
+          0.017246417002752423,
+          0.017278417013585567
+        ],
+        "median_seconds": 0.017298540915362537,
+        "decision_evidence_sha256": "bdc4051eedad7b564f5bcb8069541fb0ae5cb6924cbf3356bef37c948c1ddf9c",
+        "expanded_evidence_bytes": 124928,
+        "evidence_records": 31
+      },
+      "speedup": 4.364173446944979,
+      "reduction_percent": 77.08615360601621,
+      "output_sha256": {
+        "baseline": "bdc4051eedad7b564f5bcb8069541fb0ae5cb6924cbf3356bef37c948c1ddf9c",
+        "candidate": "bdc4051eedad7b564f5bcb8069541fb0ae5cb6924cbf3356bef37c948c1ddf9c"
+      },
+      "exact_output_parity": true
+    },
+    {
+      "case": "replay_300_decisions",
+      "arguments": [
+        "--decisions",
+        "300"
+      ],
+      "baseline": {
+        "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+        "python": "3.14.7",
+        "sources": {
+          "tft_data": "core/packages/data/src/tft_data/__init__.py",
+          "tft_engine": "core/packages/engine/src/tft_engine/__init__.py",
+          "tft_review": "core/packages/review/src/tft_review/__init__.py"
+        },
+        "identity": {
+          "commit": "aca9768d1af40fdb03b40982c00f839ea7357470",
+          "dirty": false,
+          "dirty_hash": null,
+          "runtime_source_hash": "ab34e025183ecede26ed69f9d01f218a92426a2403e6291f58851f0b3cd0f8cf",
+          "runtime_mismatches": []
+        },
+        "decisions": 300,
+        "records": 600,
+        "producer_seconds": 7.824989625019953,
+        "producer_peak_rss_bytes": 153747456,
+        "producer_retained_rss_bytes": 139132928,
+        "serialized_bytes": 8246986,
+        "serialization_seconds": 0.4283055409323424,
+        "serialization_peak_rss_bytes": 153747456,
+        "median_seconds": 7.824989625019953
+      },
+      "candidate": {
+        "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+        "python": "3.14.7",
+        "sources": {
+          "tft_data": "core/packages/data/src/tft_data/__init__.py",
+          "tft_engine": "core/packages/engine/src/tft_engine/__init__.py",
+          "tft_review": "core/packages/review/src/tft_review/__init__.py"
+        },
+        "identity": {
+          "commit": "09174bba599969f991b293735a521c6b3d3983e6",
+          "dirty": false,
+          "dirty_hash": null,
+          "runtime_source_hash": "0a041f075065d7ae519cb4f5d1d5558d2991919348494b77de1c861b54f27dc2",
+          "runtime_mismatches": []
+        },
+        "decisions": 300,
+        "records": 600,
+        "producer_seconds": 7.258436167030595,
+        "producer_peak_rss_bytes": 151830528,
+        "producer_retained_rss_bytes": 136167424,
+        "serialized_bytes": 8246986,
+        "serialization_seconds": 0.4250445000361651,
+        "serialization_peak_rss_bytes": 151830528,
+        "median_seconds": 7.258436167030595
+      },
+      "speedup": 1.0780544796360911,
+      "reduction_percent": 7.240309382364352
+    }
+  ]
+}
