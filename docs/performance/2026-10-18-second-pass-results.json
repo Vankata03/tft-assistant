@@ -1,0 +1,341 @@
+{
+  "cases": [
+    {
+      "arguments": [
+        "--guides",
+        "65",
+        "--rollouts",
+        "64",
+        "--repeats",
+        "7"
+      ],
+      "baseline": {
+        "evaluation_seconds": [
+          0.32911491696722806,
+          0.27170179202221334,
+          0.27395887509919703,
+          0.27325454202946275,
+          0.2748735840432346,
+          0.27211333299055696,
+          0.27213729196228087
+        ],
+        "median_seconds": 0.27325454202946275,
+        "simulation_diagnostics": {
+          "executed_concrete_lines": 39,
+          "executed_rollouts": 2496,
+          "executed_simulation_calls": 6,
+          "simulation_cache_hits": 0,
+          "simulation_requests": 6
+        }
+      },
+      "candidate": {
+        "evaluation_seconds": [
+          0.21396287507377565,
+          0.204200292006135,
+          0.20045037497766316,
+          0.1999863749369979,
+          0.19937945902347565,
+          0.19861441699322313,
+          0.19914804096333683
+        ],
+        "median_seconds": 0.1999863749369979,
+        "simulation_diagnostics": {
+          "executed_concrete_lines": 39,
+          "executed_rollouts": 2496,
+          "executed_simulation_calls": 6,
+          "simulation_cache_hits": 0,
+          "simulation_requests": 6
+        }
+      },
+      "case": "planning",
+      "serialized_result_identical": true
+    },
+    {
+      "arguments": [
+        "--guides",
+        "65",
+        "--rollouts",
+        "64",
+        "--combat",
+        "--repeats",
+        "7"
+      ],
+      "baseline": {
+        "evaluation_seconds": [
+          0.29583566705696285,
+          0.2820406249957159,
+          0.28319416695740074,
+          0.2833859999664128,
+          0.2821213750867173,
+          0.2824502500006929,
+          0.2853562500094995
+        ],
+        "median_seconds": 0.28319416695740074,
+        "simulation_diagnostics": {
+          "executed_concrete_lines": 39,
+          "executed_rollouts": 2496,
+          "executed_simulation_calls": 6,
+          "simulation_cache_hits": 0,
+          "simulation_requests": 6
+        }
+      },
+      "candidate": {
+        "evaluation_seconds": [
+          0.22524725005496293,
+          0.2109360839240253,
+          0.21141120907850564,
+          0.21587641607038677,
+          0.21557274996303022,
+          0.21108041692059487,
+          0.21075141592882574
+        ],
+        "median_seconds": 0.21141120907850564,
+        "simulation_diagnostics": {
+          "executed_concrete_lines": 39,
+          "executed_rollouts": 2496,
+          "executed_simulation_calls": 6,
+          "simulation_cache_hits": 0,
+          "simulation_requests": 6
+        }
+      },
+      "case": "combat",
+      "serialized_result_identical": true
+    },
+    {
+      "arguments": [
+        "--guides",
+        "65",
+        "--rollouts",
+        "64",
+        "--large-unit",
+        "--repeats",
+        "7"
+      ],
+      "baseline": {
+        "evaluation_seconds": [
+          0.5773731659865007,
+          0.5666424999944866,
+          0.563605249975808,
+          0.5668597499607131,
+          0.5674268750008196,
+          0.5686950000235811,
+          0.5689857080578804
+        ],
+        "median_seconds": 0.5674268750008196,
+        "simulation_diagnostics": {
+          "executed_concrete_lines": 39,
+          "executed_rollouts": 2496,
+          "executed_simulation_calls": 6,
+          "simulation_cache_hits": 0,
+          "simulation_requests": 6
+        }
+      },
+      "candidate": {
+        "evaluation_seconds": [
+          0.3839127910323441,
+          0.371375665999949,
+          0.3755642499309033,
+          0.37125470803584903,
+          0.3720914169680327,
+          0.37201504094991833,
+          0.3728790000313893
+        ],
+        "median_seconds": 0.3720914169680327,
+        "simulation_diagnostics": {
+          "executed_concrete_lines": 39,
+          "executed_rollouts": 2496,
+          "executed_simulation_calls": 6,
+          "simulation_cache_hits": 0,
+          "simulation_requests": 6
+        }
+      },
+      "case": "large",
+      "serialized_result_identical": true
+    },
+    {
+      "arguments": [
+        "--augment-pool",
+        "12",
+        "--guides",
+        "8",
+        "--rollouts",
+        "8",
+        "--repeats",
+        "7"
+      ],
+      "baseline": {
+        "evaluation_seconds": [
+          1.6375982919707894,
+          1.6423853340093046,
+          1.687637499999255,
+          1.6402254170970991,
+          1.6540963749866933,
+          1.6215339590562508,
+          1.6274303330574185
+        ],
+        "median_seconds": 1.6402254170970991,
+        "simulation_diagnostics": {
+          "executed_concrete_lines": 507,
+          "executed_rollouts": 4056,
+          "executed_simulation_calls": 78,
+          "simulation_cache_hits": 0,
+          "simulation_requests": 78
+        }
+      },
+      "candidate": {
+        "evaluation_seconds": [
+          1.234434875077568,
+          1.2212269169976935,
+          1.2007428749930114,
+          1.207350500044413,
+          1.2160025408957154,
+          1.2069789581000805,
+          1.2070199160370976
+        ],
+        "median_seconds": 1.207350500044413,
+        "simulation_diagnostics": {
+          "executed_concrete_lines": 507,
+          "executed_rollouts": 4056,
+          "executed_simulation_calls": 78,
+          "simulation_cache_hits": 0,
+          "simulation_requests": 78
+        }
+      },
+      "case": "augment",
+      "serialized_result_identical": true
+    },
+    {
+      "baseline": {
+        "decision_evidence_sha256": "bdc4051eedad7b564f5bcb8069541fb0ae5cb6924cbf3356bef37c948c1ddf9c",
+        "evaluation_seconds": [
+          0.017339458921924233,
+          0.017311208066530526,
+          0.01780074997805059,
+          0.01733566599432379,
+          0.017280207946896553,
+          0.01720616698730737,
+          0.017237207968719304
+        ],
+        "median_seconds": 0.017311208066530526
+      },
+      "candidate": {
+        "decision_evidence_sha256": "bdc4051eedad7b564f5bcb8069541fb0ae5cb6924cbf3356bef37c948c1ddf9c",
+        "evaluation_seconds": [
+          0.011409500031732023,
+          0.012049832963384688,
+          0.011257500038482249,
+          0.01127091608941555,
+          0.011251624906435609,
+          0.011251374962739646,
+          0.011250250041484833
+        ],
+        "median_seconds": 0.011257500038482249
+      },
+      "case": "live12",
+      "command": "python -m tests.benchmark_live_latency --history 12 --repeats 7"
+    },
+    {
+      "baseline": {
+        "decision_evidence_sha256": "975573743ae7f8518093f5412ba228e1fcc946ed22a48df96db8b0eb18fd71fb",
+        "evaluation_seconds": [
+          0.08243016700726002,
+          0.08237995905801654,
+          0.08268108300399035,
+          0.08245887502562255,
+          0.08711616601794958,
+          0.08402750000823289,
+          0.08410570898558944
+        ],
+        "median_seconds": 0.08268108300399035
+      },
+      "candidate": {
+        "decision_evidence_sha256": "975573743ae7f8518093f5412ba228e1fcc946ed22a48df96db8b0eb18fd71fb",
+        "evaluation_seconds": [
+          0.055308875045739114,
+          0.05514587496872991,
+          0.05636591697111726,
+          0.057643957901746035,
+          0.05994237493723631,
+          0.05569570790976286,
+          0.055389458080753684
+        ],
+        "median_seconds": 0.05569570790976286
+      },
+      "case": "live120",
+      "command": "python -m tests.benchmark_live_latency --history 120 --repeats 7"
+    },
+    {
+      "baseline": {
+        "decision_evidence_sha256": "15ea4e1efc5653ab67a4903e758a932d1939c7df58720477b15bc3c28cca1993",
+        "evaluation_seconds": [
+          0.3065047910204157,
+          0.0592034999281168,
+          0.05943462497089058,
+          0.05896004103124142,
+          0.05913095804862678,
+          0.05920395802240819,
+          0.05906504194717854
+        ],
+        "first_seconds": 0.3065047910204157,
+        "repeat_median_seconds": 0.05916722898837179
+      },
+      "candidate": {
+        "decision_evidence_sha256": "15ea4e1efc5653ab67a4903e758a932d1939c7df58720477b15bc3c28cca1993",
+        "evaluation_seconds": [
+          0.22822358296252787,
+          0.042525290977209806,
+          0.041785707930102944,
+          0.04169462504796684,
+          0.041784207918681204,
+          0.04223749996162951,
+          0.04189420794136822
+        ],
+        "first_seconds": 0.22822358296252787,
+        "repeat_median_seconds": 0.04183995793573558
+      },
+      "case": "live65",
+      "command": "benchmark_engine.py --guides 65 --rollouts 64 --repeats 7 --live"
+    },
+    {
+      "baseline": {
+        "identity": {
+          "commit": "e40d9e7583db92faba5363c74ec44c0ba8f4aa64",
+          "dirty": false,
+          "dirty_hash": null,
+          "runtime_mismatches": [],
+          "runtime_source_hash": "0a041f075065d7ae519cb4f5d1d5558d2991919348494b77de1c861b54f27dc2"
+        },
+        "producer_peak_rss_bytes": 151568384,
+        "producer_retained_rss_bytes": 135905280,
+        "producer_seconds": 7.160744916065596,
+        "serialization_seconds": 0.4214193749940023,
+        "serialized_bytes": 8246986
+      },
+      "candidate": {
+        "identity": {
+          "commit": "8567228092d90e2b19a19731575dbd061edb0e5b",
+          "dirty": false,
+          "dirty_hash": null,
+          "runtime_mismatches": [],
+          "runtime_source_hash": "2665636ae33e140d17aba08ee8c29b8e6d356a66bb033e73e32c8abf98e8ff89"
+        },
+        "producer_peak_rss_bytes": 152829952,
+        "producer_retained_rss_bytes": 136118272,
+        "producer_seconds": 3.289890499901958,
+        "serialization_seconds": 0.322292958968319,
+        "serialized_bytes": 8246986
+      },
+      "case": "replay300",
+      "command": "python -m tests.benchmark_replay_resources --decisions 300",
+      "replay_document_difference": "Only commit and runtime_source_hash identity fields differ (60-decision full-document diff)"
+    }
+  ],
+  "checkout_commits": {
+    "baseline": "e40d9e7583db92faba5363c74ec44c0ba8f4aa64",
+    "candidate": "8567228092d90e2b19a19731575dbd061edb0e5b"
+  },
+  "date": "2026-10-18",
+  "platform": "macOS arm64 (same workstation as the first pass)",
+  "python": "3.14.7",
+  "qualification": "Synthetic workstation CPU measurements; not target hardware, capture-to-screen, recognition or gameplay accuracy qualification"
+}
