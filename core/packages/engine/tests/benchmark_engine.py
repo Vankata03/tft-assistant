@@ -21,6 +21,7 @@ def main():
     parser.add_argument('--repeats',type=int,default=1)
     parser.add_argument('--augment-pool',type=int,default=0)
     parser.add_argument('--no-reuse',action='store_true')
+    parser.add_argument('--live',action='store_true',help='Time the complete Live advisor, including bounded reuse on repeated identical inputs')
     args=parser.parse_args()
     spec=importlib.util.spec_from_file_location('synthetic_engine_examples',Path(__file__).with_name('test_planning.py'))
     fixture=importlib.util.module_from_spec(spec); spec.loader.exec_module(fixture)
@@ -64,8 +65,18 @@ def main():
     if args.repeats<1:
         parser.error('--repeats must be positive')
     elapsed=[]
+    if args.live:
+        from tft_live.advisor import LiveAdvisor
+        advisor=LiveAdvisor()
     for _ in range(args.repeats):
-        start=perf_counter(); result=evaluate(state,fixture.GameHistory(),data,'review',reuse_simulations=not args.no_reuse); elapsed.append(perf_counter()-start)
+        start=perf_counter()
+        if args.live:
+            delivery=advisor.evaluate(state,fixture.GameHistory(),data,mode='live')
+        else:
+            result=evaluate(state,fixture.GameHistory(),data,'review',reuse_simulations=not args.no_reuse)
+        elapsed.append(perf_counter()-start)
+    if args.live:
+        result=evaluate(state,fixture.GameHistory(),data,'review',reuse_simulations=not args.no_reuse)
     if any(a.payload.get('paused') and a.decision in (('augment',) if args.augment_pool else ('econ','plan','transition')) for a in result.advice):
         raise RuntimeError([(a.decision,a.payload.get('reason')) for a in result.advice if a.payload.get('paused')])
     if args.result_json:
@@ -74,6 +85,14 @@ def main():
     output={'projected_comps':len(projected),'projected_concrete_lines':sum(len(rows) for rows in projected.values()),'qualification':'Mac CPU smoke, synthetic statistics; no Ryzen/live/fitted qualification',
         'two_slot_fixture':args.large_unit,'augment_pool':args.augment_pool,'simulation_reuse':not args.no_reuse,'guides':len(guides),'roster_units':len(units),'rollouts':args.rollouts,'evaluation_seconds':elapsed,'workload':dict(result.workload),'simulation_diagnostics':dict(result.simulation_diagnostics),
         'simulated_comps':sum(f.simulated for f in result.comp_fits.values()),'scored_lines':sum(len(v) for v in result.line_results.values())}
+    if args.live:
+        from hashlib import sha256
+        evidence=delivery.evidence.resolve()
+        diagnostics=evidence.pop('simulation_diagnostics')
+        output['live_delivery']={'simulation_diagnostics':diagnostics,
+            'decision_evidence_sha256':sha256(json.dumps(evidence,sort_keys=True,separators=(',',':'),allow_nan=False).encode()).hexdigest(),
+            'summary_bytes':len(json.dumps(delivery.content,allow_nan=False).encode()),
+            'evidence_records':len(delivery.evidence.objects)}
     if args.roster_cache:
         from tft_data.adapters import CommunityDragon
         sourced=CommunityDragon(json.loads(args.roster_cache.read_text()),18).entities()
