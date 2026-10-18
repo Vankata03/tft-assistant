@@ -3,8 +3,17 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from tft_data.models import DataError, TaggedValue
 from tft_data.capacity import integral, validate_capacity, unit_slot_cost
+from .preparation import patch_calculation
 
 
+@patch_calculation
+def _rules(data):
+    return validate_capacity(data.static, data.entities)
+
+
+@patch_calculation
+def _slot_cost(unit_id, data):
+    return unit_slot_cost(data.entities, unit_id)
 
 @dataclass(frozen=True)
 class CapacityState:
@@ -34,12 +43,12 @@ class CapacityEvidence:
 class CapacityModel:
     def __init__(self,data):
         self.data=data
-        self.rules=validate_capacity(data.static,data.entities)
+        self.rules=_rules(data)
         self.levels=self.rules['levels'];self.traits=self.rules['trait_bonuses']
         self.augments=self.rules['held_augment_slots'];self.items=self.rules['inventory_item_slots']
 
     def cost(self,unit_id):
-        return unit_slot_cost(self.data.entities,unit_id)
+        return _slot_cost(unit_id,self.data)
 
     def base(self,level):
         integral(level,'level',1)

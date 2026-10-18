@@ -6,6 +6,44 @@ import runpy
 import pytest
 
 
+def test_live_advisor_reuses_reconstructed_causal_history_without_changing_evidence():
+    from dataclasses import replace
+    from datetime import timedelta
+    from statistics import median
+    from time import perf_counter
+    from tft_engine import GameHistory, GameSnapshot
+    from tft_live.advisor import LiveAdvisor
+
+    fixtures = runpy.run_path(str(Path(__file__).parents[1] /
+                                 "packages/engine/tests/test_planning.py"))
+    data, initial = fixtures["patch"](), fixtures["snapshot"]()
+    states = tuple(replace(initial, snapshot_id=f"frame-{index}",
+        captured_at=initial.captured_at + timedelta(seconds=index),
+        fields={name: replace(value, read_at=value.read_at + timedelta(seconds=index))
+                for name, value in initial.fields.items()}) for index in range(13))
+    advisor = LiveAdvisor()
+    # Storage decoding reconstructs equivalent objects for every request.
+    def history():
+        return GameHistory(tuple(GameSnapshot.from_dict(row.to_dict()) for row in states[:-1]))
+
+    expected = LiveAdvisor().evaluate(states[-1], history(), data, mode="live")
+    advisor.evaluate(states[-2], GameHistory(states[:-2]), data, mode="live")
+    warm, cold = [], []
+    for _ in range(3):
+        prefix = history()
+        start = perf_counter()
+        actual = advisor.evaluate(states[-1], prefix, data, mode="live")
+        warm.append(perf_counter() - start)
+        start = perf_counter()
+        LiveAdvisor().evaluate(states[-1], prefix, data, mode="live")
+        cold.append(perf_counter() - start)
+    actual_evidence, expected_evidence = actual.evidence.resolve(), expected.evidence.resolve()
+    actual_evidence.pop("simulation_diagnostics")
+    expected_evidence.pop("simulation_diagnostics")
+    assert actual_evidence == expected_evidence
+    assert median(warm) < .65 * median(cold), (warm, cold)
+
+
 def test_live_delivery_keeps_engine_order_and_resolves_complete_line_evidence():
     from tft_live.advisor import LiveAdvisor
     from tft_engine import GameHistory, evaluate
@@ -41,6 +79,109 @@ def test_live_delivery_keeps_engine_order_and_resolves_complete_line_evidence():
     for row, advice in zip(delivery.content["advice"], original.advice):
         assert row["payload"].get("paused") == advice.payload.get("paused")
         assert row["validity"] == list(advice.validity)
+
+
+def test_live_history_reuse_invalidates_changed_prefixes_data_and_games():
+    from dataclasses import replace
+    from datetime import timedelta
+    from tft_engine import GameHistory, TraitSighting, evaluate
+    from tft_engine.models import _encode
+    from tft_live.advisor import LiveAdvisor
+
+    fixtures = runpy.run_path(str(Path(__file__).parents[1] /
+                                 "packages/engine/tests/test_planning.py"))
+    data, initial = fixtures["patch"](), fixtures["snapshot"]()
+    current = replace(initial, captured_at=initial.captured_at + timedelta(seconds=1),
+        fields={name: replace(value, read_at=value.read_at + timedelta(seconds=1))
+                for name, value in initial.fields.items()}, snapshot_id="current")
+    changed = replace(initial, fields=dict(initial.fields) | {
+        "comp_lock": fixtures["FieldValue"]("B", initial.captured_at, "fixture")})
+    changed_data = replace(data, tunables=dict(data.tunables) | {
+        "unit_weight": fixtures["tag"](2)})  # The visible snapshot id is unchanged.
+    other = replace(current, game_id="other-game")
+    sighting = TraitSighting("p1", initial.round_id, 3, {"fire": 1}, read_at=initial.captured_at)
+    advisor = LiveAdvisor()
+    for state, history, patch in (
+        (current, GameHistory((initial,)), data),
+        (current, GameHistory((changed,)), data),
+        (current, GameHistory((initial,), (sighting,)), data),
+        (current, GameHistory(), data),
+        (current, GameHistory((initial,)), changed_data),
+        (other, GameHistory((initial,)), data),
+        (current, GameHistory((initial,)), data),
+    ):
+        expected = _encode(evaluate(state, history, patch, "live"))
+        actual = advisor.evaluate(state, history, patch, mode="live").evidence.resolve()
+        actual.pop("simulation_diagnostics")
+        expected.pop("simulation_diagnostics")
+        assert actual == expected
+    assert advisor.evaluate(current, GameHistory(), data, mode="baseline") is None
+    actual = advisor.evaluate(current, GameHistory((changed,)), data, mode="live").evidence.resolve()
+    expected = _encode(evaluate(current, GameHistory((changed,)), data, "live"))
+    actual.pop("simulation_diagnostics")
+    expected.pop("simulation_diagnostics")
+    assert actual == expected
+
+
+def test_live_rereads_reuse_simulations_but_refresh_evidence_and_reject_stale_coverage():
+    from dataclasses import replace
+    from datetime import timedelta
+    from tft_engine import GameHistory, evaluate
+    from tft_engine.models import _encode
+    from tft_live.advisor import LiveAdvisor
+
+    fixtures = runpy.run_path(str(Path(__file__).parents[1] /
+                                 "packages/engine/tests/test_planning.py"))
+    data, first = fixtures["patch"](), fixtures["snapshot"]()
+    advisor = LiveAdvisor()
+    advisor.evaluate(first, GameHistory(), data, mode="live")
+    later = first.captured_at + timedelta(seconds=1)
+    fresh = replace(first, captured_at=later, snapshot_id="reread",
+                    fields={name: replace(value, read_at=later) for name, value in first.fields.items()})
+    actual = advisor.evaluate(fresh, GameHistory(), data, mode="live").evidence.resolve()
+    diagnostics = actual.pop("simulation_diagnostics")
+    expected = _encode(evaluate(fresh, GameHistory(), data, "live"))
+    expected.pop("simulation_diagnostics")
+    assert actual == expected
+    assert diagnostics["executed_simulation_calls"] == 0
+    assert diagnostics["simulation_cache_hits"] > 0
+    stale = replace(fresh, captured_at=later + timedelta(seconds=3))
+    invalid = advisor.evaluate(stale, GameHistory(), data, mode="live").evidence.resolve()
+    assert invalid["line_results"] == {}
+    assert any(row["payload"].get("paused") for row in invalid["advice"])
+    changed = replace(fresh, fields=dict(fresh.fields) | {
+        "gold": replace(fresh.fields["gold"], value=20)})
+    actual = advisor.evaluate(changed, GameHistory(), data, mode="live").evidence.resolve()
+    diagnostics = actual.pop("simulation_diagnostics")
+    expected = _encode(evaluate(changed, GameHistory(), data, "live"))
+    expected.pop("simulation_diagnostics")
+    assert actual == expected
+    assert diagnostics["executed_simulation_calls"] > 0
+
+
+def test_live_simulation_reuse_evicts_old_states_and_keeps_exact_results():
+    from dataclasses import replace
+    from tft_engine import GameHistory, evaluate
+    from tft_engine.models import _encode
+    from tft_live.advisor import LiveAdvisor
+
+    fixtures = runpy.run_path(str(Path(__file__).parents[1] /
+                                 "packages/engine/tests/test_planning.py"))
+    data, state = fixtures["patch"](), fixtures["snapshot"]()
+    advisor = LiveAdvisor()
+    advisor.evaluate(state, GameHistory(), data, mode="live")
+    # More distinct decisions than the bounded Live memo can retain.
+    for gold in range(35, 75):
+        changed = replace(state, fields=dict(state.fields) | {
+            "gold": replace(state.fields["gold"], value=gold)})
+        advisor.evaluate(changed, GameHistory(), data, mode="live")
+    actual = advisor.evaluate(state, GameHistory(), data, mode="live").evidence.resolve()
+    assert actual.pop("simulation_diagnostics")["executed_simulation_calls"] > 0
+    expected = _encode(evaluate(state, GameHistory(), data, "live"))
+    expected.pop("simulation_diagnostics")
+    assert actual == expected
+    repeated = advisor.evaluate(state, GameHistory(), data, mode="live").evidence.resolve()
+    assert repeated["simulation_diagnostics"]["executed_simulation_calls"] == 0
 
 
 def test_live_advisor_suppresses_other_modes_and_reports_missing_data():

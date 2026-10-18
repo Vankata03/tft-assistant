@@ -5,6 +5,7 @@ from math import exp, log
 from typing import Mapping
 from tft_data.models import DataError, DataSnapshot
 from .models import Board
+from .preparation import patch_calculation
 
 
 @dataclass(frozen=True)
@@ -65,6 +66,7 @@ def lobby_rate(data):
     return float(rate)
 
 
+@patch_calculation
 def unit_power(unit_id, stars, data):
     entity = data.entities[unit_id]
     baseline = keyed(keyed(tunable(data, 'cost_star_baseline'), entity.cost), stars)

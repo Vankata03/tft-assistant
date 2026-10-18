@@ -11,6 +11,7 @@ from .models import Board, Unit, _encode
 from .power import static, tunable, keyed, sigmoid, strength, estimate_strength
 from .growth import growth_curve_lookup, standard_level
 from .opponents import round_index
+from .preparation import evaluation_scope
 
 @dataclass(frozen=True)
 class Line:
@@ -196,6 +197,7 @@ def _terminal(power,hp,opponent_powers,opponent_hp,stage,data):
     return result
 
 
+@evaluation_scope
 def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=None,opponents=(),seed=None,backup_id=None,assume_keys_on_time=False):
     """Return every scored concrete Line; all candidates use the same random tape."""
     from .planning import required, read
@@ -285,6 +287,7 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
             odds_lookup[:,ci]=0
     total_odds=odds_lookup.sum(axis=1)
     odds_lookup=np.divide(odds_lookup,total_odds[:,None],out=np.zeros_like(odds_lookup),where=total_odds[:,None]>0)
+    cumulative_odds=np.cumsum(odds_lookup,axis=1)
     desired=np.array([goals.get(id,1) for id in prepared.ids])
     key_mask=np.array([id in goals for id in prepared.ids])
     current_shop=read(snapshot,data,'shop') if not required(snapshot,data,('shop',)) else None
@@ -390,9 +393,8 @@ def simulate_lines(snapshot,history,data,comp_id,lines,*,effects=None,rollouts=N
                     continue
                 if level[rows].max()>=len(odds_lookup) or (total_odds[level[rows]]<=0).any():
                     raise DataError('Shop odds contain no available roster cost or level')
-                odds=odds_lookup[level[rows]]
                 remaining=np.maximum(pool[None,:]-copies[rows],0)
-                cost=np.sum(draws[rows,slot*2,None]>np.cumsum(odds,axis=1),axis=1)+1
+                cost=np.sum(draws[rows,slot*2,None]>cumulative_odds[level[rows]],axis=1)+1
                 weights=np.where(prepared.costs[None,:]==cost[:,None],remaining,0)
                 totals=weights.sum(axis=1)
                 cumulative=np.cumsum(weights,axis=1)

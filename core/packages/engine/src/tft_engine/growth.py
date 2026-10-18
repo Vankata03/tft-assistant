@@ -4,6 +4,7 @@ from math import isfinite
 from tft_data.models import DataError, freeze
 from .power import static, tunable, keyed, unit_power, stage_items
 from .opponents import round_index, unit_play_rate
+from .preparation import patch_calculation
 
 
 def calendar_value(table: Mapping, round_id, data):
@@ -62,6 +63,7 @@ def average_unit_power(level, round_id, data, *, count_only=False):
     return total
 
 
+@patch_calculation
 def par_unit_count(round_id,data):
     """Physical-unit approximation from the sourced base budget and slot mix."""
     from .capacity import CapacityModel

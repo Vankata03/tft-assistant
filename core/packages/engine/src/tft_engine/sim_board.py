@@ -56,7 +56,7 @@ class RolloutBoard:
         for t in self.traits:
             points=data.entities[t].values['breakpoints'].value
             self.trait_values.append(tuple((int(p),trait_term({t:int(p)},data)[0]*float(tunable(data,'trait_weight'))) for p in points))
-        self.initial=np.array([owned_copies(board,data).get(id,0) for id in self.ids],dtype=int)
+        self.initial=np.array([held.get(id,0) for id in self.ids],dtype=int)
         self.items=estimate_strength(board,level,data,capacity=capacity).item_term
         self.target=np.array([id in target_pools for id in self.ids])
         weights=tunable(data,'classifier_weights')

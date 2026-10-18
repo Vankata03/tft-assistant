@@ -12,6 +12,7 @@ from .registry import FitTerm, DomainHook
 from .comp_fit import CompFit, screen_comp, rounds_left_to_live
 from .transition import strongest_owned_board, transition_advice
 from .shop_math import hit_probability, owned_copies, key_goals, canonical_id
+from .preparation import evaluation_scope, patch_calculation
 
 @dataclass(frozen=True)
 class GamePlan:
@@ -287,34 +288,61 @@ def _line_choice(snapshot,data,previous,plan,results):
     return replace(plan,line=chosen.line)
 
 
-def _simulation_reuse():
-    """A request-local memo: fit-only changes reuse identical stochastic outputs."""
-    import json
-    from .effects import captured, combine
-    memo={}; models={}
-    stats={'simulation_requests':0,'simulation_cache_hits':0,'executed_simulation_calls':0,'executed_concrete_lines':0,'executed_rollouts':0}
-    names=('board','bench','gold','hp','level','xp','streak','lobby','lobby_complete','team_slot_budget','held_augments','held_augments_complete','item_bench','item_inventory_complete','slot_count','shop')
-    def simulate(snapshot,history,data,comp_id,lines,**options):
+class SimulationCache:
+    """Exact stochastic memo with optional LRU limits for a single Live owner.
+
+    Keys contain semantic inputs, resolved effects, opponents, seeds and Lines.
+    Entry and rollout/projection limits bound retained results across rereads.
+    The ordinary Engine uses an unbounded memo scoped to its one request.
+    """
+    def __init__(self, *, max_entries=None, max_samples=None):
+        from collections import OrderedDict
+        self.memo = OrderedDict()
+        self.max_entries, self.max_samples = max_entries, max_samples
+        self.samples = 0
+        self.reset_statistics()
+
+    def reset_statistics(self):
+        self.stats = {'simulation_requests':0,'simulation_cache_hits':0,'executed_simulation_calls':0,'executed_concrete_lines':0,'executed_rollouts':0}
+
+    def workload(self):
+        return freeze(self.stats)
+
+    def __call__(self,snapshot,history,data,comp_id,lines,**options):
+        import json
+        from .effects import captured, combine
         from .lobby import alive_lobby
         alive_lobby(snapshot,data) # Coverage must qualify before any cache lookup.
         identity=id(data)
-        if identity not in models:
-            models[identity]=(data,json.dumps(_encode(data),sort_keys=True,separators=(',',':'),allow_nan=False))
+        names=('board','bench','gold','hp','level','xp','streak','lobby','lobby_complete','team_slot_budget','held_augments','held_augments_complete','item_bench','item_inventory_complete','slot_count','shop')
         effect=combine(captured(snapshot,data),options.get('effects'))
         inputs={'round':snapshot.round_id,'fields':{name:read(snapshot,data,name) for name in names},
-            'comp':comp_id,'lines':tuple(lines),'options':options|{'effects':effect},'model':models[identity][1]}
+            'comp':comp_id,'lines':tuple(lines),'options':options|{'effects':effect},'model':identity}
         key=json.dumps(_encode(inputs),sort_keys=True,separators=(',',':'),allow_nan=False)
-        stats['simulation_requests']+=1
-        if key in memo:
-            stats['simulation_cache_hits']+=1
+        self.stats['simulation_requests']+=1
+        if key in self.memo:
+            self.stats['simulation_cache_hits']+=1
+            self.memo.move_to_end(key)
+            result, _, _ = self.memo[key]
         else:
-            stats['executed_simulation_calls']+=1
-            stats['executed_concrete_lines']+=len(lines)
-            stats['executed_rollouts']+=len(lines)*int(options.get('rollouts') or tunable(data,'rollouts_full'))
-            memo[key]=simulate_lines(snapshot,history,data,comp_id,lines,**options)
-        return memo[key]
-    simulate.workload=lambda:freeze(stats)
-    return simulate
+            self.stats['executed_simulation_calls']+=1
+            self.stats['executed_concrete_lines']+=len(lines)
+            self.stats['executed_rollouts']+=len(lines)*int(options.get('rollouts') or tunable(data,'rollouts_full'))
+            result=simulate_lines(snapshot,history,data,comp_id,lines,**options)
+            samples=sum(len(row.rollout_placements)+len(row.rollout_deaths)+8*len(row.projections) for row in result)
+            # Retaining each entry's immutable data prevents identity reuse;
+            # eviction releases temporary choice/universe snapshots as well.
+            self.memo[key]=(result,samples,data)
+            self.samples+=samples
+            while self.memo and ((self.max_entries is not None and len(self.memo)>self.max_entries)
+                    or (self.max_samples is not None and self.samples>self.max_samples)):
+                _,(_,removed,_)=self.memo.popitem(last=False)
+                self.samples-=removed
+        return result
+
+
+def _simulation_reuse():
+    return SimulationCache()
 
 def _step(snapshot,history,data,previous,hooks,*,seed=None,effects=None,rollouts=None,_simulation=None):
     from .effects import captured, combine
@@ -461,11 +489,18 @@ def _hook_advice(hooks,context):
     return tuple(items)
 
 
+@patch_calculation
+def _model_hash(data):
+    from hashlib import sha256
+    import json
+    return sha256(json.dumps(_encode(data.tunables),sort_keys=True,separators=(',',':')).encode()).hexdigest()
+
+
 def decision_evidence(advice,context,names):
     from hashlib import sha256
     import json
     fields={name:_encode(context.snapshot.fields.get(name)) for name in names}
-    model_hash=sha256(json.dumps(_encode(context.data.tunables),sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    model_hash=_model_hash(context.data)
     fingerprint={'round':context.snapshot.round_id,'fields':fields,'history':history_evidence(context),
         'data_snapshot_id':context.data.snapshot_id,'model_hash':model_hash}
     semantic={'round':context.snapshot.round_id,'values':{name:_encode(read(context.snapshot,context.data,name)) for name in names},'data':context.data.snapshot_id,'model':model_hash}
@@ -479,13 +514,14 @@ def history_evidence(context):
     from hashlib import sha256
     import json
 
-    if context.history.source_reference is None:
-        return _encode(context.history)
     if '_history_evidence' not in context.__dict__:
-        source=dict(context.history.source_reference) | {'round_id': context.snapshot.round_id}
-        encoded=json.dumps(_encode(context.history),sort_keys=True,separators=(',',':'),allow_nan=False)
-        object.__setattr__(context,'_history_evidence',freeze({'source': source,
-            'sha256': sha256(encoded.encode()).hexdigest()}))
+        if context.history.source_reference is None:
+            value=freeze(_encode(context.history))
+        else:
+            source=dict(context.history.source_reference) | {'round_id': context.snapshot.round_id}
+            encoded=json.dumps(_encode(context.history),sort_keys=True,separators=(',',':'),allow_nan=False)
+            value=freeze({'source': source,'sha256': sha256(encoded.encode()).hexdigest()})
+        object.__setattr__(context,'_history_evidence',value)
     return context.__dict__['_history_evidence']
 
 
@@ -510,9 +546,9 @@ def core_evidence(items,context):
 
 
 class PlanningHistory:
-    """Request-local memo of exact causal planning prefixes.
+    """Caller-owned memo of exact causal planning prefixes.
 
-    Entries are reused only while the same immutable snapshot objects and
+    Entries are reused only while equal immutable snapshots and
     sightings occur in the same order with the same data and hook registry.
     A changed prefix discards the suffix. This is an optimization of the
     historical fold, never a substitute for evaluating the current decision.
@@ -528,6 +564,7 @@ class PlanningHistory:
         return self.entries
 
 
+@evaluation_scope
 def evaluate(snapshot,history,data,mode,*,hooks=None,seed=None,effects=None,rollouts=None,reuse_simulations=True,_simulation=None,history_fold=None):
     if mode in ('baseline','silent'):
         return EngineEvaluation(GamePlan())
@@ -554,7 +591,7 @@ def evaluate(snapshot,history,data,mode,*,hooks=None,seed=None,effects=None,roll
             sightings=tuple(s for s in history.sightings if (s.read_at<=state.captured_at if s.read_at else round_index(s.round_id,data)<=round_index(state.round_id,data)))
             if entries is not None and index<len(entries):
                 old_state,old_sightings,old_plan=entries[index]
-                if old_state is state and old_sightings==sightings:
+                if old_state==state and old_sightings==sightings:
                     plan=old_plan
                     continue
                 del entries[index:]

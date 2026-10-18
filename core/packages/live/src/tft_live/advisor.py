@@ -7,7 +7,7 @@ from hashlib import sha256
 from tft_engine.evidence import EvidenceGraph, canonical_bytes
 from tft_engine.models import _encode
 from .surfaces import next_planning_preview, opponent_rows, roll_tracker
-from tft_engine.planning import evaluate, observed_phase, field_age
+from tft_engine.planning import PlanningHistory, SimulationCache, evaluate, observed_phase, field_age
 
 
 DISPLAY_KEYS = frozenset((
@@ -37,10 +37,28 @@ class LiveDelivery:
 
 
 class LiveAdvisor:
+    def __init__(self):
+        self._reset()
+
+    def _reset(self):
+        self._history_fold = PlanningHistory()
+        self._simulation = None
+        self._data = None
+        self._game_id = None
+
     def evaluate(self, snapshot, history, data, *, mode):
         if mode != "live":
+            self._reset()
             return None
-        result = evaluate(snapshot, history, data, "live")
+        if self._data is not data or self._game_id != snapshot.game_id:
+            self._history_fold = PlanningHistory()
+            self._simulation = SimulationCache(max_entries=32, max_samples=32768)
+            self._data, self._game_id = data, snapshot.game_id
+        # Diagnostics describe this update even when stochastic results were
+        # reused. Current fields, freshness, plan and evidence are rebuilt.
+        self._simulation.reset_statistics()
+        result = evaluate(snapshot, history, data, "live", history_fold=self._history_fold,
+                          _simulation=self._simulation)
         evidence = EvidenceGraph.factor(_encode(result))
         rows = []
         for index, advice in enumerate(result.advice):

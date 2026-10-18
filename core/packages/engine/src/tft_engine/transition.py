@@ -5,6 +5,7 @@ from .lines import guide_line
 from .opponents import round_index
 from .shop_math import canonical_id
 from dataclasses import replace
+from .preparation import evaluation_scope
 
 
 def main_roll_down(guide,data):
@@ -12,6 +13,7 @@ def main_roll_down(guide,data):
     return min(rolls,key=lambda r:round_index(r,data)) if rolls else None
 
 
+@evaluation_scope
 def strongest_owned_board(board,level,data,*,target=None,round_id=None,capacity=None,generic_item_power=None):
     from .capacity import CapacityModel
     model=CapacityModel(data)
@@ -26,20 +28,34 @@ def strongest_owned_board(board,level,data,*,target=None,round_id=None,capacity=
     target_pools={canonical_id(id,data) for id in guide.units} if guide else set()
     carry_pools={canonical_id(id,data) for id in guide.carry_ids} if guide else set()
     key_pools={canonical_id(id,data) for id in getattr(guide,'key_ids',())} if guide else set()
+    candidates={}; scores={}; states={}
     def progress(indices):
         if not guide:
             return 0
         return sum(float(weights['carry'] if canonical_id(units[i].unit_id,data) in carry_pools else weights['key'] if canonical_id(units[i].unit_id,data) in key_pools else weights['other']) for i in indices if canonical_id(units[i].unit_id,data) in target_pools)
     def candidate(indices):
+        key=tuple(sorted(indices))
+        if key in candidates:
+            return candidates[key]
         selected=tuple(units[i] if i<len(board.units) else replace(units[i],position=None) for i in sorted(indices))
         counts=board.trait_counts if selected==board.units else None
-        return Board(selected,tuple(replace(units[i],position=None) if i<len(board.units) else units[i] for i in range(len(units)) if i not in indices),counts)
+        result=Board(selected,tuple(replace(units[i],position=None) if i<len(board.units) else units[i] for i in range(len(units)) if i not in indices),counts)
+        candidates[key]=result
+        return result
     def score(indices):
-        value=estimate_strength(candidate(indices),level,data,capacity=capacity)
-        return value.power if generic_item_power is None else value.unit_term+value.trait_term+generic_item_power
+        key=tuple(sorted(indices))
+        if key not in scores:
+            value=estimate_strength(candidate(indices),level,data,capacity=capacity)
+            scores[key]=value.power if generic_item_power is None else value.unit_term+value.trait_term+generic_item_power
+        return scores[key]
+    def state(indices):
+        key=tuple(sorted(indices))
+        if key not in states:
+            states[key]=model.state(candidate(indices),level,capacity)
+        return states[key]
     def can_add(indices,new):
-        before=model.state(candidate(indices),level,capacity)
-        after=model.state(candidate(indices+[new]),level,capacity)
+        before=state(indices)
+        after=state(indices+[new])
         return len(indices)<28 and before.occupied_slots<=before.maximum_slots and before.occupied_slots+costs[new]<=before.maximum_slots and after.occupied_slots<=after.maximum_slots
     def fill(indices):
         indices=list(indices)
