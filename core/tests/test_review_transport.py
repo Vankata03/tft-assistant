@@ -336,3 +336,52 @@ def test_slow_notice_flush_keeps_same_socket_mode_responsive_and_cancels_on_new_
                 assert error['code']=='review_notice_rejected'
                 assert not (logs.root/'reviews'/'123.notice.json').exists()
     asyncio.run(scenario())
+
+
+def test_malformed_notice_metadata_rejects_without_killing_same_socket_review_requests(tmp_path):
+    from datetime import datetime, UTC
+    from tft_engine.evidence import EvidenceGraph
+    async def scenario():
+        logs=SessionStore(tmp_path/'app',tmp_path/'config',live_installed=True)
+        logs.set_mode('baseline');logs.start_game('123');logs.end_game()
+        graph=EvidenceGraph.factor({'game_id':'123','summary':{'top5':[]},'moments':[]})
+        logs.write_review('123',{'schema_version':1,'report_id':graph.root_id,'evidence_graph':graph.to_dict()},engine_version='fixture',data_snapshot_id='fixture')
+        before=logs.log_path('123').read_bytes(),logs.read_review('123')
+        server=CoreServer('token',sessions=logs)
+        async with server.listen() as listener:
+            async with connect(f'ws://127.0.0.1:{listener.sockets[0].getsockname()[1]}') as ws:
+                async def receive():return json.loads(await asyncio.wait_for(ws.recv(),1))
+                await ws.send(dump(Hello(token='token')));await receive();await receive()
+                await server.publish_review_ready('123');ready=await receive()
+                receipt={key:ready[key] for key in ('game_id','report_id','evidence_id','job_id','notice_id')}
+                receipt.update(v=1,type='review_notice_shown',surface='status',timestamp=datetime.now(UTC).isoformat())
+                await ws.send(json.dumps(receipt));assert (await receive())['type']=='review_ready'
+                path=logs.root/'reviews'/'123.notice.json'
+                valid=json.loads(path.read_text());row=valid['receipts'][0]
+                invalid=[{'receipts':None},None,[],valid|{'receipts':[None]},valid|{'receipts':[[]]},
+                         valid|{'receipts':[row|{'job_id':[]}]},valid|{'receipts':[row|{'timestamp':'broken'}]},
+                         valid|{'receipts':[row|{'timestamp':None}]},valid|{'receipts':[row|{'received_at':'broken'}]},
+                         valid|{'receipts':[row|{'latency_seconds':[]} ]},valid|{'receipts':[row|{'late':'yes'}]},
+                         valid|{'receipts':[row|{'notice_id':123}]},valid|{'receipts':[{}]},
+                         valid|{'receipts':[row,row]},valid|{'report_id':[]},valid|{'schema_version':2},
+                         valid|{'receipts':[row|{'game_id':'999'}]},
+                         valid|{'receipts':[row|{'timestamp':'2026-10-17T00:00:00'}]},
+                         valid|{'receipts':[row|{'latency_seconds':-1}]},
+                         valid|{'receipts':[row|{'ended_at':row['received_at']}]},
+                         valid|{'receipts':[row|{'mode':[]}]}]
+                for index,value in enumerate(invalid):
+                    raw=json.dumps(value);path.write_text(raw)
+                    await ws.send(json.dumps(receipt))
+                    error=await receive()
+                    assert error['code']=='review_notice_rejected',error
+                    assert error['message']=='Review notice metadata is invalid',error
+                    assert path.read_text()==raw
+                    await ws.send(json.dumps({'v':1,'type':'request_review_games','request_id':str(index)}))
+                    response=await receive()
+                    assert response['type']=='review_games' and response['request_id']==str(index),response
+                path.write_text(json.dumps(valid))
+                await ws.send(json.dumps(receipt|{'surface':'overlay','timestamp':datetime.now(UTC).isoformat()}))
+                assert (await receive())['type']=='review_ready'
+                assert [row['surface'] for row in json.loads(path.read_text())['receipts']]==['status','overlay']
+                assert (logs.log_path('123').read_bytes(),logs.read_review('123'))==before
+    asyncio.run(scenario())

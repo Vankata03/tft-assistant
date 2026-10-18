@@ -42,3 +42,34 @@ it('suppresses offscreen notices and cancels stale pending frames',()=>{
  act(()=>root!.render(createElement(ReviewReadyNotice,{state:{...state,reviewReady:null}})))
  paint();expect(window.coach.reviewNoticeShown).not.toHaveBeenCalled()
 })
+
+
+it('waits for ancestor opacity restoration without another intersection event',async()=>{
+ const container=mount();container.style.opacity='0';paint()
+ expect(window.coach.reviewNoticeShown).not.toHaveBeenCalled()
+ await act(async()=>{container.style.opacity='1';await Promise.resolve()})
+ expect(window.coach.reviewNoticeShown).not.toHaveBeenCalled()
+ act(()=>vi.advanceTimersToNextFrame())
+ expect(window.coach.reviewNoticeShown).toHaveBeenCalledTimes(1)
+ paint();expect(window.coach.reviewNoticeShown).toHaveBeenCalledTimes(1)
+})
+
+
+it.each(['opacity','display','visibility','contentVisibility'] as const)('rechecks ancestor %s at the visible frame',property=>{
+ const container=mount()
+ act(()=>callback?.([{target,isIntersecting:true,intersectionRatio:1}] as IntersectionObserverEntry[],{} as IntersectionObserver))
+ container.style[property]=({opacity:'0',display:'none',visibility:'hidden',contentVisibility:'hidden'})[property]
+ act(()=>vi.advanceTimersToNextFrame())
+ expect(window.coach.reviewNoticeShown).not.toHaveBeenCalled()
+ container.style[property]=''
+ act(()=>vi.advanceTimersToNextFrame())
+ expect(window.coach.reviewNoticeShown).toHaveBeenCalledTimes(1)
+})
+
+it('cancels ancestor visibility retries when the notice is removed',()=>{
+ const container=mount();container.style.opacity='0';paint()
+ act(()=>root!.render(createElement(ReviewReadyNotice,{state:{...state,reviewReady:null}})))
+ container.style.opacity='1'
+ act(()=>vi.advanceTimersToNextFrame())
+ expect(window.coach.reviewNoticeShown).not.toHaveBeenCalled()
+})

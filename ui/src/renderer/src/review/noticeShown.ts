@@ -10,15 +10,20 @@ export function useReviewNoticeShown(ready:ReviewReady|null|undefined,enabled:bo
   if(!node||!ready||!enabled||typeof IntersectionObserver==='undefined')return
   let sent=false,frame=0,intersecting=false
   const visible=()=>{
-   const b=node.getBoundingClientRect(),style=getComputedStyle(node)
+   const b=node.getBoundingClientRect()
+   for(let ancestor:Element|null=node;ancestor;ancestor=ancestor.parentElement){
+    const style=getComputedStyle(ancestor)
+    if(style.display==='none'||style.visibility==='hidden'||style.visibility==='collapse'||style.contentVisibility==='hidden'||style.opacity==='0')return false
+   }
    const intersection=Math.max(0,Math.min(b.right,innerWidth)-Math.max(b.left,0))*Math.max(0,Math.min(b.bottom,innerHeight)-Math.max(b.top,0))
-   return intersecting&&document.visibilityState==='visible'&&node.isConnected&&b.width*b.height>0&&intersection/(b.width*b.height)>=.5&&style.display!=='none'&&style.visibility!=='hidden'&&style.opacity!=='0'
+   return intersecting&&document.visibilityState==='visible'&&node.isConnected&&b.width*b.height>0&&intersection/(b.width*b.height)>=.5
   }
   const check=()=>{
-   if(sent||!visible())return
+   if(sent||!intersecting||document.visibilityState!=='visible'||!node.isConnected)return
    cancelAnimationFrame(frame)
    frame=requestAnimationFrame(()=>{
-    if(sent||!visible())return
+    if(sent)return
+    if(!visible()){check();return}
     sent=true
     const timestamp=new Date().toISOString()
     setShown({id:ready.notice_id,at:timestamp})
