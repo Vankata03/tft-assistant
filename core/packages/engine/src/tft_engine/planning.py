@@ -512,7 +512,6 @@ def decision_evidence(advice,context,names):
 def history_evidence(context):
     """Inline standalone histories; bind replay histories to exact source evidence."""
     from hashlib import sha256
-    import json
 
     if '_history_evidence' not in context.__dict__:
         from .models import frozen_history, history_json
