@@ -23,6 +23,8 @@ def main():
     parser.add_argument('--no-reuse',action='store_true')
     parser.add_argument('--live',action='store_true',help='Time the complete Live advisor, including bounded reuse on repeated identical inputs')
     args=parser.parse_args()
+    if args.live and args.no_reuse:
+        parser.error('--no-reuse applies to standalone Engine evaluation; omit --live')
     spec=importlib.util.spec_from_file_location('synthetic_engine_examples',Path(__file__).with_name('test_planning.py'))
     fixture=importlib.util.module_from_spec(spec); spec.loader.exec_module(fixture)
     data=fixture.patch(); tag=fixture.tag
