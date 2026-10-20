@@ -101,3 +101,13 @@ Corrected exact `6ab4544153b530cbdaed5a99ee0ffcf20c86097e` was independently rev
 Independent Data verification passed 65 tests in 0.35 seconds. Combined root verification passed 491 Python tests without skips in 39.18 seconds, process exit 0; two existing Torch ONNX-export warnings remain. UI passed 35 tests and type/generated-type/build checks. Both import contracts, schema, frozen lock, scoped F821 and whitespace gates passed. With Live physically absent, 210 public capacity/lobby/Baseline/capture/replay/Data cases passed in 8.33 seconds, process exit 0; Live and the training group were restored.
 
 Ticket 48 remains open. This verifies preparation software and byte provenance, not current production rules, source/cohort eligibility, mechanics, fitted parameters, recognition accuracy, exact EUNE calendar boundaries or Windows/device behavior. No production candidate or owner measurement run was published.
+
+### 2026-10-20 — Claude (Windows source refresh and review preparation)
+
+The earlier caches lived on the macOS machine, so the sources were fetched again on Windows into ignored `worktrees/references/source-refresh-2026-10-20/`. CommunityDragon `latest/cdragon/tft/en_us.json` (Last-Modified 2026-10-19, content metadata `16.20.8248524`) is byte-identical to the October 7–13 cache, SHA-256 `17d19792f662cec404aa071492ae9144a2d2677d2eeb1e0d7d8db9b52a47a9c7`. The Data Dragon bundle (champion, item and trait at 16.20.1) has SHA-256 `b20d1fafe075fc3d5071ad111ad1ace68b8472602615f3c489f67960d89724b5`. Because the CommunityDragon bytes have not changed, the October 10 conflicts with the 18.4 notes (for example Varus attack speed and mana) still apply.
+
+`tft-data prepare-review 18.4b --set 18` ran on Windows into ignored `worktrees/candidate-prep-2026-10-20/base/` and exited 0. The catalog counts are unchanged: 65 units, 9 unit forms, 17 NPCs, 36 traits, 423 items, 592 augments and 349 Wisps. The requirements now list 25 static fields and 60 Set-18 tunables, one more than `candidate-review.md` states; all are uninstalled. `eune_live_at` is null.
+
+The 2026-10-20 probe game confirms `TFTSet18` and queue 1100 from LCU, but its session bodies carry no game version, so they cannot establish which patch was live.
+
+Unresolved owner decisions remain: the patch label and EUNE live boundary, whether visibly qualified hand defaults may stand in for family 1–3 tunables until fits exist, and acceptance of each static table's sources.
