@@ -16,6 +16,7 @@ from PIL import Image
 
 from tft_capture.frames import full_image
 from tft_capture.ocr import NameCatalog, TextLine
+from tft_capture.phase import CountdownTracker, enemy_side_bars
 from tft_capture.layout import HudLayout
 from tft_capture.tracking import PurchaseTracker
 from tft_capture.vision import VisionRead, VisualReader
@@ -33,7 +34,7 @@ class EventSink(Protocol):
 
 class CapturePipeline:
     def __init__(self, game_id: str, *, ocr: OCR, sink: EventSink, regions: dict[str, tuple] | None = None,
-                 catalog: NameCatalog | None = None, layout: HudLayout | None = None, visual_reader: VisualReader | None = None, own_player_name: str | None = None, tracking_events=(), unit_traits=None, item_traits=None, sale_values=None, video=None, unit_variants=None, data_snapshot_id=None, effect_sources=None, item_trait_sources=None, snapshot_projector=None, unit_counter=None, unit_slot_costs=None, surface_profile=None):
+                 catalog: NameCatalog | None = None, layout: HudLayout | None = None, visual_reader: VisualReader | None = None, own_player_name: str | None = None, tracking_events=(), unit_traits=None, item_traits=None, sale_values=None, video=None, unit_variants=None, data_snapshot_id=None, effect_sources=None, item_trait_sources=None, snapshot_projector=None, unit_counter=None, unit_slot_costs=None, surface_profile=None, round_types=None):
         self.game_id, self.ocr, self.sink = str(game_id), ocr, sink
         self.video = video
         self.snapshot_projector = snapshot_projector
@@ -51,6 +52,8 @@ class CapturePipeline:
         self.unit_counter=unit_counter
         self.unit_slot_costs=unit_slot_costs or {}
         self.layout = layout or HudLayout()
+        self.round_types = dict(round_types or {})
+        self._countdown = CountdownTracker()
         self._frame_size = None
         self.visual_reader, self.own_player_name = visual_reader, own_player_name
         self._vision_fields = {}
@@ -132,6 +135,7 @@ class CapturePipeline:
             if self._gap_start is None:
                 self._gap_start = now
                 self._invalidate_tracking()
+                self._countdown.reset()
                 if self.video:
                     self.video.flush()
         else:
@@ -153,6 +157,7 @@ class CapturePipeline:
             own_view = (self.fields.get("scouted_player", {}).get("read_at") == now.isoformat()
                         and self.fields.get("scouted_player", {}).get("value") == self.own_player_name
                         and self.own_player_name is not None)
+            self._read_enemy_side_phase(frame, pixel_regions, own_view, now)
             trait_fields = ("trait_rows", "hidden_traits")
             if own_view and all(self.fields.get(name, {}).get("read_at") == now.isoformat() for name in trait_fields):
                 source = self.fields["trait_rows"]
@@ -246,6 +251,24 @@ class CapturePipeline:
             snapshot = self.snapshot_projector(snapshot)
         self.sink.append_event("snapshot", snapshot, timestamp=now.isoformat())
         return snapshot
+
+    def _read_enemy_side_phase(self, frame, pixel_regions, own_view, now):
+        fresh = {name: self.fields[name]["value"] for name in ("round", "timer", "phase")
+                 if self.fields.get(name, {}).get("read_at") == now.isoformat()}
+        round_id = fresh.get("round")
+        self._countdown.observe(round_id, fresh.get("timer"))
+        if (not own_view or "phase" in fresh or "board" not in pixel_regions
+                or self.round_types.get(round_id) != "combat"):
+            return
+        if enemy_side_bars(frame, pixel_regions["board"]):
+            phase = "combat"
+        elif self._countdown.first(round_id):
+            phase = "planning"
+        else:
+            return
+        source = {"read_at": now.isoformat(), "source": "enemy-side-bars", "confidence": 1.0}
+        self.fields["phase"] = {"value": phase, **source}
+        self.fields["planning_phase"] = {"value": phase == "planning", **source}
 
     def _invalidate_tracking(self):
         self._settled_signature, self._settled_since = None, None

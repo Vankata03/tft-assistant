@@ -428,3 +428,56 @@ def test_measured_hud_record_rejects_incomplete_or_conflicting_evidence(tmp_path
         record.write_text(text)
         with pytest.raises((ValueError, OSError)):
             HudLayout.from_config(record)
+
+
+ROUND_TYPES = {"2-1": "carousel", "2-2": "combat", "2-3": "combat", "2-7": "pve"}
+
+
+def enemy_side_pipeline(tmp_path, game_id, output):
+    logs = SessionStore(tmp_path / "app", tmp_path / "config", live_installed=True)
+    logs.start_game(game_id)
+    regions = {name: (0, 0, 1, 1) for name in ("stage", "timer", "scouted", "board")}
+    return CapturePipeline(game_id, ocr=RecordedOCR(output), sink=logs, regions=regions,
+                           own_player_name="Owner", round_types=ROUND_TYPES)
+
+
+def enemy_side_frame(tick, red):
+    from PIL import ImageDraw
+    frame = Image.new("RGB", (100, 100), "black")
+    frame.putpixel((tick % 100, 99), (90, 90, 90))
+    if red:
+        ImageDraw.Draw(frame).rectangle((10, 10, 60, 14), fill=(220, 30, 30))
+    return frame
+
+
+def test_enemy_side_health_bars_mark_combat_and_first_countdown_marks_planning(tmp_path):
+    output = {"scouted": [TextLine("Owner Level 4")]}
+    pipeline = enemy_side_pipeline(tmp_path, "140", output)
+    start = datetime(2026, 10, 20, tzinfo=timezone.utc)
+    phases = []
+    for tick, (round_id, timer, red) in enumerate([("2-1", 20, False), ("2-2", 30, False), ("2-2", 10, False),
+                                                   ("2-2", 30, True), ("2-2", 20, False), ("2-3", 30, True)]):
+        output.update(stage=[TextLine(round_id)], timer=[TextLine(str(timer))])
+        snapshot = pipeline.tick(enemy_side_frame(tick, red), timestamp=start + timedelta(seconds=3 * tick))
+        phases.append(snapshot["phase"])
+    # Carousel round, planning, planning, combat, enemies gone in combat, enemies on the new round's planning.
+    assert phases == ["unknown", "planning", "planning", "combat", "unknown", "combat"]
+    assert snapshot["fields"]["phase"]["source"] == "enemy-side-bars"
+
+
+def test_enemy_side_phase_is_unavailable_without_own_view_pvp_round_or_observed_round_start(tmp_path):
+    output = {"scouted": [TextLine("Owner Level 4")], "stage": [TextLine("2-2")], "timer": [TextLine("15")]}
+    pipeline = enemy_side_pipeline(tmp_path, "141", output)
+    start = datetime(2026, 10, 20, tzinfo=timezone.utc)
+    # Attached mid-round: the first countdown was not observed.
+    assert pipeline.tick(enemy_side_frame(0, False), timestamp=start)["phase"] == "unknown"
+    output.update(stage=[TextLine("2-3")], timer=[TextLine("30")])
+    assert pipeline.tick(enemy_side_frame(1, False), timestamp=start + timedelta(seconds=3))["phase"] == "planning"
+    pipeline.tick(None, timestamp=start + timedelta(seconds=6))
+    output.update(timer=[TextLine("20")])
+    # A capture gap loses the countdown history for the round.
+    assert pipeline.tick(enemy_side_frame(2, False), timestamp=start + timedelta(seconds=9))["phase"] == "unknown"
+    output.update(stage=[TextLine("2-7")], timer=[TextLine("30")])
+    assert pipeline.tick(enemy_side_frame(3, True), timestamp=start + timedelta(seconds=12))["phase"] == "unknown"
+    output.update(stage=[TextLine("2-2")], scouted=[TextLine("Opponent Level 4")])
+    assert pipeline.tick(enemy_side_frame(4, True), timestamp=start + timedelta(seconds=15))["phase"] == "unknown"

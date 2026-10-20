@@ -55,4 +55,5 @@ def project_data(data):
         unit_variants[entity.id]=list(unit_trait_variants(entity.id,data))
     return {'catalog': NameCatalog(names), 'unit_variants': unit_variants, 'sale_values': sale_values,
         'effect_sources': effect_sources, 'item_traits': item_traits, 'item_trait_sources': item_trait_sources,
-        'unit_counter':data.static.get('capture_unit_counter'),'unit_slot_costs':costs}
+        'unit_counter':data.static.get('capture_unit_counter'),'unit_slot_costs':costs,
+        'round_types':data.static['round_types'].value if 'round_types' in data.static else None}
