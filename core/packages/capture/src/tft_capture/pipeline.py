@@ -714,17 +714,36 @@ class CapturePipeline:
             for line in lines:
                 row = min(7, int((line.box[1]+line.box[3])/2*8))
                 groups.setdefault(row, []).append(line)
-            players = []
+            players, lone, hp_boxes = [], [], []
             for row, group in sorted(groups.items()):
-                value = " ".join(line.text for line in sorted(group, key=lambda line: line.box[0]))
+                ordered = sorted(group, key=lambda line: line.box[0])
+                value = " ".join(line.text for line in ordered)
+                if len(group) == 1 and re.fullmatch(r"\d{1,3}", value.strip()):
+                    lone.append((row, group[0]))
+                    continue
                 match = re.fullmatch(r"(.+?)\s+(\d{1,3})", value.strip())
                 if not match or not 0 <= int(match[2]) <= 200:
                     continue
                 name = match[1].strip()
                 identity = self.catalog.match(name, "players") if self.catalog.names.get("players") else name
                 if identity:
+                    hp_boxes.append(ordered[-1].box)
                     players.append({"player_id": identity, "name": name, "hp": int(match[2]),
                         "alive": int(match[2]) > 0, "is_self": name == self.own_player_name, "row": row})
+            # The standalone client shows the owner's row without a name: only an enlarged HP
+            # number left of the opponents' HP column. Claim it only on that positive geometry.
+            if self.own_player_name and hp_boxes and not any(row["is_self"] for row in players):
+                height = sorted(box[3]-box[1] for box in hp_boxes)[len(hp_boxes)//2]
+                column = min(box[0] for box in hp_boxes)
+                own = [(row, line) for row, line in lone
+                    if line.box[3]-line.box[1] >= 1.4*height and line.box[2] <= column and int(line.text) <= 200]
+                identity = (self.catalog.match(self.own_player_name, "players")
+                    if self.catalog.names.get("players") else self.own_player_name)
+                if len(own) == 1 and identity:
+                    row, line = own[0]
+                    players.append({"player_id": identity, "name": self.own_player_name, "hp": int(line.text),
+                        "alive": int(line.text) > 0, "is_self": True, "row": row})
+                    players.sort(key=lambda player: player["row"])
             if not players:
                 return {}
             complete = len(players) == 8 and len({row["player_id"] for row in players}) == 8

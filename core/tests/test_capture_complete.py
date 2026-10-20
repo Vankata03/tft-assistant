@@ -108,6 +108,32 @@ def test_complete_player_rows_publish_lobby_alive_and_own_hp_without_guessing_mi
     assert "lobby" in partial["stale_fields"]
 
 
+def standalone_rows(own_hp_box):
+    """Line geometry recorded from a standalone-client player panel at 2560x1440."""
+    rows = [('camarada', 96, .061), ('Vee23', 79, .179), ('DarkyDrz28', 77, .299), ('SephirOtH', 69, .418),
+        ('Nep', 60, .537), ('Leona', 58, .794), ('Feralosk', 58, .912)]
+    lines = []
+    for name, hp, top in rows:
+        lines += [TextLine(name, box=(.3, top, .58, top+.024)), TextLine(str(hp), box=(.65, top+.002, .72, top+.022))]
+    return lines + [TextLine('60', box=own_hp_box)]
+
+
+def test_standalone_client_owner_row_is_its_lone_enlarged_hp_left_of_the_opponent_column(tmp_path):
+    pipeline, _, _ = capture(tmp_path, {"players": standalone_rows((.50, .663, .62, .698))})
+    fields = pipeline.tick(WHITE, timestamp=NOW)["fields"]
+    own = [row for row in fields["player_rows"]["value"] if row["is_self"]]
+    assert [(row["player_id"], row["hp"], row["row"]) for row in own] == [("Owner", 60, 5)]
+    assert fields["hp"]["value"] == 60
+    assert fields["lobby_complete"]["value"] is True
+
+
+def test_nameless_hp_in_the_opponent_column_is_not_claimed_as_the_owner(tmp_path):
+    pipeline, _, _ = capture(tmp_path, {"players": standalone_rows((.65, .665, .72, .685))})
+    fields = pipeline.tick(WHITE, timestamp=NOW)["fields"]
+    assert not any(row["is_self"] for row in fields["player_rows"]["value"])
+    assert "hp" not in fields
+
+
 def test_augment_offer_requires_read_tier_and_each_reroll_flag_and_dismissal_is_not_pick(tmp_path):
     names = {'a': 'First Choice', 'b': 'Second Choice', 'c': 'Third Choice'}
     rows = [TextLine(name, box=(i/3+.01, .4, (i+1)/3-.01, .5))
