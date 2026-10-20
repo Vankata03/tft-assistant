@@ -122,3 +122,12 @@ Checked at 2026-10-20 20:51 UTC:
 - League 16.21 corresponds to TFT 18.5 by the same one-step progression as the current 16.20 content and Data Dragon bundle for 18.4. That mapping is inference, not a Riot statement, and agrees with the schedule date.
 
 No game can be played while the servers are down, so the shutdown instant separates 18.4b games from 18.5 games regardless of when service returns. The proposed boundary is therefore `18.5 = 2026-10-21T04:00:00+03:00` (2026-10-21T01:00:00Z), pending owner confirmation and a recheck of the feed after the maintenance for a delay or cancellation. The exact 18.4b boundary remains unavailable. Because 18.5 replaces it within hours, the first candidate should target 18.5 once CommunityDragon publishes 16.21 data, not 18.4b.
+
+### 2026-10-20 — Claude (18.5 candidate attempt stopped: sources still 16.20)
+
+Checked at 2026-10-20 21:03 UTC, saved in ignored `worktrees/references/source-refresh-2026-10-21/`:
+
+- CommunityDragon `latest/content-metadata.json` still reports `16.20.8248524+branch.releases-16-20.content.release` (Last-Modified 2026-10-19 20:31:26 GMT). Building 18.5 on these entities would carry 18.4 values into the 18.5 candidate, so `prepare-review 18.5` was not run and no static table, tunable table, snapshot or names JSON was produced.
+- The EUN1 status feed is byte-identical to the 20:51 UTC copy (SHA-256 `af9f56bbc209868fc54e441cf494516c14ebf2d8fa35823c241f009fd9cb8baa`). Maintenance 13736 is still `scheduled` with no updates since its creation, and the server shutdown (2026-10-21T01:00:00Z) has not happened yet, so completion without delay cannot be confirmed. The committed boundary `18.5 = 2026-10-21T04:00:00+03:00` still needs that post-maintenance recheck.
+
+Still open before the candidate can start: CommunityDragon 16.21 data, the post-maintenance feed recheck, and the owner's choice on family 1–3 tunables (approved hand defaults tagged `default`, or no defaults and a stop after the 25 hand-set and 2 computed tunables).
