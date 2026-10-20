@@ -103,3 +103,30 @@ asyncio.run(main())
     for turn in range(10):
         events=[json.loads(line) for line in (tmp_path/f'state/{turn}/app/games/123/events.jsonl').read_text().splitlines()]
         assert not any(event['kind'] in {'engine_evidence','advice_delivery'} for event in events)
+
+
+def test_children_started_while_the_shell_pipe_is_watched_do_not_inherit_it(tmp_path):
+    # The watcher holds a blocking read on the shell pipe. On Windows a child
+    # that inherits that pipe as stdin stalls at startup behind the read.
+    script=tmp_path/'child_while_watching.py'
+    script.write_text('''import asyncio,subprocess,sys
+from tft_core.app import _stdin_closed
+async def main():
+ closed=_stdin_closed(asyncio.get_running_loop())
+ await asyncio.sleep(.2)
+ child=await asyncio.to_thread(subprocess.run,['git','--version'],capture_output=True,timeout=10)
+ print('CHILD',child.returncode,flush=True)
+ await closed.wait()
+ print('CLOSED',flush=True)
+asyncio.run(main())
+''')
+    process=subprocess.Popen([sys.executable,'-u',str(script)],cwd=Path(__file__).parents[1],
+        stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+    try:
+        assert process.stdout.readline().strip()=='CHILD 0'
+        output,errors=process.communicate('',timeout=5)
+        assert process.returncode==0,errors
+        assert output.strip()=='CLOSED'
+    finally:
+        if process.poll() is None:
+            process.kill();process.communicate()

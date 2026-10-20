@@ -31,9 +31,18 @@ log = logging.getLogger("tft_core")
 
 def _stdin_closed(loop: asyncio.AbstractEventLoop) -> asyncio.Event:
     closed = asyncio.Event()
+    # Keep the shell pipe private and give every later child the null device.
+    # On Windows a child that inherits a pipe with a pending blocking read
+    # stalls at startup, which hung Git identity checks and review workers.
+    shell = os.dup(0)
+    null = os.open(os.devnull, os.O_RDONLY)
+    os.dup2(null, 0)
+    os.close(null)
 
     def wait() -> None:
-        sys.stdin.buffer.read()
+        with open(shell, "rb", buffering=0) as stream:
+            while stream.read(65536):
+                pass
         loop.call_soon_threadsafe(closed.set)
 
     threading.Thread(target=wait, name="stdin-watch", daemon=True).start()
