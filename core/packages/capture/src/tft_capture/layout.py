@@ -17,8 +17,11 @@ MEASURED_HUD_FORMAT = "tft-assistant-measured-hud/1"
 _STANDALONE_SECTION = "/Script/TFTSettings.TFTUserSettings"
 # x0,y0,x1,y1 at the reference resolution; horizontal and vertical anchors.
 _REGIONS = {
-    "stage": ((.419, .002, .457, .036), "center", "top"),
-    "timer": ((.557, .002, .585, .036), "center", "top"),
+    # The top bar narrows in stage 1. Stage spans both bar widths; its parser
+    # accepts one round match among icons. Timer fits the stage-2+ digits only.
+    # Both keep vertical margin, which the OCR detector needs.
+    "stage": ((.3969, 0, .4477, .0347), "center", "top"),
+    "timer": ((.5883, 0, .6078, .0444), "center", "top"),
     "level": ((.181, .811, .232, .851), "center", "bottom"),
     "xp": ((.244, .811, .273, .851), "center", "bottom"),
     "odds": ((.288, .811, .443, .851), "center", "bottom"),
