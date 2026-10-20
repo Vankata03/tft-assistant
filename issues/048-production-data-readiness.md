@@ -157,3 +157,11 @@ At the owner's instruction the first candidate targets 18.4b on the unchanged 16
 The owner decided that the five catalog Wisps missing from tftips' 18.4b list are not offered on 18.4b. These are `DA_CloneCompanion18`, `DA_CloneCompanion18_Prismatic`, `DA_CloneCompanionUpgrade18`, `DA_TrueFriendship18` and `DA_TrueFriendship18_Upgrade`. Each is now `unmodelled` with offer stages 1–8, which satisfy the schema only. Each takes its bin price, or 0 where the shop record has no price or there is no shop record. The `wisps` citation and `wisp-evidence.json` mark them "not offered on 18.4b".
 
 With these entries, bootstrap into isolated `worktrees/candidate-18.4b-2026-10-21/data/` exited 0. `tft-data validate --snapshots <isolated>` produced snapshot `b94f2e24eb053de845f9903b8d197ee1b255fa94fb1d8f07739f5bee7c2d11ab`. Offline `refresh --engine-computed` with isolated snapshot and override paths produced `2280f0806d588c99820cf1e0d0292f3f494b22b768af8f206a60be0fc146fc3a`; its computed growth curve is unavailable because there are no unit play rates. Publication to `data/18.4b/` and the owner snapshot store waits for the owner's review of `REVIEW.md`.
+
+### 2026-10-21 — Claude (18.4b published after owner review)
+
+The owner reviewed `REVIEW.md` and accepted the tables as they are. Bootstrap published `data/18.4b/`; its `entities.json`, `static.toml` and `tunables.toml` are byte-identical to the isolated validated candidate, and `data/patches.toml` is unchanged. Offline `tft-data refresh --engine-computed` wrote snapshot `2280f0806d588c99820cf1e0d0292f3f494b22b768af8f206a60be0fc146fc3a` to `%LOCALAPPDATA%\tft-assistant\snapshots` and set it as `current.json`. That ID matches the isolated refresh. The computed growth curve stays empty until an online refresh supplies unit play rates.
+
+The en_US names file `%USERPROFILE%\.config\tft-assistant\names\en_US-18.4b.json` (SHA-256 `4380a1dc7a127c4e15f8d27305b14669f0c112f95b10b6d9fd179ac3bfccca61`) is exported from that snapshot's own entity names. It holds 74 units (all 65 playable units plus 9 forms), 423 items, 592 augments, 349 Wisps and 36 traits.
+
+Ticket 48 stays open. The exact 18.4b EUNE boundary, the source gaps listed in the 2026-10-21 candidate entry, statistics-qualified priors and fits, and the 18.5 candidate on 16.21 data remain. No Riot API call or measurement run was made.

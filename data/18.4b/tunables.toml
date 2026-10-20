@@ -1,0 +1,713 @@
+patch = "18.4b"
+
+[fields.unit_weight]
+value = 1.0
+source = "default"
+family = "1"
+citation = "Owner-approved hand default (2026-10-21) until the harness fits it; neutral unit scale, not fitted. docs/spec/tunables.md board power weights."
+
+[fields.trait_weight]
+value = 1.0
+source = "default"
+family = "1"
+citation = "Owner-approved hand default (2026-10-21) until the harness fits it; neutral unit scale, not fitted. docs/spec/tunables.md board power weights."
+
+[fields.item_weight]
+value = 0.25
+source = "default"
+family = "1"
+citation = "Owner-approved hand default (2026-10-21) until the harness fits it; neutral unit scale, not fitted. One finished item ~0.25 logit of top-4 odds; docs/spec/tunables.md board power weights."
+
+[fields.fight_scale]
+value = 1.0
+source = "default"
+family = "1"
+citation = "Owner-approved hand default (2026-10-21) until the harness fits it; neutral unit scale, not fitted. docs/spec/tunables.md 'Initial k in win_probability'."
+
+[fields.win_scale_by_stage]
+source = "default"
+family = "1"
+citation = "docs/spec/tunables.md: per-stage k starts equal to the pooled fight scale."
+
+[fields.win_scale_by_stage.value]
+1 = 1.0
+2 = 1.0
+3 = 1.0
+4 = 1.0
+5 = 1.0
+6 = 1.0
+7 = 1.0
+8 = 1.0
+
+[fields.survivor_scale_by_stage]
+source = "default"
+family = "1"
+citation = "Owner-approved hand default (2026-10-21) until the harness fits it; neutral unit scale, not fitted. docs/spec/tunables.md c in surviving_units."
+
+[fields.survivor_scale_by_stage.value]
+1 = 1.0
+2 = 1.0
+3 = 1.0
+4 = 1.0
+5 = 1.0
+6 = 1.0
+7 = 1.0
+8 = 1.0
+
+[fields.terminal_hp_weight]
+value = 1.0
+source = "default"
+family = "1"
+citation = "Owner-approved hand default (2026-10-21) until the harness fits it; neutral unit scale, not fitted. docs/spec/tunables.md b in placement(): one lost round of HP weighs like one unit of power gap."
+
+[fields.terminal_gold_weight]
+value = 0.005
+source = "default"
+family = "1"
+citation = "docs/spec/tunables.md: default until fitted; 50 held gold ~0.25 placement."
+
+[fields.opponent_star_mix]
+source = "default"
+family = "1"
+citation = "docs/spec/tunables.md: 'a hand default table until logs exist'; rows follow the level calendar and shop odds."
+
+[fields.opponent_star_mix.value.1-1]
+1 = [
+    1.0,
+    0.0,
+    0.0,
+]
+2 = [
+    1.0,
+    0.0,
+    0.0,
+]
+3 = [
+    1.0,
+    0.0,
+    0.0,
+]
+4 = [
+    1.0,
+    0.0,
+    0.0,
+]
+5 = [
+    1.0,
+    0.0,
+    0.0,
+]
+
+[fields.opponent_star_mix.value.2-1]
+1 = [
+    0.5,
+    0.5,
+    0.0,
+]
+2 = [
+    0.8,
+    0.2,
+    0.0,
+]
+3 = [
+    1.0,
+    0.0,
+    0.0,
+]
+4 = [
+    1.0,
+    0.0,
+    0.0,
+]
+5 = [
+    1.0,
+    0.0,
+    0.0,
+]
+
+[fields.opponent_star_mix.value.3-2]
+1 = [
+    0.2,
+    0.75,
+    0.05,
+]
+2 = [
+    0.45,
+    0.55,
+    0.0,
+]
+3 = [
+    0.85,
+    0.15,
+    0.0,
+]
+4 = [
+    1.0,
+    0.0,
+    0.0,
+]
+5 = [
+    1.0,
+    0.0,
+    0.0,
+]
+
+[fields.opponent_star_mix.value.4-1]
+1 = [
+    0.1,
+    0.75,
+    0.15,
+]
+2 = [
+    0.25,
+    0.7,
+    0.05,
+]
+3 = [
+    0.6,
+    0.4,
+    0.0,
+]
+4 = [
+    0.9,
+    0.1,
+    0.0,
+]
+5 = [
+    1.0,
+    0.0,
+    0.0,
+]
+
+[fields.opponent_star_mix.value.5-1]
+1 = [
+    0.05,
+    0.6,
+    0.35,
+]
+2 = [
+    0.15,
+    0.7,
+    0.15,
+]
+3 = [
+    0.35,
+    0.6,
+    0.05,
+]
+4 = [
+    0.6,
+    0.4,
+    0.0,
+]
+5 = [
+    0.9,
+    0.1,
+    0.0,
+]
+
+[fields.opponent_star_mix.value.6-1]
+1 = [
+    0.05,
+    0.45,
+    0.5,
+]
+2 = [
+    0.1,
+    0.6,
+    0.3,
+]
+3 = [
+    0.2,
+    0.7,
+    0.1,
+]
+4 = [
+    0.4,
+    0.6,
+    0.0,
+]
+5 = [
+    0.75,
+    0.25,
+    0.0,
+]
+
+[fields.opponent_growth_correction_by_stage]
+source = "default"
+family = "1"
+citation = "Neutral correction (1.0) until sightings fit it; docs/agents/engine-contracts.md."
+
+[fields.opponent_growth_correction_by_stage.value]
+1 = 1.0
+2 = 1.0
+3 = 1.0
+4 = 1.0
+5 = 1.0
+6 = 1.0
+7 = 1.0
+8 = 1.0
+
+[fields.emblem_count_prior]
+source = "default"
+family = "1"
+citation = "Owner-approved hand default (2026-10-21) until the harness fits it; neutral unit scale, not fitted. docs/spec/tunables.md emblem_count_prior."
+
+[fields.emblem_count_prior.value]
+0 = 0.6
+1 = 0.3
+2 = 0.1
+
+[fields.size_level_prior]
+source = "default"
+family = "1"
+citation = "Owner-approved hand default (2026-10-21) until the harness fits it; neutral unit scale, not fitted. Distinct units mostly equal level; docs/spec/tunables.md."
+
+[fields.size_level_prior.value.1]
+1 = 0.95
+2 = 0.05
+
+[fields.size_level_prior.value.2]
+2 = 0.85
+3 = 0.05
+1 = 0.1
+
+[fields.size_level_prior.value.3]
+3 = 0.85
+4 = 0.05
+2 = 0.1
+
+[fields.size_level_prior.value.4]
+4 = 0.85
+5 = 0.05
+3 = 0.1
+
+[fields.size_level_prior.value.5]
+5 = 0.85
+6 = 0.05
+4 = 0.1
+
+[fields.size_level_prior.value.6]
+6 = 0.85
+7 = 0.05
+5 = 0.1
+
+[fields.size_level_prior.value.7]
+7 = 0.85
+8 = 0.05
+6 = 0.1
+
+[fields.size_level_prior.value.8]
+8 = 0.85
+9 = 0.05
+7 = 0.1
+
+[fields.size_level_prior.value.9]
+9 = 0.85
+10 = 0.05
+8 = 0.1
+
+[fields.size_level_prior.value.10]
+10 = 0.85
+11 = 0.05
+9 = 0.1
+
+[fields.sighting_persistence_weight]
+value = 2.0
+source = "default"
+family = "1"
+citation = "docs/spec/tunables.md: 'start 2'."
+
+[fields.sighting_full_weight_rounds]
+value = 2
+source = "default"
+family = "1"
+citation = "docs/spec/tunables.md: 'start 2'."
+
+[fields.sighting_half_life_rounds]
+value = 1
+source = "default"
+family = "1"
+citation = "docs/spec/tunables.md: 'start 1'."
+
+[fields.pivot_margin_by_stage]
+source = "default"
+family = "2"
+citation = "docs/spec/tunables.md: about 0.5 placement at stage 3 and 0.8 after the main roll-down (stage 4)."
+
+[fields.pivot_margin_by_stage.value]
+1 = 0.5
+2 = 0.5
+3 = 0.5
+4 = 0.8
+5 = 0.8
+6 = 0.8
+7 = 0.8
+8 = 0.8
+
+[fields.pivot_reraise_extra]
+value = 0.1
+source = "default"
+family = "2"
+citation = "docs/spec/tunables.md pivot re-raise extra; no number given, set to one line_margin."
+
+[fields.transition_tolerance]
+value = 0.05
+source = "default"
+family = "2"
+citation = "docs/spec/tunables.md: 'about 2 % of the stage's par board power'; scalar stand-in until par power is fitted."
+
+[fields.line_margin]
+value = 0.1
+source = "default"
+family = "2"
+citation = "docs/spec/tunables.md: 'about 0.1 placement'."
+
+[fields.comp_defining_margin]
+value = 0.5
+source = "default"
+family = "2"
+citation = "docs/spec/tunables.md z = 2; set equal to the stage-3 pivot margin."
+
+[fields.board_power_buy_min]
+value = 0.05
+source = "default"
+family = "2"
+citation = "docs/spec/tunables.md z = 1; no number given."
+
+[fields.wisp_buy_margin]
+value = 0.1
+source = "default"
+family = "2"
+citation = "docs/spec/tunables.md z = 1; set to line_margin."
+
+[fields.threat_share_on]
+value = 0.5
+source = "default"
+family = "2"
+citation = "docs/spec/tunables.md: 'about 0.5'."
+
+[fields.threat_share_off]
+value = 0.3
+source = "default"
+family = "2"
+citation = "docs/spec/tunables.md: 'about 0.3'."
+
+[fields.review_min_cost]
+value = 0.05
+source = "default"
+family = "2"
+citation = "docs/spec/review-and-harness.md: 0.05 placement floor."
+
+[fields.cost_star_baseline]
+source = "default"
+family = "3"
+citation = "Owner-approved hand default (2026-10-21) until the harness fits it; neutral unit scale, not fitted. Logit shift of top-4 odds by cost and star; recomputed by 'tft-harness fit --priors' (docs/spec/tunables.md)."
+
+[fields.cost_star_baseline.value.1]
+1 = -0.6
+2 = 0.0
+3 = 0.4
+
+[fields.cost_star_baseline.value.2]
+1 = -0.4
+2 = 0.2
+3 = 0.7
+
+[fields.cost_star_baseline.value.3]
+1 = -0.2
+2 = 0.5
+3 = 1.2
+
+[fields.cost_star_baseline.value.4]
+1 = 0.1
+2 = 0.9
+3 = 2.0
+
+[fields.cost_star_baseline.value.5]
+1 = 0.3
+2 = 1.2
+3 = 2.5
+
+[fields.unit_prior_strength]
+value = 50
+source = "default"
+family = "3"
+citation = "Owner-approved hand default (2026-10-21) until the harness fits it; neutral unit scale, not fitted. Binomial prior size; docs/spec/tunables.md."
+
+[fields.trait_prior_strength]
+value = 50
+source = "default"
+family = "3"
+citation = "Owner-approved hand default (2026-10-21) until the harness fits it; neutral unit scale, not fitted. Binomial prior size; docs/spec/tunables.md."
+
+[fields.item_class_prior]
+source = "default"
+family = "3"
+citation = "Owner-approved hand default (2026-10-21) until the harness fits it; neutral unit scale, not fitted. Matching class 0.1 placement, other 0.02; docs/spec/tunables.md."
+
+[fields.item_class_prior.value.AD]
+AD = 0.1
+AP = 0.02
+tank = 0.02
+utility = 0.02
+
+[fields.item_class_prior.value.AP]
+AD = 0.02
+AP = 0.1
+tank = 0.02
+utility = 0.02
+
+[fields.item_class_prior.value.tank]
+AD = 0.02
+AP = 0.02
+tank = 0.1
+utility = 0.02
+
+[fields.item_class_prior.value.utility]
+AD = 0.02
+AP = 0.02
+tank = 0.02
+utility = 0.1
+
+[fields.item_prior_strength]
+value = 20
+source = "default"
+family = "3"
+citation = "Owner-approved hand default (2026-10-21) until the harness fits it; neutral unit scale, not fitted. docs/spec/tunables.md."
+
+[fields.augment_prior_strength]
+value = 50
+source = "default"
+family = "3"
+citation = "Owner-approved hand default (2026-10-21) until the harness fits it; neutral unit scale, not fitted. Dormant until augment statistics return; docs/spec/tunables.md."
+
+[fields.augment_flag_prior_multiplier]
+value = 2.0
+source = "default"
+family = "3"
+citation = "docs/spec/tunables.md: 'Start 2'."
+
+[fields.open_candidate_count]
+value = 3
+source = "default"
+family = "hand-set"
+citation = "docs/spec/tunables.md: k = 3."
+
+[fields.commit_latest_round]
+value = "3-2"
+source = "default"
+family = "hand-set"
+citation = "docs/spec/tunables.md: 3-2."
+
+[fields.rollouts_full]
+value = 32
+source = "default"
+family = "hand-set"
+citation = "docs/spec/tunables.md: set by the 100 ms budget; 64 rollouts measured 0.30 s on M3 Max (issue 049), so 32 pending Ryzen qualification."
+
+[fields.rollouts_reroll]
+value = 16
+source = "default"
+family = "hand-set"
+citation = "docs/spec/tunables.md: half of rollouts_full for reroll re-scoring, pending ticket 49 timing."
+
+[fields.line_candidate_cap]
+value = 7
+source = "default"
+family = "hand-set"
+citation = "docs/spec/tunables.md: about 7 schedule families."
+
+[fields.challengers_simulated]
+value = 2
+source = "default"
+family = "hand-set"
+citation = "docs/spec/tunables.md: about 2."
+
+[fields.gold_floors]
+value = [
+    50,
+    30,
+    10,
+    0,
+]
+source = "default"
+family = "hand-set"
+citation = "docs/spec/tunables.md: 50, 30, 10, 0."
+
+[fields.all_in_rounds_left]
+value = 2
+source = "default"
+family = "hand-set"
+citation = "docs/spec/tunables.md: 2."
+
+[fields.stabilize_rounds_left]
+value = 3
+source = "default"
+family = "hand-set"
+citation = "docs/spec/tunables.md: 3."
+
+[fields.item_values]
+source = "default"
+family = "hand-set"
+citation = "docs/spec/tunables.md: 1.0, 0.35, +0.25."
+
+[fields.item_values.value]
+finished = 1.0
+component = 0.35
+high_cost_bonus = 0.25
+
+[fields.classifier_weights]
+source = "default"
+family = "hand-set"
+citation = "docs/spec/tunables.md: carry x3, key x2, others x1, bench half."
+
+[fields.classifier_weights.value]
+carry = 3
+key = 2
+other = 1
+bench = 0.5
+
+[fields.classifier_threshold]
+value = 0.5
+source = "default"
+family = "hand-set"
+citation = "docs/spec/tunables.md: 0.5."
+
+[fields.emblem_slack_max]
+value = 2
+source = "default"
+family = "hand-set"
+citation = "docs/spec/tunables.md: 2."
+
+[fields.opponent_inference_state_cap]
+value = 20000
+source = "default"
+family = "hand-set"
+citation = "docs/spec/tunables.md: deterministic budget; no number given, pending ticket 49 timing."
+
+[fields.capacity_transition_state_cap]
+value = 1000
+source = "default"
+family = "hand-set"
+citation = "docs/spec/tunables.md: deterministic budget; matches harness test budget, pending ticket 49 timing."
+
+[fields.component_income_by_stage]
+source = "default"
+family = "hand-set"
+citation = "Expected components still to come after each stage, from the stage_items loot derivation (LittleBuddyBot tables)."
+
+[fields.component_income_by_stage.value]
+1 = 16.0
+2 = 12.6
+3 = 8.1
+4 = 4.0
+5 = 3.0
+6 = 2.0
+7 = 1.0
+8 = 0.0
+
+[fields.component_discount_by_stage]
+source = "default"
+family = "hand-set"
+citation = "docs/spec/tunables.md: 'Falls to about 0 by stage 5'."
+
+[fields.component_discount_by_stage.value]
+1 = 1.0
+2 = 0.8
+3 = 0.5
+4 = 0.2
+5 = 0.0
+6 = 0.0
+7 = 0.0
+8 = 0.0
+
+[fields.slam_candidate_cap]
+value = 3
+source = "default"
+family = "hand-set"
+citation = "docs/spec/tunables.md: 3."
+
+[fields.open_candidate_temperature]
+value = 1.0
+source = "default"
+family = "hand-set"
+citation = "docs/spec/tunables.md: softmax temperature; no number given, neutral 1.0."
+
+[fields.augment_tier_delta]
+source = "default"
+family = "hand-set"
+citation = "docs/spec/tunables.md: MetaTFT map."
+
+[fields.augment_tier_delta.value]
+S = -0.3
+A = -0.15
+B = 0.0
+C = 0.15
+D = 0.3
+
+[fields.board_settle_seconds]
+value = 2
+source = "default"
+family = "hand-set"
+citation = "docs/spec/tunables.md: about 2."
+
+[fields.confidence_show_min]
+value = 0.2
+source = "default"
+family = "hand-set"
+citation = "docs/spec/tunables.md: 0.2."
+
+[fields.confidence_medium_min]
+value = 0.5
+source = "default"
+family = "hand-set"
+citation = "docs/spec/tunables.md: 0.5."
+
+[fields.confidence_high_min]
+value = 0.8
+source = "default"
+family = "hand-set"
+citation = "docs/spec/tunables.md: 0.8."
+
+[fields.board_reader_identity_min]
+value = 0.55
+source = "default"
+family = "hand-set"
+citation = "docs/spec/tunables.md: 0.55."
+
+[fields.field_max_age_seconds]
+source = "default"
+family = "hand-set"
+citation = "docs/spec/tunables.md: 2 s, 0.5 s for the shop in roll-down."
+
+[fields.field_max_age_seconds.value]
+default = 2
+shop_roll_down = 0.5
+
+[fields.opponent_growth_curve]
+source = "default"
+family = "computed"
+citation = "Recomputed at refresh (--engine-computed); empty until then, lookup computes from the calendar."
+
+[fields.opponent_growth_curve.value]
+
+[fields.default_lines_by_carry_cost]
+source = "default"
+family = "computed"
+citation = "docs/spec/tunables.md fallback roll levels 5-9; recomputed from Guides at refresh."
+
+[fields.default_lines_by_carry_cost.value.1]
+roll_level = 5
+
+[fields.default_lines_by_carry_cost.value.2]
+roll_level = 6
+
+[fields.default_lines_by_carry_cost.value.3]
+roll_level = 7
+
+[fields.default_lines_by_carry_cost.value.4]
+roll_level = 8
+
+[fields.default_lines_by_carry_cost.value.5]
+roll_level = 9

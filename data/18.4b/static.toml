@@ -1,0 +1,5224 @@
+patch = "18.4b"
+set_number = 18
+
+[fields.team_capacity]
+source = "default"
+citation = "Levels: team slots equal level, observed '6/6' at Lvl 6 in probe/out/2026-10-20_191350/shots/194426_421.png and 3 units at Lvl 3 in probe/out/2026-10-20_191350/shots/192143_762.png. Riftbeast(10) +TeamSize 2 and MaxArmySizeIncrease 1/1/2 (New Recruit, New Recruit+, Cursed Crown) and 1 per Tactician item from CommunityDragon latest/cdragon/tft/en_us.json, content 16.20.8248524 (SHA-256 17d19792f662cec404aa071492ae9144a2d2677d2eeb1e0d7d8db9b52a47a9c7); CONFLICT: prelaunch https://teamfighttactics.leagueoflegends.com/en-sg/news/game-updates/enchanted-wilds-overview/ says Riftbeast(10) +1. Tactician item scope 'equipped_anywhere' is unverified (no source found). Transition policy is the conservative declared policy from docs/agents/capacity-contracts.md, not observed game timing."
+
+[fields.team_capacity.value]
+trait_bonuses = [
+    { trait_id = "DA_Riftbeast18", breakpoint = 10, slots = 2, activation = "continuous" },
+]
+
+[fields.team_capacity.value.levels]
+1 = 1
+2 = 2
+3 = 3
+4 = 4
+5 = 5
+6 = 6
+7 = 7
+8 = 8
+9 = 9
+10 = 10
+
+[fields.team_capacity.value.held_augment_slots.TFT6_Augment_ForceOfNature]
+slots = 1
+activation = "held"
+
+[fields.team_capacity.value.held_augment_slots.TFT6_Augment_ForceOfNaturePlus]
+slots = 1
+activation = "held"
+
+[fields.team_capacity.value.held_augment_slots.TFT7_Augment_CursedCrown]
+slots = 2
+activation = "held"
+
+[fields.team_capacity.value.inventory_item_slots.TFT_Item_ForceOfNature]
+slots = 1
+activation = "continuous"
+scope = "equipped_anywhere"
+
+[fields.team_capacity.value.inventory_item_slots.TFT_Item_TacticiansRing]
+slots = 1
+activation = "continuous"
+scope = "equipped_anywhere"
+
+[fields.team_capacity.value.inventory_item_slots.TFT_Item_TacticiansScepter]
+slots = 1
+activation = "continuous"
+scope = "equipped_anywhere"
+
+[fields.team_capacity.value.transition_policy]
+deploy = "reserve_before"
+swap = "remove_then_reserve"
+bench = "validate_after"
+
+[fields.xp_table]
+source = "default"
+citation = "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-2/ sets 7->8 = 56 and the Sep 14 update restores 8->9 and 9->10 = 68 (ticket 48, 2026-10-07); 1->7 steps from https://tftips.app/en/specs/player and LittleBuddyBot https://www.littlebuddybot.com/tft-system-tables (18.4); in-game 3->4 = 6 (probe/out/2026-10-20_191350/shots/192143_762.png '4/6') and 6->7 = 36 (probe/out/2026-10-20_191350/shots/194426_421.png '10/36')."
+
+[fields.xp_table.value]
+1 = 2
+2 = 2
+3 = 6
+4 = 10
+5 = 20
+6 = 36
+7 = 56
+8 = 68
+9 = 68
+
+[fields.gold_by_round]
+source = "default"
+citation = "https://noxutft.com/guide/economy and https://tft-lab.com/en/handbook/gold: 1-2 +2, 1-3 +2, 1-4 +3, 2-1 +4, then +5; no income at the 1-1 carousel."
+
+[fields.gold_by_round.value]
+default = 5
+1-1 = 0
+1-2 = 2
+1-3 = 2
+1-4 = 3
+2-1 = 4
+
+[fields.streak_gold]
+source = "cdragon"
+citation = "CommunityDragon latest/game/data/maps/shipping/map22/map22.bin.json, game content 16.20 (Last-Modified 2026-10-19, SHA-256 6c4819cda6ac8211d0c154df9e7011746deeca812a46b2c9b66e1a5b957590ca) key {4cb79a04} TFTStreakData: 2-4 +1, 5 +2, 6+ +3 (win and loss)."
+
+[fields.streak_gold.value]
+2 = 1
+5 = 2
+6 = 3
+
+[fields.interest]
+source = "default"
+citation = "https://noxutft.com/guide/economy; https://tftips.app/en/specs/player: +1 per 10 gold, cap +5."
+
+[fields.interest.value]
+gold_per_tick = 10
+gold_per_interest = 1
+cap = 5
+
+[fields.player_damage]
+source = "default"
+citation = "LittleBuddyBot damage table (updated 2026-08-26) https://www.littlebuddybot.com/tft-system-tables and https://tftips.app/en/specs/player agree; CONFLICT: https://tft.ninja/guides/game-mechanics/player-damage-calculation lists stage 3 = 5, stage 4 = 8."
+
+[fields.player_damage.value]
+per_survivor = 1
+
+[fields.player_damage.value.stage_base]
+1 = 0
+2 = 2
+3 = 6
+4 = 7
+5 = 10
+6 = 12
+7 = 17
+8 = 150
+
+[fields.shop_odds]
+source = "cdragon"
+citation = "CommunityDragon latest/game/data/maps/shipping/map22/map22.bin.json, game content 16.20 (Last-Modified 2026-10-19, SHA-256 6c4819cda6ac8211d0c154df9e7011746deeca812a46b2c9b66e1a5b957590ca) TFTSet18 DropRateTables.Shop {1ee21754} rows 1-10. Levels 3 and 6 match in-game HUD (probe/out/2026-10-20_191350/shots/192143_762.png, 194426_421.png). CONFLICT: tftips/LittleBuddyBot (18.2/18.3) list level 7 as 16/30/43/10/1, bin says 19/30/40/10/1; no probe frame reached level 7."
+
+[fields.shop_odds.value]
+1 = [
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+]
+2 = [
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+]
+3 = [
+    0.75,
+    0.25,
+    0.0,
+    0.0,
+    0.0,
+]
+4 = [
+    0.55,
+    0.3,
+    0.15,
+    0.0,
+    0.0,
+]
+5 = [
+    0.45,
+    0.33,
+    0.2,
+    0.02,
+    0.0,
+]
+6 = [
+    0.3,
+    0.4,
+    0.25,
+    0.05,
+    0.0,
+]
+7 = [
+    0.19,
+    0.3,
+    0.4,
+    0.1,
+    0.01,
+]
+8 = [
+    0.15,
+    0.2,
+    0.32,
+    0.3,
+    0.03,
+]
+9 = [
+    0.1,
+    0.17,
+    0.25,
+    0.33,
+    0.15,
+]
+10 = [
+    0.05,
+    0.1,
+    0.2,
+    0.4,
+    0.25,
+]
+
+[fields.pool_sizes]
+source = "cdragon"
+citation = "CommunityDragon latest/game/data/maps/shipping/map22/map22.bin.json, game content 16.20 (Last-Modified 2026-10-19, SHA-256 6c4819cda6ac8211d0c154df9e7011746deeca812a46b2c9b66e1a5b957590ca) TFTSet18 ShopContentData {9ce996ca} TierBags counts; matches tftips/LittleBuddyBot."
+
+[fields.pool_sizes.value]
+1 = 30
+2 = 25
+3 = 18
+4 = 10
+5 = 9
+
+[fields.rules_flags]
+source = "default"
+citation = "Buy XP 4, Reroll 2 and five shop slots on the in-game HUD (probe/out/2026-10-20_191350/shots/192143_762.png); 4 XP per purchase and +1 win gold from https://noxutft.com/guide/economy; passive 2 XP/round consistent with Lvl 3 at 4/6 on 2-2 (probe/out/2026-10-20_191350/shots/192143_762.png). unknown_wisp_slots 4.5 = expected champion slots when a Wisp takes the rightmost slot in every other shop (https://teamfighttactics.leagueoflegends.com/en-sg/news/game-updates/enchanted-wilds-overview/). pve_orb_gold is the expected gold per stage's PvE loot derived from LittleBuddyBot loot and orb tables https://www.littlebuddybot.com/tft-system-tables (stage-1 total booked on 1-4; stages 5+ have no table and stay absent). pve_preserves_streak and item_slots_max 3 are standard rules with no Set 18 page found. wisp_purchase_shop_slots_delta is deliberately absent (no refill source)."
+
+[fields.rules_flags.value]
+pve_preserves_streak = true
+passive_xp = 2
+xp_buy_cost = 4
+xp_buy_amount = 4
+roll_cost = 2
+combat_win_gold = 1
+champion_slots_max = 5
+unknown_wisp_slots = 4.5
+item_slots_max = 3
+
+[fields.rules_flags.value.pve_orb_gold]
+1-4 = 0.89
+2-7 = 0.8
+3-7 = 1.77
+4-7 = 3.03
+
+[fields.wisps]
+source = "default"
+citation = "Prices and offer stages for 344 of 349 catalog Wisps from https://tftips.app/en/wisps (fetched 2026-10-21, SHA-256 4ce7711d93008c8e581455e85110f70019902ffabbaf6ec83010493b30c63417) (18.4b; prices match the 18.4 notes https://teamfighttactics.leagueoflegends.com/en-gb/news/game-updates/teamfight-tactics-patch-18-4/); Blossom/Prismatic variant prices from CommunityDragon latest/game/data/maps/shipping/map22/map22.bin.json, game content 16.20 (Last-Modified 2026-10-19, SHA-256 6c4819cda6ac8211d0c154df9e7011746deeca812a46b2c9b66e1a5b957590ca) Shop/Charms BaseCost with 18.4 note corrections. All effects are 'unmodelled': no outcome distributions are declared. NOT OFFERED on 18.4b (owner decision 2026-10-21, absent from tftips' 18.4b list): DA_CloneCompanion18, DA_CloneCompanion18_Prismatic, DA_CloneCompanionUpgrade18, DA_TrueFriendship18, DA_TrueFriendship18_Upgrade; they carry stages 1-8 only to satisfy the schema, with bin price or 0. Per-Wisp evidence: wisp-evidence.json."
+
+[fields.wisps.value.DA_18_AfterShock]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_AfterShock.values]
+
+[fields.wisps.value.DA_18_AfterShock_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_AfterShock_Upgrade.values]
+
+[fields.wisps.value.DA_18_AllFives]
+effect_kind = "unmodelled"
+cost = 8
+offer_stages = [
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_AllFives.values]
+
+[fields.wisps.value.DA_18_AllFives_Upgrade]
+effect_kind = "unmodelled"
+cost = 8
+offer_stages = [
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_AllFives_Upgrade.values]
+
+[fields.wisps.value.DA_18_AllFours]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+]
+
+[fields.wisps.value.DA_18_AllFours.values]
+
+[fields.wisps.value.DA_18_AllFours_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+]
+
+[fields.wisps.value.DA_18_AllFours_Upgrade.values]
+
+[fields.wisps.value.DA_18_AllOnes]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_18_AllOnes.values]
+
+[fields.wisps.value.DA_18_AllOnes_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_18_AllOnes_Upgrade.values]
+
+[fields.wisps.value.DA_18_AllThrees]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_AllThrees.values]
+
+[fields.wisps.value.DA_18_AllThrees_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_AllThrees_Upgrade.values]
+
+[fields.wisps.value.DA_18_AllTwos]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "2",
+    "3",
+]
+
+[fields.wisps.value.DA_18_AllTwos.values]
+
+[fields.wisps.value.DA_18_AllTwos_Upgrade]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "2",
+    "3",
+]
+
+[fields.wisps.value.DA_18_AllTwos_Upgrade.values]
+
+[fields.wisps.value.DA_18_BackrowStar]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_BackrowStar.values]
+
+[fields.wisps.value.DA_18_BackrowStar_Upgrade]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_BackrowStar_Upgrade.values]
+
+[fields.wisps.value.DA_18_BarkArmor]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_18_BarkArmor.values]
+
+[fields.wisps.value.DA_18_BarkArmor_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_18_BarkArmor_Upgrade.values]
+
+[fields.wisps.value.DA_18_BloodMoney]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_BloodMoney.values]
+
+[fields.wisps.value.DA_18_BloodMoney_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_BloodMoney_Upgrade.values]
+
+[fields.wisps.value.DA_18_BronzeSpoon]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "2",
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_BronzeSpoon.values]
+
+[fields.wisps.value.DA_18_BronzeSpoon_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "2",
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_BronzeSpoon_Upgrade.values]
+
+[fields.wisps.value.DA_18_CircleofElders]
+effect_kind = "unmodelled"
+cost = 45
+offer_stages = [
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_CircleofElders.values]
+
+[fields.wisps.value.DA_18_CircleofElders_Upgrade]
+effect_kind = "unmodelled"
+cost = 40
+offer_stages = [
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_CircleofElders_Upgrade.values]
+
+[fields.wisps.value.DA_18_Counterspell]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_Counterspell.values]
+
+[fields.wisps.value.DA_18_Counterspell_Prismatic]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_Counterspell_Prismatic.values]
+
+[fields.wisps.value.DA_18_Counterspell_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_Counterspell_Upgrade.values]
+
+[fields.wisps.value.DA_18_Drizzle]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_18_Drizzle.values]
+
+[fields.wisps.value.DA_18_Drizzle_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_18_Drizzle_Upgrade.values]
+
+[fields.wisps.value.DA_18_EarlyFix]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_18_EarlyFix.values]
+
+[fields.wisps.value.DA_18_EarlyFix_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_18_EarlyFix_Upgrade.values]
+
+[fields.wisps.value.DA_18_Experienced]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_18_Experienced.values]
+
+[fields.wisps.value.DA_18_Experienced_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_18_Experienced_Upgrade.values]
+
+[fields.wisps.value.DA_18_Fellowship]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_Fellowship.values]
+
+[fields.wisps.value.DA_18_Fellowship_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_Fellowship_Upgrade.values]
+
+[fields.wisps.value.DA_18_Fertilize]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "2",
+    "3",
+]
+
+[fields.wisps.value.DA_18_Fertilize.values]
+
+[fields.wisps.value.DA_18_Fertilize_Upgrade]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "2",
+    "3",
+]
+
+[fields.wisps.value.DA_18_Fertilize_Upgrade.values]
+
+[fields.wisps.value.DA_18_ForestMage]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_ForestMage.values]
+
+[fields.wisps.value.DA_18_ForestMage_Upgrade]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_ForestMage_Upgrade.values]
+
+[fields.wisps.value.DA_18_Freeroller]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "2",
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_Freeroller.values]
+
+[fields.wisps.value.DA_18_Freeroller_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "2",
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_Freeroller_Upgrade.values]
+
+[fields.wisps.value.DA_18_GiantGrowth]
+effect_kind = "unmodelled"
+cost = 4
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_GiantGrowth.values]
+
+[fields.wisps.value.DA_18_GiantGrowth_Upgrade]
+effect_kind = "unmodelled"
+cost = 4
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_GiantGrowth_Upgrade.values]
+
+[fields.wisps.value.DA_18_GroveArmor]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_18_GroveArmor.values]
+
+[fields.wisps.value.DA_18_GroveArmor_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_18_GroveArmor_Upgrade.values]
+
+[fields.wisps.value.DA_18_HeatedRivalry]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_18_HeatedRivalry.values]
+
+[fields.wisps.value.DA_18_HeatedRivalry_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_18_HeatedRivalry_Upgrade.values]
+
+[fields.wisps.value.DA_18_HeroicSacrifice]
+effect_kind = "unmodelled"
+cost = 5
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_18_HeroicSacrifice.values]
+
+[fields.wisps.value.DA_18_HeroicSacrifice_Upgrade]
+effect_kind = "unmodelled"
+cost = 5
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_18_HeroicSacrifice_Upgrade.values]
+
+[fields.wisps.value.DA_18_Hummingbird]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_Hummingbird.values]
+
+[fields.wisps.value.DA_18_Hummingbird_Prismatic]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_Hummingbird_Prismatic.values]
+
+[fields.wisps.value.DA_18_Hummingbird_Upgrade]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_Hummingbird_Upgrade.values]
+
+[fields.wisps.value.DA_18_Infliction]
+effect_kind = "unmodelled"
+cost = 4
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_Infliction.values]
+
+[fields.wisps.value.DA_18_Infliction_Upgrade]
+effect_kind = "unmodelled"
+cost = 4
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_Infliction_Upgrade.values]
+
+[fields.wisps.value.DA_18_KillingFrenzy]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_KillingFrenzy.values]
+
+[fields.wisps.value.DA_18_KillingFrenzy_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_KillingFrenzy_Upgrade.values]
+
+[fields.wisps.value.DA_18_LifeDebt]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_LifeDebt.values]
+
+[fields.wisps.value.DA_18_LifeDebt_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_LifeDebt_Upgrade.values]
+
+[fields.wisps.value.DA_18_LightningStorm]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_LightningStorm.values]
+
+[fields.wisps.value.DA_18_LightningStorm_Prismatic]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_LightningStorm_Prismatic.values]
+
+[fields.wisps.value.DA_18_LightningStorm_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_LightningStorm_Upgrade.values]
+
+[fields.wisps.value.DA_18_LightningStrike]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_18_LightningStrike.values]
+
+[fields.wisps.value.DA_18_LightningStrike_Upgrade]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_18_LightningStrike_Upgrade.values]
+
+[fields.wisps.value.DA_18_LostTravelers]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_18_LostTravelers.values]
+
+[fields.wisps.value.DA_18_LostTravelers_Upgrade]
+effect_kind = "unmodelled"
+cost = 4
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_18_LostTravelers_Upgrade.values]
+
+[fields.wisps.value.DA_18_MajorPolymorph]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_18_MajorPolymorph.values]
+
+[fields.wisps.value.DA_18_MajorPolymorph_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_18_MajorPolymorph_Upgrade.values]
+
+[fields.wisps.value.DA_18_MercenaryForce]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_18_MercenaryForce.values]
+
+[fields.wisps.value.DA_18_MercenaryForce_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_18_MercenaryForce_Upgrade.values]
+
+[fields.wisps.value.DA_18_MinorPolymorph]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "2",
+    "3",
+]
+
+[fields.wisps.value.DA_18_MinorPolymorph.values]
+
+[fields.wisps.value.DA_18_MinorPolymorph_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "2",
+    "3",
+]
+
+[fields.wisps.value.DA_18_MinorPolymorph_Upgrade.values]
+
+[fields.wisps.value.DA_18_Mitosis]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_18_Mitosis.values]
+
+[fields.wisps.value.DA_18_Mitosis_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_18_Mitosis_Upgrade.values]
+
+[fields.wisps.value.DA_18_Moonrise]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_18_Moonrise.values]
+
+[fields.wisps.value.DA_18_MoonriseUpgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_18_MoonriseUpgrade.values]
+
+[fields.wisps.value.DA_18_Payday]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_Payday.values]
+
+[fields.wisps.value.DA_18_PaydayUpgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_PaydayUpgrade.values]
+
+[fields.wisps.value.DA_18_PocketChange]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_PocketChange.values]
+
+[fields.wisps.value.DA_18_PocketChange_Upgrade]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_PocketChange_Upgrade.values]
+
+[fields.wisps.value.DA_18_Polymorph]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "2",
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_Polymorph.values]
+
+[fields.wisps.value.DA_18_Polymorph_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "2",
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_Polymorph_Upgrade.values]
+
+[fields.wisps.value.DA_18_Preppers]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_18_Preppers.values]
+
+[fields.wisps.value.DA_18_Preppers_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_18_Preppers_Upgrade.values]
+
+[fields.wisps.value.DA_18_ProlificPower]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_ProlificPower.values]
+
+[fields.wisps.value.DA_18_ProlificPower_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_ProlificPower_Upgrade.values]
+
+[fields.wisps.value.DA_18_Propagate]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "2",
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_Propagate.values]
+
+[fields.wisps.value.DA_18_Propagate_Upgrade]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "2",
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_Propagate_Upgrade.values]
+
+[fields.wisps.value.DA_18_Radiantize]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_Radiantize.values]
+
+[fields.wisps.value.DA_18_Radiantize_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_Radiantize_Upgrade.values]
+
+[fields.wisps.value.DA_18_Resistant]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_Resistant.values]
+
+[fields.wisps.value.DA_18_Resistant_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_Resistant_Upgrade.values]
+
+[fields.wisps.value.DA_18_Starfall]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_Starfall.values]
+
+[fields.wisps.value.DA_18_Starfall_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_Starfall_Upgrade.values]
+
+[fields.wisps.value.DA_18_SunfireSorcery]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_SunfireSorcery.values]
+
+[fields.wisps.value.DA_18_SunfireSorcery_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_SunfireSorcery_Upgrade.values]
+
+[fields.wisps.value.DA_18_Supercritical]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_Supercritical.values]
+
+[fields.wisps.value.DA_18_SupercriticalUpgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_SupercriticalUpgrade.values]
+
+[fields.wisps.value.DA_18_TatteredArmor]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_TatteredArmor.values]
+
+[fields.wisps.value.DA_18_TatteredArmor_Prismatic]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_TatteredArmor_Prismatic.values]
+
+[fields.wisps.value.DA_18_TatteredArmor_Upgrade]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_TatteredArmor_Upgrade.values]
+
+[fields.wisps.value.DA_18_Tremors]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_Tremors.values]
+
+[fields.wisps.value.DA_18_Tremors_Prismatic]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_Tremors_Prismatic.values]
+
+[fields.wisps.value.DA_18_Tremors_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_Tremors_Upgrade.values]
+
+[fields.wisps.value.DA_18_UltraAscension]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_UltraAscension.values]
+
+[fields.wisps.value.DA_18_UltraAscension_Prismatic]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_UltraAscension_Prismatic.values]
+
+[fields.wisps.value.DA_18_UltraAscension_Upgrade]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_18_UltraAscension_Upgrade.values]
+
+[fields.wisps.value.DA_18_VerdantVitality]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_VerdantVitality.values]
+
+[fields.wisps.value.DA_18_VerdantVitality_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_18_VerdantVitality_Upgrade.values]
+
+[fields.wisps.value.DA_18_YordleSpirit]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_18_YordleSpirit.values]
+
+[fields.wisps.value.DA_18_YordleSpirit_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_18_YordleSpirit_Upgrade.values]
+
+[fields.wisps.value.DA_AbandonShip18]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "3",
+]
+
+[fields.wisps.value.DA_AbandonShip18.values]
+
+[fields.wisps.value.DA_AbandonShip18_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "3",
+]
+
+[fields.wisps.value.DA_AbandonShip18_Upgrade.values]
+
+[fields.wisps.value.DA_AnimateShop18]
+effect_kind = "unmodelled"
+cost = 8
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_AnimateShop18.values]
+
+[fields.wisps.value.DA_AnimateShop18_Upgrade]
+effect_kind = "unmodelled"
+cost = 8
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_AnimateShop18_Upgrade.values]
+
+[fields.wisps.value.DA_Apprentice18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_Apprentice18.values]
+
+[fields.wisps.value.DA_Apprentice18_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_Apprentice18_Upgrade.values]
+
+[fields.wisps.value.DA_Artifactinate18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "2",
+    "3",
+]
+
+[fields.wisps.value.DA_Artifactinate18.values]
+
+[fields.wisps.value.DA_Artifactinate18_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "2",
+    "3",
+]
+
+[fields.wisps.value.DA_Artifactinate18_Upgrade.values]
+
+[fields.wisps.value.DA_Barrier18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Barrier18.values]
+
+[fields.wisps.value.DA_Barrier18_Prismatic]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Barrier18_Prismatic.values]
+
+[fields.wisps.value.DA_Barrier18_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Barrier18_Upgrade.values]
+
+[fields.wisps.value.DA_Barter18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_Barter18.values]
+
+[fields.wisps.value.DA_Barter18_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_Barter18_Upgrade.values]
+
+[fields.wisps.value.DA_BearsVisit18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "3",
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_BearsVisit18.values]
+
+[fields.wisps.value.DA_BearsVisit18_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_BearsVisit18_Upgrade.values]
+
+[fields.wisps.value.DA_BeggarsWisp18]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_BeggarsWisp18.values]
+
+[fields.wisps.value.DA_BeggarsWisp18_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_BeggarsWisp18_Upgrade.values]
+
+[fields.wisps.value.DA_BigBoom18]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_BigBoom18.values]
+
+[fields.wisps.value.DA_BigBoom18_Upgrade]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_BigBoom18_Upgrade.values]
+
+[fields.wisps.value.DA_BigGuns18]
+effect_kind = "unmodelled"
+cost = 8
+offer_stages = [
+    "4",
+]
+
+[fields.wisps.value.DA_BigGuns18.values]
+
+[fields.wisps.value.DA_BigGuns18_Upgrade]
+effect_kind = "unmodelled"
+cost = 7
+offer_stages = [
+    "4",
+]
+
+[fields.wisps.value.DA_BigGuns18_Upgrade.values]
+
+[fields.wisps.value.DA_BlastPotion18_Charm]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_BlastPotion18_Charm.values]
+
+[fields.wisps.value.DA_BlastPotion18_Upgrade_Charm]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_BlastPotion18_Upgrade_Charm.values]
+
+[fields.wisps.value.DA_Blaze18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Blaze18.values]
+
+[fields.wisps.value.DA_Blaze18_Prismatic]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Blaze18_Prismatic.values]
+
+[fields.wisps.value.DA_Blaze18_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Blaze18_Upgrade.values]
+
+[fields.wisps.value.DA_BloodAndIron18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_BloodAndIron18.values]
+
+[fields.wisps.value.DA_BloodAndIron18_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_BloodAndIron18_Upgrade.values]
+
+[fields.wisps.value.DA_BoosterShot18]
+effect_kind = "unmodelled"
+cost = 6
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_BoosterShot18.values]
+
+[fields.wisps.value.DA_BoosterShot18_Upgrade]
+effect_kind = "unmodelled"
+cost = 6
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_BoosterShot18_Upgrade.values]
+
+[fields.wisps.value.DA_BorderVillage18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_BorderVillage18.values]
+
+[fields.wisps.value.DA_BorderVillage18_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_BorderVillage18_Upgrade.values]
+
+[fields.wisps.value.DA_BorrowedGear18]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_BorrowedGear18.values]
+
+[fields.wisps.value.DA_BorrowedGear18_Upgrade]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_BorrowedGear18_Upgrade.values]
+
+[fields.wisps.value.DA_Bulwark18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Bulwark18.values]
+
+[fields.wisps.value.DA_Bulwark18_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Bulwark18_Upgrade.values]
+
+[fields.wisps.value.DA_BunchOBelts18]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_BunchOBelts18.values]
+
+[fields.wisps.value.DA_BunchOBeltsUpgrade18]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_BunchOBeltsUpgrade18.values]
+
+[fields.wisps.value.DA_CoinFlip18]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_CoinFlip18.values]
+
+[fields.wisps.value.DA_CoinFlip18_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_CoinFlip18_Upgrade.values]
+
+[fields.wisps.value.DA_Combust18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Combust18.values]
+
+[fields.wisps.value.DA_Combust18_Prismatic]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Combust18_Prismatic.values]
+
+[fields.wisps.value.DA_Combust18_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Combust18_Upgrade.values]
+
+[fields.wisps.value.DA_CurioCart18]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_CurioCart18.values]
+
+[fields.wisps.value.DA_CurioCart18_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_CurioCart18_Upgrade.values]
+
+[fields.wisps.value.DA_Cutpurse18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_Cutpurse18.values]
+
+[fields.wisps.value.DA_Cutpurse18_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_Cutpurse18_Upgrade.values]
+
+[fields.wisps.value.DA_DieRoll18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_DieRoll18.values]
+
+[fields.wisps.value.DA_DieRoll18_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_DieRoll18_Upgrade.values]
+
+[fields.wisps.value.DA_Diversified18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_Diversified18.values]
+
+[fields.wisps.value.DA_DiversifiedUpgrade18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_DiversifiedUpgrade18.values]
+
+[fields.wisps.value.DA_DoodadBag18]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_DoodadBag18.values]
+
+[fields.wisps.value.DA_DoodadBag18_Upgrade]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_DoodadBag18_Upgrade.values]
+
+[fields.wisps.value.DA_DoodadJar18]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_DoodadJar18.values]
+
+[fields.wisps.value.DA_DoodadJar18_Upgrade]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_DoodadJar18_Upgrade.values]
+
+[fields.wisps.value.DA_DoodadSack18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_DoodadSack18.values]
+
+[fields.wisps.value.DA_DoodadSack18_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_DoodadSack18_Upgrade.values]
+
+[fields.wisps.value.DA_Downpour18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Downpour18.values]
+
+[fields.wisps.value.DA_Downpour18_Prismatic]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Downpour18_Prismatic.values]
+
+[fields.wisps.value.DA_Downpour18_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Downpour18_Upgrade.values]
+
+[fields.wisps.value.DA_EssenceTheft18]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "2",
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_EssenceTheft18.values]
+
+[fields.wisps.value.DA_EssenceTheft18_Upgrade]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "2",
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_EssenceTheft18_Upgrade.values]
+
+[fields.wisps.value.DA_FlashFire18]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_FlashFire18.values]
+
+[fields.wisps.value.DA_FlashFire18_Upgrade]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_FlashFire18_Upgrade.values]
+
+[fields.wisps.value.DA_FlipFrenzy18]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_FlipFrenzy18.values]
+
+[fields.wisps.value.DA_FlipFrenzy18_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_FlipFrenzy18_Upgrade.values]
+
+[fields.wisps.value.DA_Flow18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Flow18.values]
+
+[fields.wisps.value.DA_Flow18_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Flow18_Upgrade.values]
+
+[fields.wisps.value.DA_ForestGuide18]
+effect_kind = "unmodelled"
+cost = 6
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_ForestGuide18.values]
+
+[fields.wisps.value.DA_ForestGuide18_Upgrade]
+effect_kind = "unmodelled"
+cost = 5
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_ForestGuide18_Upgrade.values]
+
+[fields.wisps.value.DA_ForestTwins18]
+effect_kind = "unmodelled"
+cost = 4
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_ForestTwins18.values]
+
+[fields.wisps.value.DA_ForestTwinsUpgrade18]
+effect_kind = "unmodelled"
+cost = 5
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_ForestTwinsUpgrade18.values]
+
+[fields.wisps.value.DA_FoundBigFriend18]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_FoundBigFriend18.values]
+
+[fields.wisps.value.DA_FoundBigFriend18_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_FoundBigFriend18_Upgrade.values]
+
+[fields.wisps.value.DA_FoundFriend18]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_FoundFriend18.values]
+
+[fields.wisps.value.DA_FoundFriend18_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_FoundFriend18_Upgrade.values]
+
+[fields.wisps.value.DA_GiantsAura18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_GiantsAura18.values]
+
+[fields.wisps.value.DA_GiantsAura18_Prismatic]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_GiantsAura18_Prismatic.values]
+
+[fields.wisps.value.DA_GiantsAura18_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_GiantsAura18_Upgrade.values]
+
+[fields.wisps.value.DA_GoldenGoose18]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_GoldenGoose18.values]
+
+[fields.wisps.value.DA_GoldenGooseUpgrade18]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_GoldenGooseUpgrade18.values]
+
+[fields.wisps.value.DA_Grandmaster18]
+effect_kind = "unmodelled"
+cost = 18
+offer_stages = [
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Grandmaster18.values]
+
+[fields.wisps.value.DA_Grandmaster18_Upgrade]
+effect_kind = "unmodelled"
+cost = 14
+offer_stages = [
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Grandmaster18_Upgrade.values]
+
+[fields.wisps.value.DA_GreaterChaos18]
+effect_kind = "unmodelled"
+cost = 4
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_GreaterChaos18.values]
+
+[fields.wisps.value.DA_GreaterChaos18_Upgrade]
+effect_kind = "unmodelled"
+cost = 4
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_GreaterChaos18_Upgrade.values]
+
+[fields.wisps.value.DA_GrowUp18]
+effect_kind = "unmodelled"
+cost = 7
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_GrowUp18.values]
+
+[fields.wisps.value.DA_GrowUp18_Upgrade]
+effect_kind = "unmodelled"
+cost = 7
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_GrowUp18_Upgrade.values]
+
+[fields.wisps.value.DA_HandOfBaron18]
+effect_kind = "unmodelled"
+cost = 6
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_HandOfBaron18.values]
+
+[fields.wisps.value.DA_HandOfBaron18_Upgrade]
+effect_kind = "unmodelled"
+cost = 6
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_HandOfBaron18_Upgrade.values]
+
+[fields.wisps.value.DA_HealthPotion18_Charm]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_HealthPotion18_Charm.values]
+
+[fields.wisps.value.DA_HealthPotion18_Upgrade_Charm]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_HealthPotion18_Upgrade_Charm.values]
+
+[fields.wisps.value.DA_HeroOfProphecy18]
+effect_kind = "unmodelled"
+cost = 35
+offer_stages = [
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_HeroOfProphecy18.values]
+
+[fields.wisps.value.DA_HeroOfProphecy18_Upgrade]
+effect_kind = "unmodelled"
+cost = 33
+offer_stages = [
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_HeroOfProphecy18_Upgrade.values]
+
+[fields.wisps.value.DA_HerosEntrance18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_HerosEntrance18.values]
+
+[fields.wisps.value.DA_HerosEntranceUpgrade18]
+effect_kind = "unmodelled"
+cost = 4
+offer_stages = [
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_HerosEntranceUpgrade18.values]
+
+[fields.wisps.value.DA_Hireling18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Hireling18.values]
+
+[fields.wisps.value.DA_Hireling18_Prismatic]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Hireling18_Prismatic.values]
+
+[fields.wisps.value.DA_Hireling18_Upgrade]
+effect_kind = "unmodelled"
+cost = 5
+offer_stages = [
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Hireling18_Upgrade.values]
+
+[fields.wisps.value.DA_HomingFireflies18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_HomingFireflies18.values]
+
+[fields.wisps.value.DA_HomingFireflies18_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_HomingFireflies18_Upgrade.values]
+
+[fields.wisps.value.DA_Hugify18]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_Hugify18.values]
+
+[fields.wisps.value.DA_Hugify18_Prismatic]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_Hugify18_Prismatic.values]
+
+[fields.wisps.value.DA_Hugify18_Upgrade]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_Hugify18_Upgrade.values]
+
+[fields.wisps.value.DA_IdleCraftsman18]
+effect_kind = "unmodelled"
+cost = 4
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_IdleCraftsman18.values]
+
+[fields.wisps.value.DA_IdleCraftsman18_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_IdleCraftsman18_Upgrade.values]
+
+[fields.wisps.value.DA_ImprovedReach18]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_ImprovedReach18.values]
+
+[fields.wisps.value.DA_ImprovedReach18_Upgrade]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_ImprovedReach18_Upgrade.values]
+
+[fields.wisps.value.DA_IronCore18]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_IronCore18.values]
+
+[fields.wisps.value.DA_IronCore18_Upgrade]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_IronCore18_Upgrade.values]
+
+[fields.wisps.value.DA_Ironwood18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Ironwood18.values]
+
+[fields.wisps.value.DA_Ironwood18_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Ironwood18_Upgrade.values]
+
+[fields.wisps.value.DA_Journeyman18]
+effect_kind = "unmodelled"
+cost = 6
+offer_stages = [
+    "2",
+    "3",
+]
+
+[fields.wisps.value.DA_Journeyman18.values]
+
+[fields.wisps.value.DA_Journeyman18_Upgrade]
+effect_kind = "unmodelled"
+cost = 5
+offer_stages = [
+    "2",
+    "3",
+]
+
+[fields.wisps.value.DA_Journeyman18_Upgrade.values]
+
+[fields.wisps.value.DA_Jungling18]
+effect_kind = "unmodelled"
+cost = 4
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_Jungling18.values]
+
+[fields.wisps.value.DA_Jungling18_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_Jungling18_Upgrade.values]
+
+[fields.wisps.value.DA_KillersRegret18]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_KillersRegret18.values]
+
+[fields.wisps.value.DA_KillersRegretUpgrade18]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_KillersRegretUpgrade18.values]
+
+[fields.wisps.value.DA_KnickKnackBag18]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_KnickKnackBag18.values]
+
+[fields.wisps.value.DA_KnickKnackBag18_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_KnickKnackBag18_Upgrade.values]
+
+[fields.wisps.value.DA_KnickKnackJar18]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_KnickKnackJar18.values]
+
+[fields.wisps.value.DA_KnickKnackJar18_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_KnickKnackJar18_Upgrade.values]
+
+[fields.wisps.value.DA_KnickKnackSack18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_KnickKnackSack18.values]
+
+[fields.wisps.value.DA_KnickKnackSack18_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_KnickKnackSack18_Upgrade.values]
+
+[fields.wisps.value.DA_LateBloomer18]
+effect_kind = "unmodelled"
+cost = 4
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_LateBloomer18.values]
+
+[fields.wisps.value.DA_LateBloomer18_Prismatic]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_LateBloomer18_Prismatic.values]
+
+[fields.wisps.value.DA_LateBloomer18_Upgrade]
+effect_kind = "unmodelled"
+cost = 4
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_LateBloomer18_Upgrade.values]
+
+[fields.wisps.value.DA_LesserChaos18]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "2",
+    "3",
+]
+
+[fields.wisps.value.DA_LesserChaos18.values]
+
+[fields.wisps.value.DA_LesserChaos18_Upgrade]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "2",
+    "3",
+]
+
+[fields.wisps.value.DA_LesserChaos18_Upgrade.values]
+
+[fields.wisps.value.DA_LivingSoil18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_LivingSoil18.values]
+
+[fields.wisps.value.DA_LivingSoil18_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_LivingSoil18_Upgrade.values]
+
+[fields.wisps.value.DA_Lucky718]
+effect_kind = "unmodelled"
+cost = 7
+offer_stages = [
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Lucky718.values]
+
+[fields.wisps.value.DA_Lucky718_Prismatic]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Lucky718_Prismatic.values]
+
+[fields.wisps.value.DA_Lucky718_Upgrade]
+effect_kind = "unmodelled"
+cost = 7
+offer_stages = [
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Lucky718_Upgrade.values]
+
+[fields.wisps.value.DA_ManaPotion18_Charm]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_ManaPotion18_Charm.values]
+
+[fields.wisps.value.DA_ManaPotion18_Upgrade_Charm]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_ManaPotion18_Upgrade_Charm.values]
+
+[fields.wisps.value.DA_ManaRichSoil18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_ManaRichSoil18.values]
+
+[fields.wisps.value.DA_ManaRichSoil18_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_ManaRichSoil18_Upgrade.values]
+
+[fields.wisps.value.DA_MarksmensGale18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_MarksmensGale18.values]
+
+[fields.wisps.value.DA_MarksmensGale18_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_MarksmensGale18_Upgrade.values]
+
+[fields.wisps.value.DA_MarksmensMarks18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_MarksmensMarks18.values]
+
+[fields.wisps.value.DA_MarksmensMarks18_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_MarksmensMarks18_Upgrade.values]
+
+[fields.wisps.value.DA_MiddlePath18]
+effect_kind = "unmodelled"
+cost = 4
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_MiddlePath18.values]
+
+[fields.wisps.value.DA_MiddlePath18_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_MiddlePath18_Upgrade.values]
+
+[fields.wisps.value.DA_MoonlightRitual18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_MoonlightRitual18.values]
+
+[fields.wisps.value.DA_MoonlightRitualUpgrade18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_MoonlightRitualUpgrade18.values]
+
+[fields.wisps.value.DA_NaturesAlly18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_NaturesAlly18.values]
+
+[fields.wisps.value.DA_NaturesAlly18_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_NaturesAlly18_Upgrade.values]
+
+[fields.wisps.value.DA_NaturesWrath18]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_NaturesWrath18.values]
+
+[fields.wisps.value.DA_NaturesWrath18_Upgrade]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_NaturesWrath18_Upgrade.values]
+
+[fields.wisps.value.DA_Peddler18]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_Peddler18.values]
+
+[fields.wisps.value.DA_Peddler18_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_Peddler18_Upgrade.values]
+
+[fields.wisps.value.DA_PetrifiedDummy18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_PetrifiedDummy18.values]
+
+[fields.wisps.value.DA_PetrifiedDummy18_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_PetrifiedDummy18_Upgrade.values]
+
+[fields.wisps.value.DA_PetrifyShields18]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_PetrifyShields18.values]
+
+[fields.wisps.value.DA_PetrifyShields18_Upgrade]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_PetrifyShields18_Upgrade.values]
+
+[fields.wisps.value.DA_PhantomArmor18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_PhantomArmor18.values]
+
+[fields.wisps.value.DA_PhantomArmor18_Prismatic]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "3",
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_PhantomArmor18_Prismatic.values]
+
+[fields.wisps.value.DA_PhantomArmor18_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_PhantomArmor18_Upgrade.values]
+
+[fields.wisps.value.DA_PhantomEmblem18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_PhantomEmblem18.values]
+
+[fields.wisps.value.DA_PhantomEmblemUpgrade18]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_PhantomEmblemUpgrade18.values]
+
+[fields.wisps.value.DA_PhantomGloves18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "3",
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_PhantomGloves18.values]
+
+[fields.wisps.value.DA_PhantomGloves18_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "3",
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_PhantomGloves18_Upgrade.values]
+
+[fields.wisps.value.DA_PhantomSplash18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_PhantomSplash18.values]
+
+[fields.wisps.value.DA_PhantomSplashUpgrade18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_PhantomSplashUpgrade18.values]
+
+[fields.wisps.value.DA_PhantomVest18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_PhantomVest18.values]
+
+[fields.wisps.value.DA_PhantomVest18_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_PhantomVest18_Upgrade.values]
+
+[fields.wisps.value.DA_PlatedShields18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_PlatedShields18.values]
+
+[fields.wisps.value.DA_PlatedShields18_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_PlatedShields18_Upgrade.values]
+
+[fields.wisps.value.DA_Potioncraft18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Potioncraft18.values]
+
+[fields.wisps.value.DA_Potioncraft18_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Potioncraft18_Upgrade.values]
+
+[fields.wisps.value.DA_PottedLifebloom18]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_PottedLifebloom18.values]
+
+[fields.wisps.value.DA_PottedLifebloom18_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_PottedLifebloom18_Upgrade.values]
+
+[fields.wisps.value.DA_PottedStonebark18]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_PottedStonebark18.values]
+
+[fields.wisps.value.DA_PottedStonebark18_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_PottedStonebark18_Upgrade.values]
+
+[fields.wisps.value.DA_Quicken18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_Quicken18.values]
+
+[fields.wisps.value.DA_QuickenUpgrade18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_QuickenUpgrade18.values]
+
+[fields.wisps.value.DA_Rain18]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_Rain18.values]
+
+[fields.wisps.value.DA_Rain18_Upgrade]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_Rain18_Upgrade.values]
+
+[fields.wisps.value.DA_RefreshingLight18]
+effect_kind = "unmodelled"
+cost = 6
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_RefreshingLight18.values]
+
+[fields.wisps.value.DA_RefreshingLight18_Upgrade]
+effect_kind = "unmodelled"
+cost = 5
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_RefreshingLight18_Upgrade.values]
+
+[fields.wisps.value.DA_Regeneration18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_Regeneration18.values]
+
+[fields.wisps.value.DA_Regeneration18_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_Regeneration18_Upgrade.values]
+
+[fields.wisps.value.DA_Revenge18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Revenge18.values]
+
+[fields.wisps.value.DA_RevengeUpgrade18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_RevengeUpgrade18.values]
+
+[fields.wisps.value.DA_RideTheWave18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_RideTheWave18.values]
+
+[fields.wisps.value.DA_RideTheWaveUpgrade18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_RideTheWaveUpgrade18.values]
+
+[fields.wisps.value.DA_RollingBones18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_RollingBones18.values]
+
+[fields.wisps.value.DA_RollingBones18_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_RollingBones18_Upgrade.values]
+
+[fields.wisps.value.DA_RolyPolys18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_RolyPolys18.values]
+
+[fields.wisps.value.DA_RolyPolysUpgrade18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_RolyPolysUpgrade18.values]
+
+[fields.wisps.value.DA_Salvager18]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_Salvager18.values]
+
+[fields.wisps.value.DA_SalvagerUpgrade18]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_SalvagerUpgrade18.values]
+
+[fields.wisps.value.DA_Scrappy18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_Scrappy18.values]
+
+[fields.wisps.value.DA_Scrappy18_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_Scrappy18_Upgrade.values]
+
+[fields.wisps.value.DA_SearchParty18]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_SearchParty18.values]
+
+[fields.wisps.value.DA_SearchParty18_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_SearchParty18_Upgrade.values]
+
+[fields.wisps.value.DA_SlowStudy18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_SlowStudy18.values]
+
+[fields.wisps.value.DA_SlowStudyUpgrade18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_SlowStudyUpgrade18.values]
+
+[fields.wisps.value.DA_Smurfing18]
+effect_kind = "unmodelled"
+cost = 6
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_Smurfing18.values]
+
+[fields.wisps.value.DA_Smurfing18_Upgrade]
+effect_kind = "unmodelled"
+cost = 5
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_Smurfing18_Upgrade.values]
+
+[fields.wisps.value.DA_Snacktime18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Snacktime18.values]
+
+[fields.wisps.value.DA_Snacktime18_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Snacktime18_Upgrade.values]
+
+[fields.wisps.value.DA_SolarGift18]
+effect_kind = "unmodelled"
+cost = 6
+offer_stages = [
+    "2",
+    "3",
+]
+
+[fields.wisps.value.DA_SolarGift18.values]
+
+[fields.wisps.value.DA_SolarGift18_Upgrade]
+effect_kind = "unmodelled"
+cost = 4
+offer_stages = [
+    "2",
+    "3",
+]
+
+[fields.wisps.value.DA_SolarGift18_Upgrade.values]
+
+[fields.wisps.value.DA_SolitudesCloak18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_SolitudesCloak18.values]
+
+[fields.wisps.value.DA_SolitudesCloakUpgrade18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_SolitudesCloakUpgrade18.values]
+
+[fields.wisps.value.DA_StandAlone18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_StandAlone18.values]
+
+[fields.wisps.value.DA_StandAlone18_Prismatic]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_StandAlone18_Prismatic.values]
+
+[fields.wisps.value.DA_StandAlone18_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_StandAlone18_Upgrade.values]
+
+[fields.wisps.value.DA_StartingTown18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "2",
+    "3",
+]
+
+[fields.wisps.value.DA_StartingTown18.values]
+
+[fields.wisps.value.DA_StartingTown18_Upgrade]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "2",
+    "3",
+]
+
+[fields.wisps.value.DA_StartingTown18_Upgrade.values]
+
+[fields.wisps.value.DA_Stealthy18]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_Stealthy18.values]
+
+[fields.wisps.value.DA_Stealthy18_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_Stealthy18_Upgrade.values]
+
+[fields.wisps.value.DA_Terraforming18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Terraforming18.values]
+
+[fields.wisps.value.DA_Terraforming18_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_Terraforming18_Upgrade.values]
+
+[fields.wisps.value.DA_ThingamajigBag18]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_ThingamajigBag18.values]
+
+[fields.wisps.value.DA_ThingamajigBag18_Upgrade]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_ThingamajigBag18_Upgrade.values]
+
+[fields.wisps.value.DA_ThingamajigJar18]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_ThingamajigJar18.values]
+
+[fields.wisps.value.DA_ThingamajigJar18_Upgrade]
+effect_kind = "unmodelled"
+cost = 1
+offer_stages = [
+    "2",
+]
+
+[fields.wisps.value.DA_ThingamajigJar18_Upgrade.values]
+
+[fields.wisps.value.DA_ThingamajigSack18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_ThingamajigSack18.values]
+
+[fields.wisps.value.DA_ThingamajigSack18_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_ThingamajigSack18_Upgrade.values]
+
+[fields.wisps.value.DA_ThreeMe18]
+effect_kind = "unmodelled"
+cost = 10
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_ThreeMe18.values]
+
+[fields.wisps.value.DA_ThreeMe18_Upgrade]
+effect_kind = "unmodelled"
+cost = 8
+offer_stages = [
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_ThreeMe18_Upgrade.values]
+
+[fields.wisps.value.DA_TigersVisit18_Wisp]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "3",
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_TigersVisit18_Wisp.values]
+
+[fields.wisps.value.DA_TigersVisit18_Wisp_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_TigersVisit18_Wisp_Upgrade.values]
+
+[fields.wisps.value.DA_TrainingYard18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_TrainingYard18.values]
+
+[fields.wisps.value.DA_TrainingYard18_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_TrainingYard18_Upgrade.values]
+
+[fields.wisps.value.DA_TreetopArchers]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_TreetopArchers.values]
+
+[fields.wisps.value.DA_TreetopArchers_Prismatic]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_TreetopArchers_Prismatic.values]
+
+[fields.wisps.value.DA_TreetopArchers_Upgrade]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_TreetopArchers_Upgrade.values]
+
+[fields.wisps.value.DA_TrophyHunter18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "2",
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_TrophyHunter18.values]
+
+[fields.wisps.value.DA_TrophyHunter18_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "2",
+    "3",
+    "4",
+]
+
+[fields.wisps.value.DA_TrophyHunter18_Upgrade.values]
+
+[fields.wisps.value.DA_TurtlesVisit18]
+effect_kind = "unmodelled"
+cost = 3
+offer_stages = [
+    "3",
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_TurtlesVisit18.values]
+
+[fields.wisps.value.DA_TurtlesVisit18_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+    "5",
+]
+
+[fields.wisps.value.DA_TurtlesVisit18_Upgrade.values]
+
+[fields.wisps.value.DA_WrappedInThorns18]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_WrappedInThorns18.values]
+
+[fields.wisps.value.DA_WrappedInThorns18_Upgrade]
+effect_kind = "unmodelled"
+cost = 2
+offer_stages = [
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+]
+
+[fields.wisps.value.DA_WrappedInThorns18_Upgrade.values]
+
+[fields.wisps.value.DA_CloneCompanion18]
+effect_kind = "unmodelled"
+cost = 5
+offer_stages = [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+]
+
+[fields.wisps.value.DA_CloneCompanion18.values]
+
+[fields.wisps.value.DA_CloneCompanion18_Prismatic]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+]
+
+[fields.wisps.value.DA_CloneCompanion18_Prismatic.values]
+
+[fields.wisps.value.DA_CloneCompanionUpgrade18]
+effect_kind = "unmodelled"
+cost = 5
+offer_stages = [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+]
+
+[fields.wisps.value.DA_CloneCompanionUpgrade18.values]
+
+[fields.wisps.value.DA_TrueFriendship18]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+]
+
+[fields.wisps.value.DA_TrueFriendship18.values]
+
+[fields.wisps.value.DA_TrueFriendship18_Upgrade]
+effect_kind = "unmodelled"
+cost = 0
+offer_stages = [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+]
+
+[fields.wisps.value.DA_TrueFriendship18_Upgrade.values]
+
+[fields.combat_buff_power]
+source = "default"
+citation = "No combat-buff Wisp is modelled, so no board-power bonus is declared."
+
+[fields.combat_buff_power.value]
+
+[fields.wisp_round_cap]
+source = "default"
+citation = "https://teamfighttactics.leagueoflegends.com/en-sg/news/game-updates/enchanted-wilds-overview/: one Wisp per round; Blossom (9) buys 2 per round (breakpoint in entity overlay)."
+
+[fields.wisp_round_cap.value]
+default = 1
+
+[fields.wisp_round_cap.value.trait_overrides]
+DA_18_Blossom = 2
+
+[fields.opening_encounters]
+source = "default"
+citation = "No opening-encounter effects are sourced; encounter advice stays unavailable."
+
+[fields.opening_encounters.value]
+
+[fields.econ_augments]
+source = "default"
+citation = "No econ-augment effects are declared; augments use tier/statistics only."
+
+[fields.econ_augments.value]
+
+[fields.augment_pools]
+source = "cdragon"
+citation = "CommunityDragon latest/cdragon/tft/en_us.json, content 16.20.8248524 (SHA-256 17d19792f662cec404aa071492ae9144a2d2677d2eeb1e0d7d8db9b52a47a9c7) setData TFTSet18 augments by tier tag {d11fd6d5}=silver, {ce1fd21c}=gold, {cf1fd3af}=prismatic. Tag meaning inferred: every augment has exactly one tag and 578/592 agree with their I/II/III icon suffix."
+
+[fields.augment_pools.value]
+silver = [
+    "DA_18_BranchingOut",
+    "DA_18_BranchingOutPlus",
+    "DA_18_CaretakersAlly",
+    "DA_18_GoodForSomethingI",
+    "DA_18_InfernoTraitAugment",
+    "DA_18_OneTwoFive",
+    "DA_18_OnesTwosThree",
+    "DA_18_ResidualMagic",
+    "DA_18_ResidualMagicPlus",
+    "DA_18_ResidualMagicPlusPlus",
+    "DA_18_SolarTraitAugment",
+    "DA_18_WispRebatePlus",
+    "DA_18_WispRebatePlusPlus",
+    "DA_AugmentedPower",
+    "DA_BackupBows",
+    "DA_BandOfThieves",
+    "DA_BoxingLessons",
+    "DA_CalledShot",
+    "DA_CapitalGainsI",
+    "DA_CarveAPath",
+    "DA_CelestialBlessingI",
+    "DA_ChampDelivery",
+    "DA_ChampDeliveryPlus",
+    "DA_ChampDeliveryPlusPlus",
+    "DA_CognitiveTax",
+    "DA_CognitiveTaxPlus",
+    "DA_ComponentBuffet",
+    "DA_Corrosion",
+    "DA_CraftedCrafting",
+    "DA_Dummify",
+    "DA_ElectrochargeI",
+    "DA_Expedition",
+    "DA_ExtraBuckles",
+    "DA_FeelingLucky",
+    "DA_FindYourCenter",
+    "DA_FlowingTears",
+    "DA_FocusedFire",
+    "DA_FutureFocused",
+    "DA_GlassCannon_Silver",
+    "DA_GroupHugI",
+    "DA_HealingOrbsI",
+    "DA_IronAssets",
+    "DA_ItemGrabBag",
+    "DA_KickStart",
+    "DA_Kingslayer",
+    "DA_LateGameSpecialist",
+    "DA_LatentForge",
+    "DA_LoadedDice",
+    "DA_MakeshiftArmorI",
+    "DA_MissedConnections",
+    "DA_PandorasBench",
+    "DA_PandorasItemsI",
+    "DA_PartialAscension",
+    "DA_PatienceIsAVirtue",
+    "DA_QuickStreaks",
+    "DA_Recombobulator",
+    "DA_RollingForDays",
+    "DA_SilverDestiny",
+    "DA_SilverDestinyPlus",
+    "DA_SilverDestinyPlusPlus",
+    "DA_SilverSpoon",
+    "DA_SliceOfLife",
+    "DA_SlightlyMagicRoll",
+    "DA_SmallGrabBag",
+    "DA_StandUnited",
+    "DA_TeamBuilding",
+    "DA_TheTower",
+    "DA_TwinGuardians",
+    "DA_VerticalityI",
+    "DA_YoungAndWildAndFree",
+    "TFT10_Augment_GoodForSomethingSilver",
+    "TFT11_Augment_BloodBank",
+    "TFT11_Augment_OverEncumbered",
+    "TFT6_Augment_Distancing",
+    "TFT6_Augment_Diversify1",
+    "TFT6_Augment_Electrocharge1",
+    "TFT6_Augment_ItemGrabBag1",
+    "TFT6_Augment_Keepers1",
+    "TFT6_Augment_MakeshiftArmor1",
+    "TFT6_Augment_OneTwoFive",
+    "TFT6_Augment_PandorasItems",
+    "TFT6_Augment_Recombobulator",
+    "TFT6_Augment_SecondWind1",
+    "TFT6_Augment_TinyTitans",
+    "TFT7_Augment_AFK",
+    "TFT7_Augment_BandOfThieves1",
+    "TFT7_Augment_BestFriends1",
+    "TFT7_Augment_BigFriend",
+    "TFT7_Augment_LategameSpecialist",
+    "TFT7_Augment_Preparation",
+    "TFT9_Augment_ArmyBuilding",
+    "TFT9_Augment_BardPlaybook1",
+    "TFT9_Augment_Commander_PartialAscension",
+    "TFT9_Augment_Commander_RollingForDays",
+    "TFT9_Augment_Commander_TeamingUp1",
+    "TFT9_Augment_CustomerIsAlwaysRight",
+    "TFT9_Augment_DravenSpoilsOfWar",
+    "TFT9_Augment_HealingOrbsI",
+    "TFT9_Augment_IronAssets",
+    "TFT9_Augment_LongTimeCrafting",
+    "TFT9_Augment_MissedConnections",
+    "TFT9_Augment_OneTwosThree",
+    "TFT9_Augment_PumpingUp",
+    "TFT9_Augment_RiskyMoves",
+    "TFT9_Augment_SilverSpoon",
+    "TFT9_Augment_YoungAndWildAndFree",
+    "TFT_Augment_BoxingLessons",
+    "TFT_Augment_BranchingOut",
+    "TFT_Augment_BranchingOutPlus",
+    "TFT_Augment_CalledShot",
+    "TFT_Augment_ChaosEvolution",
+    "TFT_Augment_ChargeTransfer1",
+    "TFT_Augment_ClimbTheLadder1",
+    "TFT_Augment_CognitiveTax",
+    "TFT_Augment_CognitiveTaxPlus",
+    "TFT_Augment_ComponentQuestBow",
+    "TFT_Augment_ComponentQuestRod",
+    "TFT_Augment_ComponentQuestSword",
+    "TFT_Augment_ComponentQuestTear",
+    "TFT_Augment_Corrosion",
+    "TFT_Augment_CraftedCrafting",
+    "TFT_Augment_Dhampyr1",
+    "TFT_Augment_Dummify",
+    "TFT_Augment_EfficientShopper",
+    "TFT_Augment_Expedition",
+    "TFT_Augment_EyeForAnEye",
+    "TFT_Augment_EyeForAnEyePlus",
+    "TFT_Augment_FeelingLucky",
+    "TFT_Augment_FindYourCenter",
+    "TFT_Augment_FiresalePlus",
+    "TFT_Augment_ForgeAFriend",
+    "TFT_Augment_GlassCannonI",
+    "TFT_Augment_GroupHug1",
+    "TFT_Augment_HeadStart",
+    "TFT_Augment_Incoming",
+    "TFT_Augment_ItemCollector1",
+    "TFT_Augment_KickStart",
+    "TFT_Augment_Lineup",
+    "TFT_Augment_MagicRollMinus",
+    "TFT_Augment_MarksMan",
+    "TFT_Augment_PatienceIsAVirtue",
+    "TFT_Augment_Placebo",
+    "TFT_Augment_PlaceboPlus",
+    "TFT_Augment_PocketRecombobulator",
+    "TFT_Augment_PowerUp",
+    "TFT_Augment_RerollTransfer",
+    "TFT_Augment_RestartMission",
+    "TFT_Augment_RiggedShopPlus",
+    "TFT_Augment_SilverDestiny",
+    "TFT_Augment_SilverDestinyPlus",
+    "TFT_Augment_SilverDestinyPlusPlus",
+    "TFT_Augment_SizeMatters",
+    "TFT_Augment_SliceOfLife",
+    "TFT_Augment_SmallGrabBag",
+    "TFT_Augment_Survivor",
+    "TFT_Augment_TableScraps",
+    "TFT_Augment_TheTower",
+    "TFT_Augment_TitanicTitan",
+    "TFT_Augment_TwinGuardians",
+    "TFT_Augment_Underdogs",
+    "TFT_Augment_Waverider",
+]
+gold = [
+    "DA_18_BigGrabBag",
+    "DA_18_BlossomTraitAugment",
+    "DA_18_CovenTraitAugment",
+    "DA_18_CovenTraitAugment_LootToAP",
+    "DA_18_DuoQueue",
+    "DA_18_ElderwoodTraitAugment",
+    "DA_18_FOURcing",
+    "DA_18_FaeTraitAugment",
+    "DA_18_FloraFatalisAugment",
+    "DA_18_LunarTraitAugment",
+    "DA_18_LunarTraitAugmentPlus",
+    "DA_18_PrimalAugmentPlus_Nidalee",
+    "DA_18_PrimalAugmentPlus_Sivir",
+    "DA_18_PrimalAugment_Nidalee",
+    "DA_18_PrimalAugment_Sivir",
+    "DA_18_RiftbeastTraitAugment",
+    "DA_18_RivalsAugment",
+    "DA_18_SprykinAugment",
+    "DA_18_WeightTheWorth",
+    "DA_AdvancedLoan",
+    "DA_AdvancedLoanPlus",
+    "DA_ArcaneViktory",
+    "DA_Ascension",
+    "DA_BacklineBlueprint",
+    "DA_BirthdayReunion",
+    "DA_BlackthornTraitAugment",
+    "DA_BodyguardTraining",
+    "DA_BonusGift",
+    "DA_BonusGiftPlus",
+    "DA_BoosterPack",
+    "DA_BoosterPackPlus",
+    "DA_BoosterPackPlusPlus",
+    "DA_BronzeForLifeI",
+    "DA_CalculatedLoss",
+    "DA_CapitalGainsII",
+    "DA_CaretakersFavor",
+    "DA_CelestialBlessingII",
+    "DA_ChallengersGrace",
+    "DA_ClearMind",
+    "DA_ClockworkAccelerator",
+    "DA_ClutteredMind",
+    "DA_CognitiveOverload",
+    "DA_CookingPot",
+    "DA_CryMeARiver",
+    "DA_CyberneticImplants_Gold",
+    "DA_CyberneticUplink_Gold",
+    "DA_DoubleTrouble",
+    "DA_EarlyLearnings",
+    "DA_ElectrochargeII",
+    "DA_EpicRolldown",
+    "DA_Epoch",
+    "DA_EpochPlus",
+    "DA_ExclusiveCustomization",
+    "DA_ExplosiveGrowth",
+    "DA_ExplosiveGrowthPlus",
+    "DA_FrontlineFoundation",
+    "DA_GainGold",
+    "DA_GildedSteel",
+    "DA_GlassCannon_Gold",
+    "DA_GoldDestiny",
+    "DA_GoldDestinyPlus",
+    "DA_GroupHugII",
+    "DA_HardBargain",
+    "DA_HealingOrbsII",
+    "DA_HeartOfSteel",
+    "DA_HeroicGrabBag",
+    "DA_HeroicGrabBagPlus",
+    "DA_HeroicGrabBagPlusPlus",
+    "DA_Hustler",
+    "DA_InfinityProtection",
+    "DA_InvestmentStrategyI",
+    "DA_ItsMeBaby",
+    "DA_JeweledLotus_I",
+    "DA_KnowYourEnemy",
+    "DA_LateGameScaling",
+    "DA_LegionOfThrees",
+    "DA_MagicRoll",
+    "DA_MakeshiftArmorII",
+    "DA_MaliciousMonetization",
+    "DA_MaxBuild",
+    "DA_MoneyHungryPlus",
+    "DA_MoneyHungry_NotBroken",
+    "DA_NoScoutNoPivot",
+    "DA_PandorasItemsII",
+    "DA_PatientStudy",
+    "DA_Pilfer",
+    "DA_PlotArmor",
+    "DA_PortableForge",
+    "DA_PromisedProtection",
+    "DA_Replication",
+    "DA_SalvageBin",
+    "DA_SalvageBinPlus",
+    "DA_SeraphimsStaff",
+    "DA_Slammin",
+    "DA_SlamminPlus",
+    "DA_SoloLeveling",
+    "DA_SoloPlate",
+    "DA_SpeedyDoubleKill",
+    "DA_SpiritOfRedemption",
+    "DA_SpreadingRoots",
+    "DA_SpreadingRootsPlus",
+    "DA_Staffsmith",
+    "DA_Swordsmith",
+    "DA_TheGoldenDragon",
+    "DA_TimeSkip",
+    "DA_TonsOfStatsI",
+    "DA_TradeSector",
+    "DA_TradeSectorPlus",
+    "DA_URF",
+    "DA_VerticalityII",
+    "DA_Warpath",
+    "DA_WorththeWait",
+    "DA_WovenMagic",
+    "TFT10_Augment_CrashTestDummies",
+    "TFT10_Augment_FullyAdapted",
+    "TFT10_Augment_HeroicGrabBag",
+    "TFT10_Augment_LittleBuddies",
+    "TFT10_Augment_Scapegoat",
+    "TFT11_Augment_Epoch",
+    "TFT11_Augment_EpochPlus",
+    "TFT11_Augment_Prizefighter",
+    "TFT11_Augment_RainingGold",
+    "TFT11_Augment_RainingGoldPlus",
+    "TFT11_Augment_Reinfourcement",
+    "TFT11_Augment_ScoreboardScrapper",
+    "TFT11_Augment_Slammin",
+    "TFT11_Augment_Slammin_Plus",
+    "TFT16_Augment_UltraRapidFire",
+    "TFT6_Augment_CalculatedLoss",
+    "TFT6_Augment_ClearMind",
+    "TFT6_Augment_CyberneticImplants2",
+    "TFT6_Augment_CyberneticUplink2",
+    "TFT6_Augment_Distancing2",
+    "TFT6_Augment_Electrocharge2",
+    "TFT6_Augment_HyperRoll",
+    "TFT6_Augment_Keepers2",
+    "TFT6_Augment_MakeshiftArmor2",
+    "TFT6_Augment_PortableForge",
+    "TFT6_Augment_SalvageBin",
+    "TFT6_Augment_SalvageBinHR",
+    "TFT6_Augment_SecondWind2",
+    "TFT6_Augment_SunfireBoard",
+    "TFT6_Augment_TradeSector",
+    "TFT6_Augment_Twins2",
+    "TFT7_Augment_BestFriends2",
+    "TFT7_Augment_BigFriend2",
+    "TFT7_Augment_ClutteredMind",
+    "TFT7_Augment_PandorasBench",
+    "TFT7_Augment_Preparation2",
+    "TFT8_Augment_SalvageBinPlus",
+    "TFT9_Augment_AllThatShimmers",
+    "TFT9_Augment_BardPlaybook2",
+    "TFT9_Augment_BigGrabBag",
+    "TFT9_Augment_Commander_Ascension",
+    "TFT9_Augment_DravenSpoilsOfWar2",
+    "TFT9_Augment_HealingOrbsII",
+    "TFT9_Augment_JeweledLotus",
+    "TFT9_Augment_KnowYourEnemy",
+    "TFT9_Augment_LearningFromExperience2",
+    "TFT9_Augment_PandorasItems2",
+    "TFT9_Augment_PumpingUp2",
+    "TFT9_Augment_StarsAreBorn",
+    "TFT9_Augment_TonsOfStats",
+    "TFT9_Augment_YouHaveMyBow",
+    "TFT_Augment_AdvancedLoan",
+    "TFT_Augment_AdvancedLoanPlus",
+    "TFT_Augment_AimForTheTop",
+    "TFT_Augment_AllThatShimmersPlus",
+    "TFT_Augment_AnotherOne",
+    "TFT_Augment_AnotherOnePlus",
+    "TFT_Augment_ArcaneViktory",
+    "TFT_Augment_AuraFarming",
+    "TFT_Augment_BacklineBlueprint",
+    "TFT_Augment_BackupDancers",
+    "TFT_Augment_BirthdayReunion",
+    "TFT_Augment_BlazingSoul",
+    "TFT_Augment_BloodRage",
+    "TFT_Augment_BodyguardTraining",
+    "TFT_Augment_BoosterPack",
+    "TFT_Augment_BoosterPackPlus",
+    "TFT_Augment_BoosterPackPlusPlus",
+    "TFT_Augment_BronzeForLifeI",
+    "TFT_Augment_ChargeTransfer2",
+    "TFT_Augment_ClimbTheLadder2",
+    "TFT_Augment_ClockworkAccelerator",
+    "TFT_Augment_CloningFacility",
+    "TFT_Augment_CognitiveOverload",
+    "TFT_Augment_ConstructACompanion",
+    "TFT_Augment_CookingPot",
+    "TFT_Augment_CosmicRestart",
+    "TFT_Augment_Crossfire2",
+    "TFT_Augment_CrownguardSpirit",
+    "TFT_Augment_CryMeARiver",
+    "TFT_Augment_DuoQueue",
+    "TFT_Augment_EarlyLearning",
+    "TFT_Augment_EpicRolldown",
+    "TFT_Augment_EvilBeyondMeasure",
+    "TFT_Augment_ExclusiveCustomization",
+    "TFT_Augment_ExplosiveGrowth",
+    "TFT_Augment_ExplosiveGrowthPlus",
+    "TFT_Augment_FeedTheFlames",
+    "TFT_Augment_FoodfightTactics",
+    "TFT_Augment_ForgeRod",
+    "TFT_Augment_ForgeSword",
+    "TFT_Augment_ForwardThinking",
+    "TFT_Augment_FrontlineFoundation",
+    "TFT_Augment_FuriousBlows",
+    "TFT_Augment_GainGold",
+    "TFT_Augment_GildedSteel",
+    "TFT_Augment_GlassCannonII",
+    "TFT_Augment_GoldDestiny",
+    "TFT_Augment_GoldDestinyPlus",
+    "TFT_Augment_GoldForDummies",
+    "TFT_Augment_GoldenQuest",
+    "TFT_Augment_Golemify",
+    "TFT_Augment_GroupHug2",
+    "TFT_Augment_GuardbreakerSpirit",
+    "TFT_Augment_HardBargain",
+    "TFT_Augment_HeavyIsTheCrown",
+    "TFT_Augment_HeftyRolls",
+    "TFT_Augment_HeroicGrabBagPlus",
+    "TFT_Augment_HeroicGrabBagPlusPlus",
+    "TFT_Augment_HighVoltage",
+    "TFT_Augment_HomeCooking",
+    "TFT_Augment_HowlingGale",
+    "TFT_Augment_InfinityProtection",
+    "TFT_Augment_InvestmentStrategy1",
+    "TFT_Augment_ItemCollector2",
+    "TFT_Augment_ItemGargoyleStoneplate",
+    "TFT_Augment_ItemSpiritVisage",
+    "TFT_Augment_JustSlayer",
+    "TFT_Augment_LastSecondSave",
+    "TFT_Augment_LateGameScaling",
+    "TFT_Augment_LegionOfThrees",
+    "TFT_Augment_MagicRoll",
+    "TFT_Augment_MaxBuild",
+    "TFT_Augment_MirroredMonetization",
+    "TFT_Augment_Misfits",
+    "TFT_Augment_MoneyHungry",
+    "TFT_Augment_Moonlight",
+    "TFT_Augment_NoScoutNoPivot",
+    "TFT_Augment_NobleSacrifice",
+    "TFT_Augment_Overheal",
+    "TFT_Augment_Pilfer",
+    "TFT_Augment_PlotArmor",
+    "TFT_Augment_PsychicForge",
+    "TFT_Augment_Pyromaniac",
+    "TFT_Augment_QuietQuitting",
+    "TFT_Augment_Replication",
+    "TFT_Augment_SavingsAccount",
+    "TFT_Augment_SeraphimsStaff",
+    "TFT_Augment_ShojinSpirit",
+    "TFT_Augment_SideEffects",
+    "TFT_Augment_SoloLeveling",
+    "TFT_Augment_SpeedyDoubleKill",
+    "TFT_Augment_SpiritLink1",
+    "TFT_Augment_SpreadingRoots",
+    "TFT_Augment_SpreadingRootsPlus",
+    "TFT_Augment_StoryOfSeven",
+    "TFT_Augment_TeslaCoil",
+    "TFT_Augment_TheDarkinBlade",
+    "TFT_Augment_TheGoldenDragon",
+    "TFT_Augment_TheVidalion",
+    "TFT_Augment_ThornPlatedArmor",
+    "TFT_Augment_TimeSkip",
+    "TFT_Augment_TombRaider1",
+    "TFT_Augment_TreasureHunt",
+    "TFT_Augment_Trifecta1",
+    "TFT_Augment_TwoMuchValue",
+    "TFT_Augment_TwoTanky",
+    "TFT_Augment_TwoTrick",
+    "TFT_Augment_Unforgotten",
+    "TFT_Augment_UrfsGambit",
+    "TFT_Augment_WarmogsBuckle",
+    "TFT_Augment_Warpath",
+    "TFT_Augment_WaterLotus1",
+    "TFT_Augment_WorthTheWaitGold",
+]
+prismatic = [
+    "DA_18_LuxAugmentII",
+    "DA_BandOfThievesII",
+    "DA_BandOfThievesIIPlus",
+    "DA_BandOfThievesIIPlusPlus",
+    "DA_BaronsLair",
+    "DA_BeltOverflow",
+    "DA_BirthdayPresent",
+    "DA_BronzeForLifeII",
+    "DA_BuildABud",
+    "DA_BuriedTreasuresIII",
+    "DA_CallToChaos",
+    "DA_CelestialBlessingIII",
+    "DA_ComebackStory",
+    "DA_CommerceCore",
+    "DA_ComponentQuest",
+    "DA_Coronation",
+    "DA_DeadlierBlades",
+    "DA_DeadlierCaps",
+    "DA_ExpectedUnexpectedness",
+    "DA_Flexible",
+    "DA_ForgedInStrength",
+    "DA_GiantAndMighty",
+    "DA_GoingLong",
+    "DA_GoldenEgg",
+    "DA_GoldenGamble",
+    "DA_GoldenGamblePlus",
+    "DA_GoldenGamblePlusPlus",
+    "DA_HardCommit",
+    "DA_HedgeFund",
+    "DA_HoldTheLine",
+    "DA_InvestedPlus",
+    "DA_InvestedPlusPlus",
+    "DA_InvestmentStrategy",
+    "DA_JeweledLotus_II",
+    "DA_LevelUp",
+    "DA_LivingForge",
+    "DA_LuckyGloves",
+    "DA_LuckyGlovesPlus",
+    "DA_LuxurySubscription",
+    "DA_Min_Max",
+    "DA_MoneyMonsoon",
+    "DA_NestingAnvils",
+    "DA_NestingAnvilsPlus",
+    "DA_OneBuffTwoBuff",
+    "DA_PandorasItemsIII",
+    "DA_PrismaticDestiny",
+    "DA_PrismaticDestinyPlus",
+    "DA_PrismaticTicket",
+    "DA_RadiantRascal",
+    "DA_RadiantRelic",
+    "DA_Retribution",
+    "DA_ShimmerscaleEssence",
+    "DA_ShoppingSpree",
+    "DA_SoulAwakening",
+    "DA_SweetTreats",
+    "DA_SwordOverflow",
+    "DA_TacticiansKitchen",
+    "DA_TheTraitTree",
+    "DA_TheTraitTreePlus",
+    "DA_TonsOfStatsII",
+    "DA_TraitLadder",
+    "DA_UpwardMobility",
+    "DA_UrfsGrabBag",
+    "DA_VerticalityIII",
+    "DA_WandOverflow",
+    "DA_WeStickTogether",
+    "DA_WorththeWaitII",
+    "TFT10_Augment_GoingLong",
+    "TFT11_Augment_AtWhatCost",
+    "TFT11_Augment_Buildabud",
+    "TFT11_Augment_Calltochaos",
+    "TFT11_Augment_RadiantRefactor",
+    "TFT11_Augment_TinyButDeadly",
+    "TFT6_Augment_BandOfThieves2",
+    "TFT6_Augment_BandOfThieves2Plus",
+    "TFT6_Augment_BandOfThieves2PlusPlus",
+    "TFT6_Augment_CyberneticUplink3",
+    "TFT6_Augment_ForceOfNature",
+    "TFT6_Augment_ForceOfNaturePlus",
+    "TFT6_Augment_GachaAddict",
+    "TFT6_Augment_MaxLevel10",
+    "TFT6_Augment_RadiantRelics",
+    "TFT6_Augment_TheGoldenEgg",
+    "TFT6_Augment_ThriftShop",
+    "TFT6_Augment_TradeSector2",
+    "TFT7_Augment_BirthdayPresents",
+    "TFT7_Augment_CursedCrown",
+    "TFT7_Augment_LivingForge",
+    "TFT7_Augment_LuckyGloves",
+    "TFT7_Augment_LuckyGlovesPlus",
+    "TFT7_Augment_UrfsGrabBag2",
+    "TFT9_Augment_BardPlaybook3",
+    "TFT9_Augment_BuildingACollectionPlusPlus",
+    "TFT9_Augment_Commander_FinalAscension",
+    "TFT9_Augment_DravenSpoilsOfWar3",
+    "TFT9_Augment_GreaterJeweledLotus",
+    "TFT9_Augment_HedgeFund",
+    "TFT9_Augment_HedgeFundPlus",
+    "TFT9_Augment_HighEndSector",
+    "TFT9_Augment_Legend_HighEndSector",
+    "TFT9_Augment_PandorasRadiantBox",
+    "TFT9_Augment_PumpingUp3",
+    "TFT9_Augment_RollTheDice",
+    "TFT9_Augment_StarterKit",
+    "TFT9_Augment_TiniestTitanPlus",
+    "TFT_Augment_AnExaltedAdventure",
+    "TFT_Augment_AwakenedSoul",
+    "TFT_Augment_BeltOverflow",
+    "TFT_Augment_BlazingSoul2",
+    "TFT_Augment_BronzeForLife2",
+    "TFT_Augment_ComebackStory",
+    "TFT_Augment_Coronation",
+    "TFT_Augment_DeadlierCaps",
+    "TFT_Augment_ExclusiveCustomization2",
+    "TFT_Augment_ExpectedUnexpectedness",
+    "TFT_Augment_Flexible",
+    "TFT_Augment_ForgedInStrength",
+    "TFT_Augment_GiantAndMighty",
+    "TFT_Augment_GoldenGamble",
+    "TFT_Augment_GoldenGamblePlus",
+    "TFT_Augment_GoldenGamblePlusPlus",
+    "TFT_Augment_HardCommit",
+    "TFT_Augment_HoldTheLine",
+    "TFT_Augment_InvestedPlus",
+    "TFT_Augment_InvestedPlusPlus",
+    "TFT_Augment_InvestmentStrategy2",
+    "TFT_Augment_LuxurySubscription",
+    "TFT_Augment_MinMaxer",
+    "TFT_Augment_MoneyMonsoon",
+    "TFT_Augment_MuseumHeist",
+    "TFT_Augment_NineLives",
+    "TFT_Augment_OneBuffTwoBuff",
+    "TFT_Augment_PrismaticDestiny",
+    "TFT_Augment_Protagonist",
+    "TFT_Augment_QualityOverQuantity",
+    "TFT_Augment_Retribution",
+    "TFT_Augment_ShimmerscaleEssence",
+    "TFT_Augment_SubscriptionService",
+    "TFT_Augment_SweetTreats",
+    "TFT_Augment_SwordOverflow",
+    "TFT_Augment_TacticiansKitchen",
+    "TFT_Augment_TheBaronsLair",
+    "TFT_Augment_TombRaider2",
+    "TFT_Augment_TragicalBlade",
+    "TFT_Augment_TraitTree",
+    "TFT_Augment_TraitTreePlus",
+    "TFT_Augment_Trifecta2",
+    "TFT_Augment_UnlimitedPower",
+    "TFT_Augment_UpwardMobility",
+    "TFT_Augment_WandOverflow",
+    "TFT_Augment_WaterLotus2",
+    "TFT_Augment_WeStickTogether",
+    "TFT_Augment_WinOut",
+    "TFT_Augment_WorthTheWaitPrismatic",
+]
+
+[fields.threat_keywords]
+source = "default"
+citation = "Hand-kept per-set phrase lists (docs/spec/patch-workflow.md: threat keyword lists are hand-kept); proposed for owner review."
+
+[fields.threat_keywords.value]
+backline_access = [
+    "backline",
+    "farthest",
+    "furthest",
+    "leap",
+    "leaps",
+    "dash",
+    "dashes",
+    "jump",
+    "jumps",
+    "blink",
+    "teleport",
+]
+aoe = [
+    "all enemies",
+    "nearby enemies",
+    "adjacent enemies",
+    "enemies within",
+    "in a line",
+    "in a cone",
+    "area",
+    "around",
+]
+
+[fields.bench_size]
+value = 9
+source = "default"
+citation = "Standard 9-slot bench; no Set 18 page states it. Owner to confirm."
+
+[fields.item_recipes]
+source = "cdragon"
+citation = "CommunityDragon latest/cdragon/tft/en_us.json, content 16.20.8248524 (SHA-256 17d19792f662cec404aa071492ae9144a2d2677d2eeb1e0d7d8db9b52a47a9c7) item composition via prepare-review recipes.json (94 recipes)."
+
+[fields.item_recipes.value]
+DA_18_EmblemBlackthorn = [
+    "DA_Component_Spatula",
+    "DA_Component_GiantsBelt",
+]
+DA_18_EmblemBlossom = [
+    "DA_Component_Spatula",
+    "DA_Component_NeedlesslyLargeRod",
+]
+DA_18_EmblemBrawler = [
+    "DA_Component_FryingPan",
+    "DA_Component_GiantsBelt",
+]
+DA_18_EmblemElderwood = [
+    "DA_Component_Spatula",
+    "DA_Component_ChainVest",
+]
+DA_18_EmblemExecutioner = [
+    "DA_Component_FryingPan",
+    "DA_Component_SparringGloves",
+]
+DA_18_EmblemFae = [
+    "DA_Component_Spatula",
+    "DA_Component_BFSword",
+]
+DA_18_EmblemHunter = [
+    "DA_Component_FryingPan",
+    "DA_Component_BFSword",
+]
+DA_18_EmblemInferno = [
+    "DA_Component_Spatula",
+    "DA_Component_RecurveBow",
+]
+DA_18_EmblemInvoker = [
+    "DA_Component_FryingPan",
+    "DA_Component_TearOfTheGoddess",
+]
+DA_18_EmblemLunar = [
+    "DA_Component_Spatula",
+    "DA_Component_TearOfTheGoddess",
+]
+DA_18_EmblemPrimal = [
+    "DA_Component_Spatula",
+    "DA_Component_SparringGloves",
+]
+DA_18_EmblemRapidfire = [
+    "DA_Component_FryingPan",
+    "DA_Component_RecurveBow",
+]
+DA_18_EmblemSlayer = [
+    "DA_Component_FryingPan",
+    "DA_Component_NegatronCloak",
+]
+DA_18_EmblemSpellweaver = [
+    "DA_Component_FryingPan",
+    "DA_Component_NeedlesslyLargeRod",
+]
+DA_18_EmblemSprykin = [
+    "DA_Component_Spatula",
+    "DA_Component_NegatronCloak",
+]
+DA_18_EmblemVanguard = [
+    "DA_Component_FryingPan",
+    "DA_Component_ChainVest",
+]
+DA_AdaptiveHelm = [
+    "DA_Component_TearOfTheGoddess",
+    "DA_Component_NegatronCloak",
+]
+DA_ArchangelsStaff = [
+    "DA_Component_NeedlesslyLargeRod",
+    "DA_Component_TearOfTheGoddess",
+]
+DA_Bloodthirster = [
+    "DA_Component_BFSword",
+    "DA_Component_NegatronCloak",
+]
+DA_BlueBuff = [
+    "DA_Component_TearOfTheGoddess",
+    "DA_Component_TearOfTheGoddess",
+]
+DA_BrambleVest = [
+    "DA_Component_ChainVest",
+    "DA_Component_ChainVest",
+]
+DA_Crownguard = [
+    "DA_Component_NeedlesslyLargeRod",
+    "DA_Component_ChainVest",
+]
+DA_Deathblade = [
+    "DA_Component_BFSword",
+    "DA_Component_BFSword",
+]
+DA_DragonsClaw = [
+    "DA_Component_NegatronCloak",
+    "DA_Component_NegatronCloak",
+]
+DA_EdgeOfNight = [
+    "DA_Component_BFSword",
+    "DA_Component_ChainVest",
+]
+DA_Evenshroud = [
+    "DA_Component_NegatronCloak",
+    "DA_Component_GiantsBelt",
+]
+DA_GargoyleStoneplate = [
+    "DA_Component_ChainVest",
+    "DA_Component_NegatronCloak",
+]
+DA_GiantSlayer = [
+    "DA_Component_RecurveBow",
+    "DA_Component_BFSword",
+]
+DA_GuinsoosRageblade = [
+    "DA_Component_RecurveBow",
+    "DA_Component_NeedlesslyLargeRod",
+]
+DA_HandOfJustice = [
+    "DA_Component_TearOfTheGoddess",
+    "DA_Component_SparringGloves",
+]
+DA_HextechGunblade = [
+    "DA_Component_BFSword",
+    "DA_Component_NeedlesslyLargeRod",
+]
+DA_InfinityEdge = [
+    "DA_Component_BFSword",
+    "DA_Component_SparringGloves",
+]
+DA_IonicSpark = [
+    "DA_Component_NeedlesslyLargeRod",
+    "DA_Component_NegatronCloak",
+]
+DA_JeweledGauntlet = [
+    "DA_Component_SparringGloves",
+    "DA_Component_NeedlesslyLargeRod",
+]
+DA_KrakensFury = [
+    "DA_Component_RecurveBow",
+    "DA_Component_NegatronCloak",
+]
+DA_LastWhisper = [
+    "DA_Component_RecurveBow",
+    "DA_Component_SparringGloves",
+]
+DA_Morellonomicon = [
+    "DA_Component_GiantsBelt",
+    "DA_Component_NeedlesslyLargeRod",
+]
+DA_NashorsTooth = [
+    "DA_Component_RecurveBow",
+    "DA_Component_GiantsBelt",
+]
+DA_ProtectorsVow = [
+    "DA_Component_ChainVest",
+    "DA_Component_TearOfTheGoddess",
+]
+DA_Quicksilver = [
+    "DA_Component_NegatronCloak",
+    "DA_Component_SparringGloves",
+]
+DA_RabadonsDeathcap = [
+    "DA_Component_NeedlesslyLargeRod",
+    "DA_Component_NeedlesslyLargeRod",
+]
+DA_RedBuff = [
+    "DA_Component_RecurveBow",
+    "DA_Component_RecurveBow",
+]
+DA_SpearOfShojin = [
+    "DA_Component_TearOfTheGoddess",
+    "DA_Component_BFSword",
+]
+DA_SpiritVisage = [
+    "DA_Component_GiantsBelt",
+    "DA_Component_TearOfTheGoddess",
+]
+DA_SteadfastHeart = [
+    "DA_Component_ChainVest",
+    "DA_Component_SparringGloves",
+]
+DA_SteraksGage = [
+    "DA_Component_BFSword",
+    "DA_Component_GiantsBelt",
+]
+DA_StrikersFlail = [
+    "DA_Component_GiantsBelt",
+    "DA_Component_SparringGloves",
+]
+DA_SunfireCape = [
+    "DA_Component_ChainVest",
+    "DA_Component_GiantsBelt",
+]
+DA_TacticiansCape = [
+    "DA_Component_Spatula",
+    "DA_Component_FryingPan",
+]
+DA_TacticiansCrown = [
+    "DA_Component_Spatula",
+    "DA_Component_Spatula",
+]
+DA_TacticiansShield = [
+    "DA_Component_FryingPan",
+    "DA_Component_FryingPan",
+]
+DA_ThiefsGloves = [
+    "DA_Component_SparringGloves",
+    "DA_Component_SparringGloves",
+]
+DA_TitansResolve = [
+    "DA_Component_RecurveBow",
+    "DA_Component_ChainVest",
+]
+DA_VoidStaff = [
+    "DA_Component_RecurveBow",
+    "DA_Component_TearOfTheGoddess",
+]
+DA_WarmogsArmor = [
+    "DA_Component_GiantsBelt",
+    "DA_Component_GiantsBelt",
+]
+TFT_Item_AdaptiveHelm = [
+    "TFT_Item_NegatronCloak",
+    "TFT_Item_TearOfTheGoddess",
+]
+TFT_Item_ArchangelsStaff = [
+    "TFT_Item_NeedlesslyLargeRod",
+    "TFT_Item_TearOfTheGoddess",
+]
+TFT_Item_Bloodthirster = [
+    "TFT_Item_BFSword",
+    "TFT_Item_NegatronCloak",
+]
+TFT_Item_BlueBuff = [
+    "TFT_Item_TearOfTheGoddess",
+    "TFT_Item_TearOfTheGoddess",
+]
+TFT_Item_BrambleVest = [
+    "TFT_Item_ChainVest",
+    "TFT_Item_ChainVest",
+]
+TFT_Item_Crownguard = [
+    "TFT_Item_NeedlesslyLargeRod",
+    "TFT_Item_ChainVest",
+]
+TFT_Item_Deathblade = [
+    "TFT_Item_BFSword",
+    "TFT_Item_BFSword",
+]
+TFT_Item_DragonsClaw = [
+    "TFT_Item_NegatronCloak",
+    "TFT_Item_NegatronCloak",
+]
+TFT_Item_ForceOfNature = [
+    "TFT_Item_Spatula",
+    "TFT_Item_Spatula",
+]
+TFT_Item_FrozenHeart = [
+    "TFT_Item_TearOfTheGoddess",
+    "TFT_Item_ChainVest",
+]
+TFT_Item_GargoyleStoneplate = [
+    "TFT_Item_ChainVest",
+    "TFT_Item_NegatronCloak",
+]
+TFT_Item_GuardianAngel = [
+    "TFT_Item_BFSword",
+    "TFT_Item_ChainVest",
+]
+TFT_Item_GuinsoosRageblade = [
+    "TFT_Item_RecurveBow",
+    "TFT_Item_NeedlesslyLargeRod",
+]
+TFT_Item_HextechGunblade = [
+    "TFT_Item_BFSword",
+    "TFT_Item_NeedlesslyLargeRod",
+]
+TFT_Item_InfinityEdge = [
+    "TFT_Item_BFSword",
+    "TFT_Item_SparringGloves",
+]
+TFT_Item_IonicSpark = [
+    "TFT_Item_NeedlesslyLargeRod",
+    "TFT_Item_NegatronCloak",
+]
+TFT_Item_JeweledGauntlet = [
+    "TFT_Item_NeedlesslyLargeRod",
+    "TFT_Item_SparringGloves",
+]
+TFT_Item_LastWhisper = [
+    "TFT_Item_RecurveBow",
+    "TFT_Item_SparringGloves",
+]
+TFT_Item_Leviathan = [
+    "TFT_Item_RecurveBow",
+    "TFT_Item_GiantsBelt",
+]
+TFT_Item_MadredsBloodrazor = [
+    "TFT_Item_BFSword",
+    "TFT_Item_RecurveBow",
+]
+TFT_Item_Morellonomicon = [
+    "TFT_Item_NeedlesslyLargeRod",
+    "TFT_Item_GiantsBelt",
+]
+TFT_Item_NightHarvester = [
+    "TFT_Item_ChainVest",
+    "TFT_Item_SparringGloves",
+]
+TFT_Item_PowerGauntlet = [
+    "TFT_Item_GiantsBelt",
+    "TFT_Item_SparringGloves",
+]
+TFT_Item_Quicksilver = [
+    "TFT_Item_SparringGloves",
+    "TFT_Item_NegatronCloak",
+]
+TFT_Item_RabadonsDeathcap = [
+    "TFT_Item_NeedlesslyLargeRod",
+    "TFT_Item_NeedlesslyLargeRod",
+]
+TFT_Item_RapidFireCannon = [
+    "TFT_Item_RecurveBow",
+    "TFT_Item_RecurveBow",
+]
+TFT_Item_RedBuff = [
+    "TFT_Item_ChainVest",
+    "TFT_Item_GiantsBelt",
+]
+TFT_Item_Redemption = [
+    "TFT_Item_TearOfTheGoddess",
+    "TFT_Item_GiantsBelt",
+]
+TFT_Item_RunaansHurricane = [
+    "TFT_Item_NegatronCloak",
+    "TFT_Item_RecurveBow",
+]
+TFT_Item_SpearOfShojin = [
+    "TFT_Item_BFSword",
+    "TFT_Item_TearOfTheGoddess",
+]
+TFT_Item_SpectralGauntlet = [
+    "TFT_Item_NegatronCloak",
+    "TFT_Item_GiantsBelt",
+]
+TFT_Item_StatikkShiv = [
+    "TFT_Item_RecurveBow",
+    "TFT_Item_TearOfTheGoddess",
+]
+TFT_Item_SteraksGage = [
+    "TFT_Item_BFSword",
+    "TFT_Item_GiantsBelt",
+]
+TFT_Item_TacticiansRing = [
+    "TFT_Item_Spatula",
+    "TFT_Item_FryingPan",
+]
+TFT_Item_TacticiansScepter = [
+    "TFT_Item_FryingPan",
+    "TFT_Item_FryingPan",
+]
+TFT_Item_ThiefsGloves = [
+    "TFT_Item_SparringGloves",
+    "TFT_Item_SparringGloves",
+]
+TFT_Item_TitansResolve = [
+    "TFT_Item_ChainVest",
+    "TFT_Item_RecurveBow",
+]
+TFT_Item_UnstableConcoction = [
+    "TFT_Item_TearOfTheGoddess",
+    "TFT_Item_SparringGloves",
+]
+TFT_Item_WarmogsArmor = [
+    "TFT_Item_GiantsBelt",
+    "TFT_Item_GiantsBelt",
+]
+
+[fields.trait_rules]
+source = "cdragon"
+citation = "Lux forms: CommunityDragon latest/cdragon/tft/en_us.json, content 16.20.8248524 (SHA-256 17d19792f662cec404aa071492ae9144a2d2677d2eeb1e0d7d8db9b52a47a9c7) DA_18_LuxUniqueTrait 'chosen trait counts twice' and https://teamfighttactics.leagueoflegends.com/en-sg/news/game-updates/enchanted-wilds-overview/ '+2 for the Origin'; Elder Dragon contributes two to Riftbeast (https://teamfighttactics.leagueoflegends.com/en-sg/news/game-updates/enchanted-wilds-overview/). Kha'Zix evolution subsets are not sourced and stay base traits."
+
+[fields.trait_rules.value.DA_18_Lux_Coven.counts]
+DA_18_Coven = 2
+DA_18_LuxUniqueTrait = 1
+
+[fields.trait_rules.value.DA_18_Lux_Elderwood.counts]
+DA_18_Elderwood = 2
+DA_18_LuxUniqueTrait = 1
+
+[fields.trait_rules.value.DA_18_Lux_Fae.counts]
+DA_18_Fae = 2
+DA_18_LuxUniqueTrait = 1
+
+[fields.trait_rules.value.DA_18_Lux_Inferno.counts]
+DA_18_Inferno = 2
+DA_18_LuxUniqueTrait = 1
+
+[fields.trait_rules.value.DA_18_Lux_Moonbeam.counts]
+DA_18_Lunar = 2
+DA_18_LuxUniqueTrait = 1
+
+[fields.trait_rules.value.DA_18_Lux_Primal.counts]
+DA_Primal18 = 2
+DA_18_LuxUniqueTrait = 1
+
+[fields.trait_rules.value.DA_18_Lux_Sunbeam.counts]
+DA_18_Solar = 2
+DA_18_LuxUniqueTrait = 1
+
+[fields.trait_rules.value.DA_Lux18_Blackthorn.counts]
+DA_18_Blackthorn = 2
+DA_18_LuxUniqueTrait = 1
+
+[fields.trait_rules.value.DA_Lux18_Blossom.counts]
+DA_18_Blossom = 2
+DA_18_LuxUniqueTrait = 1
+
+[fields.trait_rules.value.DA_Lux18_Base]
+replace = [
+    { DA_18_Coven = 2, DA_18_LuxUniqueTrait = 1 },
+    { DA_18_Elderwood = 2, DA_18_LuxUniqueTrait = 1 },
+    { DA_18_Fae = 2, DA_18_LuxUniqueTrait = 1 },
+    { DA_18_Inferno = 2, DA_18_LuxUniqueTrait = 1 },
+    { DA_18_Lunar = 2, DA_18_LuxUniqueTrait = 1 },
+    { DA_Primal18 = 2, DA_18_LuxUniqueTrait = 1 },
+    { DA_18_Solar = 2, DA_18_LuxUniqueTrait = 1 },
+    { DA_18_Blackthorn = 2, DA_18_LuxUniqueTrait = 1 },
+    { DA_18_Blossom = 2, DA_18_LuxUniqueTrait = 1 },
+]
+
+[fields.trait_rules.value.DA_18_ElderDragon.counts]
+DA_Riftbeast18 = 2
+DA_18_ApexPredator = 1
+
+[fields.stage_items]
+source = "default"
+citation = "Derived: expected component orbs per PvE stage from LittleBuddyBot loot tables https://www.littlebuddybot.com/tft-system-tables (stage means 2.95/2.40/3.52/3.09, 11-15 total) plus one carousel item per stage; one loose component held, the rest combined. High-cost share 0 to stage 2, half at 3, all from 4. Heuristic for owner review, not an observation."
+
+[fields.stage_items.value.1]
+finished = 1.48
+component = 1.0
+high_cost_finished = 0.0
+
+[fields.stage_items.value.2]
+finished = 3.17
+component = 1.0
+high_cost_finished = 0.0
+
+[fields.stage_items.value.3]
+finished = 5.43
+component = 1.0
+high_cost_finished = 2.71
+
+[fields.stage_items.value.4]
+finished = 7.48
+component = 1.0
+high_cost_finished = 7.48
+
+[fields.stage_items.value.5]
+finished = 7.98
+component = 1.0
+high_cost_finished = 7.98
+
+[fields.stage_items.value.6]
+finished = 8.48
+component = 1.0
+high_cost_finished = 8.48
+
+[fields.stage_items.value.7]
+finished = 8.98
+component = 1.0
+high_cost_finished = 8.98
+
+[fields.stage_items.value.8]
+finished = 9.48
+component = 1.0
+high_cost_finished = 9.48
+
+[fields.level_calendar]
+source = "default"
+citation = "Standard curve: https://tapin.gg/blogs/tft-leveling-guide-2026 (4 at 2-1, 5 at 2-5, 6 at 3-2, 7 at 3-5/4-1, 8 ~4-2, 9 ~5-2; written for Set 17); Set 18 guide (mobalytics beginner-leveling-guide-set18) confirms 4 at 2-1. 1-2/1-3 follow passive XP."
+
+[fields.level_calendar.value]
+1-1 = 1
+1-2 = 2
+1-3 = 3
+2-1 = 4
+2-5 = 5
+3-2 = 6
+4-1 = 7
+4-2 = 8
+5-2 = 9
+
+[fields.lobby_top4_rate]
+value = 0.5
+source = "default"
+citation = "Four of eight players finish top 4 in every lobby."
+
+[fields.round_order]
+value = [
+    "1-1",
+    "1-2",
+    "1-3",
+    "1-4",
+    "2-1",
+    "2-2",
+    "2-3",
+    "2-4",
+    "2-5",
+    "2-6",
+    "2-7",
+    "3-1",
+    "3-2",
+    "3-3",
+    "3-4",
+    "3-5",
+    "3-6",
+    "3-7",
+    "4-1",
+    "4-2",
+    "4-3",
+    "4-4",
+    "4-5",
+    "4-6",
+    "4-7",
+    "5-1",
+    "5-2",
+    "5-3",
+    "5-4",
+    "5-5",
+    "5-6",
+    "5-7",
+    "6-1",
+    "6-2",
+    "6-3",
+    "6-4",
+    "6-5",
+    "6-6",
+    "6-7",
+    "7-1",
+    "7-2",
+    "7-3",
+    "7-4",
+    "7-5",
+    "7-6",
+    "7-7",
+    "8-1",
+    "8-2",
+    "8-3",
+    "8-4",
+    "8-5",
+    "8-6",
+    "8-7",
+]
+source = "cdragon"
+citation = "CommunityDragon latest/game/data/maps/shipping/map22/map22.bin.json, game content 16.20 (Last-Modified 2026-10-19, SHA-256 6c4819cda6ac8211d0c154df9e7011746deeca812a46b2c9b66e1a5b957590ca) TFTSet18 StageRoundData {8570f4b0}, stages 1-8."
+
+[fields.round_types]
+source = "cdragon"
+citation = "CommunityDragon latest/game/data/maps/shipping/map22/map22.bin.json, game content 16.20 (Last-Modified 2026-10-19, SHA-256 6c4819cda6ac8211d0c154df9e7011746deeca812a46b2c9b66e1a5b957590ca) StageRoundData round paths: TFT_Round_Combat, Carousel, PvE (Intro/Krugs/Wolves/Raptors/Drake/Herald)."
+
+[fields.round_types.value]
+1-1 = "carousel"
+1-2 = "pve"
+1-3 = "pve"
+1-4 = "pve"
+2-1 = "combat"
+2-2 = "combat"
+2-3 = "combat"
+2-4 = "carousel"
+2-5 = "combat"
+2-6 = "combat"
+2-7 = "pve"
+3-1 = "combat"
+3-2 = "combat"
+3-3 = "combat"
+3-4 = "carousel"
+3-5 = "combat"
+3-6 = "combat"
+3-7 = "pve"
+4-1 = "combat"
+4-2 = "combat"
+4-3 = "combat"
+4-4 = "carousel"
+4-5 = "combat"
+4-6 = "combat"
+4-7 = "pve"
+5-1 = "combat"
+5-2 = "combat"
+5-3 = "combat"
+5-4 = "carousel"
+5-5 = "combat"
+5-6 = "combat"
+5-7 = "pve"
+6-1 = "combat"
+6-2 = "combat"
+6-3 = "combat"
+6-4 = "carousel"
+6-5 = "combat"
+6-6 = "combat"
+6-7 = "pve"
+7-1 = "combat"
+7-2 = "combat"
+7-3 = "combat"
+7-4 = "carousel"
+7-5 = "combat"
+7-6 = "combat"
+7-7 = "pve"
+8-1 = "combat"
+8-2 = "combat"
+8-3 = "combat"
+8-4 = "carousel"
+8-5 = "combat"
+8-6 = "combat"
+8-7 = "pve"
+
+[fields.sell_values]
+source = "default"
+citation = "https://wiki.leagueoflegends.com/en-us/TFT:Champion: 1-star sells for cost; 2-star+ returns one less than net value except 1-costs (table 3/5/8/11/14, 9/17/26/35/44)."
+
+[fields.sell_values.value.1]
+1 = 1
+2 = 3
+3 = 9
+
+[fields.sell_values.value.2]
+1 = 2
+2 = 5
+3 = 17
+
+[fields.sell_values.value.3]
+1 = 3
+2 = 8
+3 = 26
+
+[fields.sell_values.value.4]
+1 = 4
+2 = 11
+3 = 35
+
+[fields.sell_values.value.5]
+1 = 5
+2 = 14
+3 = 44
