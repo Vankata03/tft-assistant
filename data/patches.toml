@@ -1,2 +1,3 @@
 # Add only owner-confirmed EUNE live boundaries using tft-data new-patch.
 [patches]
+"18.5" = "2026-10-21T04:00:00+03:00"
