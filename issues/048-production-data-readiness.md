@@ -111,3 +111,14 @@ The earlier caches lived on the macOS machine, so the sources were fetched again
 The 2026-10-20 probe game confirms `TFTSet18` and queue 1100 from LCU, but its session bodies carry no game version, so they cannot establish which patch was live.
 
 Unresolved owner decisions remain: the patch label and EUNE live boundary, whether visibly qualified hand defaults may stand in for family 1–3 tunables until fits exist, and acceptance of each static table's sources.
+
+### 2026-10-20 — Claude (18.5 EUNE boundary evidence, for owner confirmation)
+
+Checked at 2026-10-20 20:51 UTC:
+
+- Riot's [TFT patch schedule](https://support.riotgames.com/en-us/tft/events/patch-schedule-teamfight-tactics) lists 18.4 on October 7 and 18.5 on October 21, 2026, in Pacific Time, with no time of day.
+- The [18.5 notes](https://teamfighttactics.leagueoflegends.com/en-gb/news/game-updates/teamfight-tactics-patch-18-5/) were published at 2026-10-20T18:00:00Z. The [18.4 notes](https://teamfighttactics.leagueoflegends.com/en-gb/news/game-updates/teamfight-tactics-patch-18-4/) still have one mid-patch section, dated October 7, so 18.4b is the live patch until the 18.5 deployment.
+- The public EUN1 status feed (`lol.secure.dyn.riotcdn.net/channels/public/x/status/eun1.json`, saved as `worktrees/references/source-refresh-2026-10-20/status-lol.json`, SHA-256 `af9f56bbc209868fc54e441cf494516c14ebf2d8fa35823c241f009fd9cb8baa`) has scheduled maintenance 13736, created 2026-10-19T23:35:13Z. It disables ranked queues from 2026-10-20 16:30 PDT in preparation for patch 16.21, shuts the servers down at 18:00 PDT (2026-10-21T01:00:00Z), and estimates 4 hours of downtime. The notice's `archive_at` is 2026-10-21T05:00:00Z.
+- League 16.21 corresponds to TFT 18.5 by the same one-step progression as the current 16.20 content and Data Dragon bundle for 18.4. That mapping is inference, not a Riot statement, and agrees with the schedule date.
+
+No game can be played while the servers are down, so the shutdown instant separates 18.4b games from 18.5 games regardless of when service returns. The proposed boundary is therefore `18.5 = 2026-10-21T04:00:00+03:00` (2026-10-21T01:00:00Z), pending owner confirmation and a recheck of the feed after the maintenance for a delay or cancellation. The exact 18.4b boundary remains unavailable. Because 18.5 replaces it within hours, the first candidate should target 18.5 once CommunityDragon publishes 16.21 data, not 18.4b.
