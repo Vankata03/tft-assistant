@@ -205,11 +205,11 @@ class SessionStore:
     @classmethod
     def default_locations(cls) -> tuple[Path, Path]:
         """Resolve operator locations without opening or rebuilding the store."""
-        home = Path.home()
-        default_root = Path(os.environ.get("LOCALAPPDATA", home / ".local" / "share")) / "tft-assistant"
-        root = Path(os.environ.get("TFT_ASSISTANT_DATA_ROOT", default_root))
-        config_root = Path(os.environ.get("TFT_ASSISTANT_CONFIG_ROOT", home / ".config" / "tft-assistant"))
-        return root, config_root
+        # Home is resolved only when needed: Windows has none without USERPROFILE.
+        root = os.environ.get("TFT_ASSISTANT_DATA_ROOT") or Path(
+            os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share") / "tft-assistant"
+        config_root = os.environ.get("TFT_ASSISTANT_CONFIG_ROOT") or Path.home() / ".config" / "tft-assistant"
+        return Path(root), Path(config_root)
 
     @classmethod
     def default(cls) -> "SessionStore":
