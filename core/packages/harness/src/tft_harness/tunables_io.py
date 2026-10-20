@@ -73,7 +73,7 @@ def latest_committed_tunables(repository, *, path=None):
         selected = Path(path)
         if selected.is_absolute() or ".." in selected.parts or len(selected.parts) != 3 or selected.parts[0] != "data" or selected.name != "tunables.toml":
             raise DataError("Accepted tunables require an unambiguous tracked data/<patch>/tunables.toml path")
-        boundaries = [(when, patch) for when, patch in boundaries if str(selected) == f"data/{patch}/tunables.toml"]
+        boundaries = [(when, patch) for when, patch in boundaries if selected.as_posix() == f"data/{patch}/tunables.toml"]
     for _, patch in reversed(boundaries):
         tunables_path = f'data/{patch}/tunables.toml'
         tunables_text = _show(repository, f'{commit}:{tunables_path}')
