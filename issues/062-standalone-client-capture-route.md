@@ -30,3 +30,9 @@ With a draft regions-only profile using the measured boxes, `tft-capture inspect
 - Phase signal templates are cropped from real new-client frames and reviewed by the owner before use.
 - The probe, handoff and runtime-boundary documents name the new process, config path and the absence of port 2999.
 - A mid-game listening-port check of the TFT processes confirms or refutes that the client exposes no local API.
+
+## Comments
+
+### 2026-10-20 — Claude
+
+First acceptance item done in `bcd8392`. The players branch of `_parse` in `tft_capture/pipeline.py` claims the owner's row only when it is a lone number, at least 1.4 times the median opponent-HP height, with its right edge at or left of the opponent-HP column, and exactly one such row exists. `test_capture_complete.py` has a positive case and a negative case (a nameless opponent HP in the normal column). On 61 sampled probe frames with the draft profile, own HP read on 39 frames and fell from 85 to 13 consistently with the game.
