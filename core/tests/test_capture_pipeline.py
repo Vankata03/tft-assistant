@@ -146,6 +146,28 @@ def test_digit_templates_read_gold_through_capture_boundary(tmp_path):
     assert snapshot["fields"]["gold"]["source"] == "digit-templates"
 
 
+def test_digit_templates_do_not_read_bright_blobs_as_a_minus_sign():
+    from PIL import ImageDraw, ImageFont
+    from tft_capture.ocr import DigitTemplates
+    font = ImageFont.load_default(size=24)
+    templates = {}
+    for digit in "0123456789":
+        image = Image.new("L", (30, 32), 0)
+        ImageDraw.Draw(image).text((1, 1), digit, font=font, fill=255)
+        templates[digit] = image
+    minus = Image.new("L", (10, 4), 0)
+    ImageDraw.Draw(minus).rectangle((2, 1, 7, 2), fill=255)
+    templates["-"] = minus
+    reader = DigitTemplates(templates)
+    blob = Image.new("RGB", (40, 32), "black")
+    ImageDraw.Draw(blob).rectangle((5, 3, 30, 28), fill="white")
+    assert reader.read(blob, region="gold") == []
+    signed = Image.new("RGB", (60, 32), "black")
+    ImageDraw.Draw(signed).rectangle((2, 15, 9, 17), fill="white")
+    ImageDraw.Draw(signed).text((14, 1), "4", font=font, fill="white")
+    assert [line.text for line in reader.read(signed, region="streak")] == ["-4"]
+
+
 def test_bundled_cpu_ocr_reads_gold_from_committed_probe_frame(tmp_path):
     from pathlib import Path
     from tft_capture.ocr import RapidOCRReader

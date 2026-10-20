@@ -37,13 +37,19 @@ class NameCatalog:
 class DigitTemplates:
     """Read segmented game-font glyphs; uncertain matches produce no value."""
     source = "digit-templates"
+    max_size_ratio = 1.5
 
     def __init__(self, templates: dict, *, minimum: float = .90, margin: float = .035):
         if not templates:
             raise ValueError("Digit templates are missing; supply calibrated game-font glyphs")
         self.minimum, self.margin = minimum, margin
-        self.templates = {glyph: self._mask(image).crop(self._mask(image).getbbox()).resize((20, 32))
-                          for glyph, image in templates.items() if self._mask(image).getbbox()}
+        crops = {glyph: self._mask(image).crop(self._mask(image).getbbox())
+                 for glyph, image in templates.items() if self._mask(image).getbbox()}
+        self.templates = {glyph: crop.resize((20, 32)) for glyph, crop in crops.items()}
+        # Normalizing to 20x32 hides size: a minus becomes a solid block. Glyphs
+        # are only compared with templates of similar pixel size, so a glyph set
+        # belongs to the client size it was cut at.
+        self.sizes = {glyph: crop.size for glyph, crop in crops.items()}
         if not self.templates:
             raise ValueError("Digit templates contain no readable foreground")
 
@@ -76,10 +82,14 @@ class DigitTemplates:
         text, confidence = "", 1.0
         for left, right in runs:
             glyph = mask.crop((left, 0, right, mask.height))
-            glyph = glyph.crop(glyph.getbbox()).resize((20, 32))
+            glyph = glyph.crop(glyph.getbbox())
+            size = glyph.size
+            glyph = glyph.resize((20, 32))
             scores = sorted(((1-ImageStat.Stat(ImageChops.difference(glyph, template)).mean[0]/255, symbol)
-                             for symbol, template in self.templates.items()), reverse=True)
-            if scores[0][0] < self.minimum or len(scores) > 1 and scores[0][0]-scores[1][0] < self.margin:
+                             for symbol, template in self.templates.items()
+                             if all(1/self.max_size_ratio <= side/expected <= self.max_size_ratio
+                                    for side, expected in zip(size, self.sizes[symbol]))), reverse=True)
+            if not scores or scores[0][0] < self.minimum or len(scores) > 1 and scores[0][0]-scores[1][0] < self.margin:
                 return []
             text += scores[0][1]
             confidence = min(confidence, scores[0][0])
