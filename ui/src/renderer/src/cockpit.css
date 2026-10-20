@@ -481,6 +481,13 @@ footer {
   color: var(--muted);
   font-size: 12px;
 }
+.client-phase {
+  margin: 0;
+  padding: 8px 20px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
 .data-warnings {
   padding: 14px 20px;
   color: var(--muted);

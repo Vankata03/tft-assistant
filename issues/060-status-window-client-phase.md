@@ -2,7 +2,7 @@
 id: 60
 title: Status window does not show the client phase
 labels: [implementation:task, bug]
-status: open
+status: closed
 assignee:
 parent: 34
 blocked_by: []
@@ -24,3 +24,11 @@ The renderer reads `state.gameflow` only to gate layout (`App.tsx:25`, `Cockpit.
 - The display updates on phase changes and survives missing capture settings.
 - Silent mode rules are unchanged: phase is status, not game content.
 - Covered by a renderer test.
+
+## Comments
+
+### 2026-10-20 — Claude
+
+The status window now shows `Client: <describeGameflow>` in every mode (`ui/src/renderer/src/App.tsx`), using the same wording as the tray. It sits below the cockpit, Live shell or review header, so a capture or data status no longer hides it. The Cockpit footer previously fell back to the phase only when no view status existed; it now shows only the view status, which avoids a duplicate line. Silent mode rules are unchanged: the phase is connection status and no game content is added.
+
+`ui/test/statusClientPhase.test.tsx` mounts the actual `App` with a missing-capture-settings status and checks the phase line through `Lobby`, `ChampSelect`, no phase and client not running, plus Silent mode during `InProgress`. Both cases failed before the change and pass after it. The full UI suite (135 tests) and typecheck passed. The live tray app was not opened for a visual check.

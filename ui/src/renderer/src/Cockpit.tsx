@@ -7,7 +7,6 @@ import type {
 import type { SessionMode } from '../../shared/protocol'
 import {
   describeCore,
-  describeGameflow,
   type ShellState,
 } from '../../shared/state'
 import { SessionModeSelector } from './ModeSelector'
@@ -555,7 +554,7 @@ export function Cockpit({
         </section>
       )}
       <footer>
-        <span>{view?.status ?? describeGameflow(state)}</span>
+        {view?.status ? <span>{view.status}</span> : null}
         {content ? (
           <>
             <span>Round {content.round_id ?? 'unread'}</span>

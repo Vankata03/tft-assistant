@@ -1,5 +1,5 @@
 import { lazy,Suspense,useEffect, useRef, useState } from 'react'
-import { INITIAL_STATE, describeCore, type ShellState } from '../../shared/state'
+import { INITIAL_STATE, describeCore, describeGameflow, type ShellState } from '../../shared/state'
 import {ReviewPanel} from './review/ReviewPanel'
 import {ReviewReadyNotice} from './review/ReviewReadyNotice'
 import { Cockpit } from './Cockpit'
@@ -82,6 +82,8 @@ export function App(): React.JSX.Element|null {
       : <Cockpit state={state} onMode={(mode)=>window.coach?.setMode(mode)} onSelectGuide={(id)=>window.coach?.selectGuide(id)}/>
   return <>
     {cockpit}
+    {/* Client phase is connection status, not game content, so every mode shows it. */}
+    <p className="client-phase" role="status" data-testid="client-phase">Client: {describeGameflow(state)}</p>
     <ReviewReadyNotice state={state}/>
     <ReviewPanel state={state} onOpenChange={setReviewOpen}/>
     {voiceUnavailable&&state.mode==='baseline'?<p className="status-banner" role="status">Stage voice unavailable · install a local English voice.</p>:null}
