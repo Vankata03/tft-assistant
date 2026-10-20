@@ -8,7 +8,8 @@ from .models import TaggedValue
 
 
 def plain_text(text):
-    return re.sub(r"<[^>]*>", " ", html.unescape(text)).casefold()
+    # A missing source description matches no threat phrase.
+    return re.sub(r"<[^>]*>", " ", html.unescape(text or "")).casefold()
 
 
 def derive_threats(entities, keywords):

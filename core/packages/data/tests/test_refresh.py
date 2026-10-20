@@ -267,6 +267,21 @@ def test_refresh_publishes_immutable_snapshot_and_retains_it_on_invalid_static(
     assert "stale since" in failed.warnings[0]
 
 
+def test_entity_without_source_text_derives_no_threat_tags(tmp_path):
+    import json
+
+    path = patch_files(tmp_path / "patch")
+    raw = json.loads((path / "entities.json").read_text())
+    # CommunityDragon publishes some items with a null description.
+    raw["entities"].append(
+        {"id": "fixture-item", "kind": "item", "name": "Fixture item", "text": None}
+    )
+    (path / "entities.json").write_text(json.dumps(raw))
+    result = DataStore(tmp_path / "snapshots").refresh(path, now=NOW)
+    assert result.error is None
+    assert result.snapshot.entities["fixture-item"].threat_tags == ()
+
+
 def test_refresh_uses_cdragon_unit_names_and_ddragon_icons(tmp_path):
     path = patch_files(tmp_path / "patch")
     from tft_data.adapters import CommunityDragon, DataDragon
