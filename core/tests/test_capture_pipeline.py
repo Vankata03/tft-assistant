@@ -481,3 +481,18 @@ def test_enemy_side_phase_is_unavailable_without_own_view_pvp_round_or_observed_
     assert pipeline.tick(enemy_side_frame(3, True), timestamp=start + timedelta(seconds=12))["phase"] == "unknown"
     output.update(stage=[TextLine("2-2")], scouted=[TextLine("Opponent Level 4")])
     assert pipeline.tick(enemy_side_frame(4, True), timestamp=start + timedelta(seconds=15))["phase"] == "unknown"
+
+
+def test_owner_nameplate_without_level_label_marks_own_view(tmp_path):
+    logs = SessionStore(tmp_path / "app", tmp_path / "config", live_installed=True)
+    logs.start_game("142")
+    output = {"scouted": [TextLine("Owner"), TextLine("Opponent"), TextLine("Combat")]}
+    pipeline = CapturePipeline("142", ocr=RecordedOCR(output), sink=logs, regions={"scouted": (0, 0, 1, 1)},
+                               own_player_name="Owner")
+    start = datetime(2026, 10, 20, tzinfo=timezone.utc)
+    own = pipeline.tick(enemy_side_frame(0, False), timestamp=start)
+    assert own["fields"]["scouted_player"]["value"] == "Owner"
+    assert "scouted_level" not in own["fields"]
+    output["scouted"] = [TextLine("Opponent"), TextLine("Owner2")]
+    scouting = pipeline.tick(enemy_side_frame(1, False), timestamp=start + timedelta(seconds=3))
+    assert scouting["fields"]["scouted_player"]["read_at"] == start.isoformat()

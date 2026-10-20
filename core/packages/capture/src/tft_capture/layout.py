@@ -30,7 +30,8 @@ _REGIONS = {
     "shop": ((.287, .854, .813, 1), "center", "bottom"),
     "traits": ((.03, .235, .137, .74), "left", "top"),
     "players": ((.868, .14, 1, .758), "right", "top"),
-    "scouted": ((.25, .08, .80, .70), "center", "top"),
+    # Wide enough for the owner's tactician nameplate beside the board.
+    "scouted": ((.1, .0278, .8906, .8194), "center", "top"),
     "cards": ((.184, .225, .815, .83), "center", "center"),
     "board": ((.15, .09, .855, .797), "center", "center"),
 }

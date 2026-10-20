@@ -829,6 +829,10 @@ class CapturePipeline:
             match = re.fullmatch(r"(.+?)\s+(?:Level|Lvl\.?)\s*(\d+)", text.strip(), re.IGNORECASE)
             if match and 1 <= int(match[2]) <= 15:
                 return {"scouted_player": match[1], "scouted_level": int(match[2])}
+            # The standalone client has no viewed-player label; the owner's own
+            # tactician nameplate appears only on the board the owner is on.
+            if self.own_player_name and any(line.text.strip() == self.own_player_name for line in lines):
+                return {"scouted_player": self.own_player_name}
         if region == "shop":
             slots = []
             wisp = None
