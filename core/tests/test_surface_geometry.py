@@ -1,5 +1,6 @@
 """Desktop geometry through capture snapshots/logs, distinct from Windows qualification."""
 from datetime import UTC, datetime, timedelta
+import pytest
 from PIL import Image
 from tft_capture.pipeline import CapturePipeline
 from tft_capture.runner import CaptureRunner
@@ -127,3 +128,15 @@ def test_layout_configuration_observations_keep_their_own_age_and_revalidate_eac
     assert lost['capture_geometry'] is None
     assert lost['capture_layout']['read_at']==first['capture_layout']['read_at']
     assert captured_surface(lost)==(None,())
+
+
+@pytest.mark.parametrize('scale_source,available', [('game-config', True), ('measured', True), ('probe-reference', False)])
+def test_surface_geometry_requires_an_established_hud_scale(scale_source, available):
+    from tft_core.surface_geometry import captured_surface
+    source = {'capture_geometry': {'window_id':'positive','coordinate_space':'physical_pixels',
+                'client_bounds':{'x':0,'y':0,'width':100,'height':50},
+                'read_at':'2026-10-12T00:00:00Z','source':'Win32-client-rectangle'},
+              'capture_layout':{'scale_source':scale_source,'window_mode':'windowed','ui_scale':1.0,'read_at':'2026-10-12T00:00:00Z','config_sha256':'b'*64},
+              'surface_profile':{'profile_sha256':'a'*64,'calibration':{'client_size':[100,50],'ui_scale':1.0},
+                'anchors':[{'kind':'shop','index':0,'x':.2,'y':.8,'width':.1,'height':.05}]}}
+    assert (captured_surface(source)[0] is not None) is available

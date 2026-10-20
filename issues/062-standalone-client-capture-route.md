@@ -36,3 +36,11 @@ With a draft regions-only profile using the measured boxes, `tft-capture inspect
 ### 2026-10-20 — Claude
 
 First acceptance item done in `bcd8392`. The players branch of `_parse` in `tft_capture/pipeline.py` claims the owner's row only when it is a lone number, at least 1.4 times the median opponent-HP height, with its right edge at or left of the opponent-HP column, and exactly one such row exists. `test_capture_complete.py` has a positive case and a negative case (a nameless opponent HP in the normal column). On 61 sampled probe frames with the draft profile, own HP read on 39 frames and fell from 85 to 13 consistently with the game.
+
+### 2026-10-20 — Claude
+
+Second acceptance item (`game_config`): the owner chose to establish the HUD scale by measuring frames rather than reading or assuming it. `HudLayout.from_config` now accepts a measured HUD record (`format = "tft-assistant-measured-hud/1"`) that names the standalone client's `GameUserSettings.ini` for window mode and carries the measured scale with its date, client size and method. It records `scale_source = "measured"`. Pointing `game_config` straight at `GameUserSettings.ini` fails with a message asking for the record. Surface geometry accepts `measured` alongside `game-config`.
+
+Measurement: across 61 sampled in-game frames from probe run `2026-10-20_191350`, the median white-text boxes of level, gold and streak equal the 2026-10-04 probe reference frames to the pixel, with 21 px glyph height in both. The scale is therefore 1.0 relative to the reference geometry at 2560×1440. The owner's local record is `%USERPROFILE%\.config\tft-assistant\game\measured-hud-standalone-2560x1440.toml`; it loads the real client settings as `windowed` (`FullscreenMode=2`).
+
+Finding for the stage/timer item: the 2026-10-04 reference frames show the same top-bar layout as the standalone client, with the stage text near x 1025 px. The `_REGIONS` stage and timer rectangles in `layout.py` (stage starting at 1072 px) therefore do not match their own reference frames either. This is a mis-cut reference, not an old-client difference.

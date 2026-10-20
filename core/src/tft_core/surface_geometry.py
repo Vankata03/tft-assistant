@@ -44,7 +44,7 @@ def captured_surface(snapshot):
     if not snapshot:
         return None, ()
     geometry, profile, layout = (snapshot.get(name) for name in ('capture_geometry','surface_profile','capture_layout'))
-    if not geometry or not profile or not layout or layout.get('scale_source') != 'game-config' or not layout.get('read_at') or not layout.get('config_sha256'):
+    if not geometry or not profile or not layout or layout.get('scale_source') not in {'game-config', 'measured'} or not layout.get('read_at') or not layout.get('config_sha256'):
         return None, ()
     view = SurfaceGeometry(**geometry, layout_read_at=layout['read_at'], layout_source_sha256=layout['config_sha256'], window_mode=layout['window_mode'], ui_scale=layout['ui_scale'],
                            profile_sha256=profile['profile_sha256'], calibration=profile['calibration'])

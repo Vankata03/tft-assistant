@@ -8,10 +8,13 @@ Geometry support is distinct from verified OCR accuracy at a new layout.
 import configparser
 import math
 import hashlib
+import tomllib
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 
+MEASURED_HUD_FORMAT = "tft-assistant-measured-hud/1"
+_STANDALONE_SECTION = "/Script/TFTSettings.TFTUserSettings"
 # x0,y0,x1,y1 at the reference resolution; horizontal and vertical anchors.
 _REGIONS = {
     "stage": ((.419, .002, .457, .036), "center", "top"),
@@ -44,10 +47,25 @@ class HudLayout:
 
     @classmethod
     def from_config(cls, path: Path):
-        config = configparser.ConfigParser()
+        path = Path(path)
         raw = path.read_bytes()
         if not raw:
             raise ValueError(f"Game UI configuration unavailable: {path}")
+        try:
+            record = tomllib.loads(raw.decode('utf-8'))
+        except (UnicodeDecodeError, tomllib.TOMLDecodeError):
+            record = {}
+        if record.get("format") == MEASURED_HUD_FORMAT:
+            return cls._from_measured(path, raw, record)
+        config = configparser.ConfigParser(strict=False, interpolation=None)
+        try:
+            config.read_string(raw.decode('utf-8'))
+            if config.has_section(_STANDALONE_SECTION):
+                raise ValueError("The standalone TFT client settings carry no HUD scale; "
+                                 "point game_config at a measured HUD record")
+        except configparser.Error as error:
+            raise ValueError('Game UI configuration is unreadable; revalidate its layout') from error
+        config = configparser.ConfigParser()
         try:
             config.read_string(raw.decode('utf-8'))
         except configparser.Error as error:
@@ -58,6 +76,32 @@ class HudLayout:
             raise ValueError("Game configuration has no readable HUD GlobalScale; verify the new-client layout") from error
         mode = config.getint("General", "WindowMode", fallback=-1)
         return cls(scale, {0: "exclusive_fullscreen", 1: "windowed", 2: "borderless"}.get(mode, "unknown"), "game-config", datetime.now(timezone.utc).isoformat(), hashlib.sha256(raw).hexdigest())
+
+    @classmethod
+    def _from_measured(cls, path: Path, raw: bytes, record: dict):
+        # The standalone client stores window mode but no HUD scale, so the scale
+        # comes from a reviewed measurement against the probe reference frames.
+        scale = record.get("hud_scale")
+        settings = record.get("client_settings")
+        if (set(record) != {"format", "client_settings", "hud_scale"} or not isinstance(settings, str)
+                or not isinstance(scale, dict) or set(scale) != {"value", "measured_at", "client_size", "method"}
+                or type(scale["value"]) is not float or not isinstance(scale["method"], str) or not scale["method"].strip()
+                or not isinstance(scale["measured_at"], str) or not scale["measured_at"].strip()
+                or not isinstance(scale["client_size"], list) or len(scale["client_size"]) != 2
+                or any(type(side) is not int or side <= 0 for side in scale["client_size"])):
+            raise ValueError("Measured HUD record requires client_settings and hud_scale value, measured_at, client_size and method")
+        settings_path = (path.parent / settings).resolve()
+        client = settings_path.read_bytes()
+        config = configparser.ConfigParser(strict=False, interpolation=None)
+        try:
+            config.read_string(client.decode('utf-8'))
+            mode = config.getint(_STANDALONE_SECTION, "FullscreenMode")
+        except (UnicodeDecodeError, ValueError, configparser.Error) as error:
+            raise ValueError(f"Measured HUD record needs readable standalone client settings: {settings_path}") from error
+        # Unreal EWindowMode: Fullscreen, WindowedFullscreen, Windowed.
+        window_mode = {0: "exclusive_fullscreen", 1: "borderless", 2: "windowed"}.get(mode, "unknown")
+        identity = hashlib.sha256(hashlib.sha256(raw).digest() + hashlib.sha256(client).digest()).hexdigest()
+        return cls(scale["value"], window_mode, "measured", datetime.now(timezone.utc).isoformat(), identity)
 
     def regions(self, size: tuple[int, int]) -> dict[str, tuple[float, float, float, float]]:
         width, height = size

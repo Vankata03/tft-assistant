@@ -35,7 +35,20 @@ Prepare data through the reviewed bootstrap/refresh workflow in [source provenan
 
 The names JSON must contain `snapshot_id`, `locale` and `names`, where `names.units` maps every pinned playable unit ID to its client-locale display name. Other name groups may supply item, augment, Wisp and trait IDs from the same snapshot. Export these from checked locale source data; do not translate or invent aliases. The runtime rejects a mismatched pin or locale, missing playable units, unknown IDs and empty names.
 
-`profile` uses the existing version-1 [capture profile](capture-boundary.md) and its checked artwork. `game_config` must establish windowed or borderless capture. `model_pointer` is a reviewed BoardReader pointer, and `models` contains its verified local assets. `digits` must contain genuine calibrated glyphs `0.png` through `9.png`, `minus.png` and `slash.png`. Native capture wires DigitTemplates, local RapidOCR models and Windows.Media.Ocr through HybridOCR. Missing glyphs, models or the locale language pack leave capture unavailable. This wiring does not replace the required probe benchmark or qualify the chosen OCR route's accuracy.
+`profile` uses the existing version-1 [capture profile](capture-boundary.md) and its checked artwork. `game_config` must establish windowed or borderless capture. For the old client it is League `game.cfg`, which supplies `[HUD] GlobalScale`. The standalone client (`TFTClient-Win64-Shipping.exe`) writes `%LOCALAPPDATA%\TFT\Saved\Config\WindowsClient\GameUserSettings.ini`, which has `FullscreenMode` (Unreal: 0 fullscreen, 1 borderless, 2 windowed) but no HUD scale. Pointing `game_config` at that file directly fails. Point it instead at a measured HUD record, and the layout reports `scale_source = "measured"`:
+
+```toml
+format = "tft-assistant-measured-hud/1"
+client_settings = "C:/Users/YOU/AppData/Local/TFT/Saved/Config/WindowsClient/GameUserSettings.ini"
+
+[hud_scale]
+value = 1.0
+measured_at = "YYYY-MM-DD"
+client_size = [2560, 1440]
+method = "How the scale was measured against the probe reference frames"
+```
+
+`client_settings` resolves relative to the record. All fields are required and unknown keys are rejected. The layout identity hashes both files, so a changed window mode or record is detected on the per-frame revalidation. The scale must come from frame measurement, never from a guess. On 2026-10-20 the bottom HUD text boxes in standalone-client frames matched the 2026-10-04 probe reference frames to the pixel at 2560×1440, which gives 1.0. Remeasure after a resolution or in-game scale change. `model_pointer` is a reviewed BoardReader pointer, and `models` contains its verified local assets. `digits` must contain genuine calibrated glyphs `0.png` through `9.png`, `minus.png` and `slash.png`. Native capture wires DigitTemplates, local RapidOCR models and Windows.Media.Ocr through HybridOCR. Missing glyphs, models or the locale language pack leave capture unavailable. This wiring does not replace the required probe benchmark or qualify the chosen OCR route's accuracy.
 
 ## Serialized session lifecycle
 

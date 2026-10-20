@@ -365,3 +365,44 @@ def test_roll_down_field_is_certified_by_current_shop_reads_and_keeps_age_on_los
     assert first['fields']['roll_down']['read_at']==now.isoformat()
     lost=pipeline.tick(None,timestamp=now+timedelta(seconds=1))
     assert lost['fields']['roll_down']['read_at']==first['fields']['roll_down']['read_at']
+
+
+STANDALONE_SETTINGS = (";METADATA=(Diff=true, UseCommands=true)\n"
+    "[/Script/TFTSettings.TFTUserSettings]\nResolutionSizeX=2560\nResolutionSizeY=1440\nFullscreenMode={mode}\n"
+    "[/Script/TFTDevice.TFTDeviceSettings]\nClientConfig=(Name=\"a\",Value=\"1\")\nClientConfig=(Name=\"b\",Value=\"2\")\n")
+MEASURED_HUD = ('format = "tft-assistant-measured-hud/1"\nclient_settings = "GameUserSettings.ini"\n'
+    '[hud_scale]\nvalue = 1.0\nmeasured_at = "2026-10-20"\nclient_size = [2560, 1440]\n'
+    'method = "bottom HUD text boxes match the probe reference frames"\n')
+
+
+def test_standalone_client_layout_uses_the_measured_hud_scale(tmp_path):
+    import pytest
+    from tft_capture.layout import HudLayout
+    (tmp_path/"GameUserSettings.ini").write_text(STANDALONE_SETTINGS.format(mode=2))
+    record = tmp_path/"measured-hud.toml"
+    record.write_text(MEASURED_HUD)
+    layout = HudLayout.from_config(record)
+    assert (layout.ui_scale, layout.window_mode, layout.scale_source) == (1.0, "windowed", "measured")
+    (tmp_path/"GameUserSettings.ini").write_text(STANDALONE_SETTINGS.format(mode=1))
+    changed = HudLayout.from_config(record)
+    assert changed.window_mode == "borderless"
+    assert changed.config_sha256 != layout.config_sha256
+    with pytest.raises(ValueError, match="measured HUD"):
+        HudLayout.from_config(tmp_path/"GameUserSettings.ini")
+
+
+def test_measured_hud_record_rejects_incomplete_or_conflicting_evidence(tmp_path):
+    import pytest
+    from tft_capture.layout import HudLayout
+    (tmp_path/"GameUserSettings.ini").write_text(STANDALONE_SETTINGS.format(mode=2))
+    (tmp_path/"game.cfg").write_text("[HUD]\nGlobalScale=0.8\n[General]\nWindowMode=2\n")
+    record = tmp_path/"measured-hud.toml"
+    for text in (MEASURED_HUD.replace('method = "bottom HUD text boxes match the probe reference frames"\n', ''),
+                 MEASURED_HUD + 'guess = true\n',
+                 MEASURED_HUD.replace('value = 1.0', 'value = "1.0"'),
+                 MEASURED_HUD.replace('client_size = [2560, 1440]', 'client_size = [2560]'),
+                 MEASURED_HUD.replace('GameUserSettings.ini', 'game.cfg'),
+                 MEASURED_HUD.replace('GameUserSettings.ini', 'missing.ini')):
+        record.write_text(text)
+        with pytest.raises((ValueError, OSError)):
+            HudLayout.from_config(record)
