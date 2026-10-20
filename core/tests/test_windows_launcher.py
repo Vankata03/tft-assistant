@@ -56,7 +56,7 @@ sys.exit(23 if phase == os.environ.get("LAUNCHER_FAIL") else 0)
 def test_fresh_checkout_builds_before_start_from_any_working_directory(tmp_path):
     result, calls, repo = launch(tmp_path)
     assert result.returncode == 0, result.stderr
-    assert [call["phase"] for call in calls] == ["sync", "install", "build", "start"]
+    assert [call["phase"] for call in calls] == ["sync", "install", "electron:install", "build", "start"]
     assert len(calls[0]["args"]) == 4
     assert calls[0]["args"][:2] == ["sync", "--project"]
     assert Path(calls[0]["args"][2]) == repo / "core"
@@ -64,7 +64,7 @@ def test_fresh_checkout_builds_before_start_from_any_working_directory(tmp_path)
     assert len(calls[1]["args"]) == 3
     assert calls[1]["args"][:2] == ["ci", "--prefix"]
     assert Path(calls[1]["args"][2]) == repo / "ui"
-    for call, phase in zip(calls[2:], ["build", "start"]):
+    for call, phase in zip(calls[2:], ["electron:install", "build", "start"]):
         assert len(call["args"]) == 4
         assert call["args"][0] == "--prefix"
         assert Path(call["args"][1]) == repo / "ui"
@@ -74,8 +74,9 @@ def test_fresh_checkout_builds_before_start_from_any_working_directory(tmp_path)
 @pytest.mark.parametrize("fail,expected", [
     ("sync", ["sync"]),
     ("install", ["sync", "install"]),
-    ("build", ["sync", "install", "build"]),
-    ("start", ["sync", "install", "build", "start"]),
+    ("electron:install", ["sync", "install", "electron:install"]),
+    ("build", ["sync", "install", "electron:install", "build"]),
+    ("start", ["sync", "install", "electron:install", "build", "start"]),
 ])
 def test_failed_stage_preserves_exit_code_and_stops_workflow(tmp_path, fail, expected):
     result, calls, _ = launch(tmp_path, fail=fail)
@@ -84,6 +85,8 @@ def test_failed_stage_preserves_exit_code_and_stops_workflow(tmp_path, fail, exp
 
 
 def test_existing_dependencies_still_rebuild_before_start(tmp_path):
+    # The Electron binary is not part of node_modules from npm ci, so its
+    # installer always runs; it exits immediately when the binary is present.
     result, calls, _ = launch(tmp_path, installed=True)
     assert result.returncode == 0, result.stderr
-    assert [call["phase"] for call in calls] == ["sync", "build", "start"]
+    assert [call["phase"] for call in calls] == ["sync", "electron:install", "build", "start"]

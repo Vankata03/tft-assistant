@@ -24,3 +24,25 @@ Separately, polls ran every ~6.7 s rather than the requested 5 s after the clien
 - If `Save-Env` can throw, the probe still writes `env-end.json` with whatever fields are available, and reports the error.
 - If closing the window is the only cause, the handoff tells the operator to wait for `Done.` or use Ctrl+C.
 - The poll interval behaviour with an unavailable client is either fixed or documented.
+
+## Comments
+
+### 2026-10-20 — Claude
+
+Reproduced on Windows 11 with the League client open, using a stand-in windowed process named `FakeTFT-Shipping.exe`:
+
+- Grace-period exit (`-GraceSeconds 15`, and again with 10): `env-end.json` written and `Done.` printed.
+- Maximum-duration exit (`-MaxMinutes 1`, no game): `env-end.json` written and `Done.` printed.
+- Ctrl+C: not reproduced. A `GenerateConsoleCtrlEvent` sender did not stop the probe in its separate console, so this needs an operator at a real console.
+
+`Save-Env` has no statement that can stop the `finally` block with the default `Continue` preference, so the most likely cause of the missing file remains a closed window or terminated console. That is not proven.
+
+Changes in `probe/probe.ps1`:
+
+- `finally` writes `env-end.json` first, before the possibly slow manual-capture copy.
+- `Save-Env` collects each field separately. A failing field is recorded under `Errors`, reported on the console, and the file is still written. A serialization failure writes a minimal record with the error. A check that made display enumeration throw produced a complete file with `Errors.Displays`, and arrays kept their original JSON shape.
+- The header and the handoff tell the operator to wait for `Done.` or use Ctrl+C rather than closing the window.
+
+The handoff now documents that `-PollSeconds` is a minimum spacing. Each poll waits for its LCU and Live Client requests (three-second deadline each), so a slow or unavailable client spaces polls further apart. A slow poll also delays the next screenshot.
+
+Still open: the owner's Ctrl+C and window-close checks.

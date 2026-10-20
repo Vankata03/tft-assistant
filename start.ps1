@@ -21,6 +21,15 @@ if (-not (Test-Path "$root/ui/node_modules")) {
     }
 }
 
+# npm ci does not download the Electron binary; its own installer does. It
+# exits at once when the matching binary is already present.
+npm --prefix "$root/ui" run electron:install
+if ($LASTEXITCODE -ne 0) {
+    $code = $LASTEXITCODE
+    Write-Error "Electron binary install failed (exit $code)" -ErrorAction Continue
+    exit $code
+}
+
 npm --prefix "$root/ui" run build
 if ($LASTEXITCODE -ne 0) {
     $code = $LASTEXITCODE

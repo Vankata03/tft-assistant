@@ -16,6 +16,8 @@
   the token is never written to disk or printed.
 
   Stop with Ctrl+C, or it stops by itself -GraceSeconds after the game process exits.
+  Wait for the final "Done." line before closing the window: closing it skips the
+  end record and the manual-capture copy.
 #>
 param(
   [int]$PollSeconds = 5,
@@ -91,16 +93,33 @@ function Get-Displays {
   }
 }
 
+# Each field is collected separately: a failure keeps the other fields, is named
+# in Errors, and is reported, so the record is always written.
 function Save-Env($tag) {
-  $procs = @(Get-GameProcesses)
-  [pscustomobject]@{
-    Tag       = $tag
-    Time      = (Get-Date).ToString('o')
-    Displays  = @(Get-Displays)
-    DpiScale  = (Get-ItemProperty 'HKCU:\Control Panel\Desktop\WindowMetrics' -ErrorAction SilentlyContinue).AppliedDPI
-    Processes = $procs
-    Listening = @(Get-ListeningPorts $procs.Pid)
-  } | ConvertTo-Json -Depth 5 | Set-Content "$out/env-$tag.json"
+  $record = [ordered]@{ Tag = $tag; Time = (Get-Date).ToString('o') }
+  $errors = [ordered]@{}
+  $procs = @()
+  try { $procs = @(Get-GameProcesses) } catch { $errors.Processes = $_.Exception.Message }
+  $fields = [ordered]@{
+    Displays  = { ,@(Get-Displays) }
+    DpiScale  = { (Get-ItemProperty 'HKCU:\Control Panel\Desktop\WindowMetrics' -ErrorAction SilentlyContinue).AppliedDPI }
+    Processes = { ,$procs }
+    Listening = { ,@(Get-ListeningPorts $procs.Pid) }
+  }
+  foreach ($name in $fields.Keys) {
+    try { $record[$name] = & $fields[$name] } catch { $errors[$name] = $_.Exception.Message }
+  }
+  if ($errors.Count) {
+    $record.Errors = $errors
+    Log "env-$tag.json is incomplete: $(($errors.Keys | ForEach-Object { "${_}: $($errors[$_])" }) -join '; ')"
+  }
+  try {
+    $json = $record | ConvertTo-Json -Depth 5 -ErrorAction Stop
+  } catch {
+    Log "env-$tag.json fields could not be serialized: $($_.Exception.Message)"
+    $json = [ordered]@{ Tag = $tag; Time = $record.Time; Errors = @{ Serialize = $_.Exception.Message } } | ConvertTo-Json
+  }
+  Set-Content "$out/env-$tag.json" $json
 }
 
 # League client API (LCU) credentials, read from the running client's command line.
@@ -235,6 +254,9 @@ try {
     Start-Sleep -Milliseconds 200
   }
 } finally {
+  # The end record comes first: copying manual captures can take a while, and
+  # closing the window before Done skips the rest of this block.
+  Save-Env 'end'
   # Collect manual captures taken during the run.
   $pics = [Environment]::GetFolderPath('MyPictures')
   $vids = [Environment]::GetFolderPath('MyVideos')
@@ -244,7 +266,6 @@ try {
         Copy-Item -Destination "$out/manual" -ErrorAction SilentlyContinue
     }
   }
-  Save-Env 'end'
   $shots = (Get-ChildItem "$out/shots" -File).Count
   $manual = (Get-ChildItem "$out/manual" -File).Count
   Log "Done. $shots auto screenshots, $manual manual captures. Output: $out"

@@ -42,9 +42,13 @@ uv sync --project .\core
 if ($LASTEXITCODE -ne 0) { throw 'core dependency sync failed' }
 npm ci --prefix .\ui
 if ($LASTEXITCODE -ne 0) { throw 'UI dependency install failed' }
+npm --prefix .\ui run electron:install
+if ($LASTEXITCODE -ne 0) { throw 'Electron binary install failed' }
 ```
 
-The explicit `npm ci` updates existing dependencies to the checked lockfile. The launcher only installs dependencies when `ui/node_modules` is absent. No separate `TFT_CORE_TOKEN` setup is required: the shell generates the local authentication token.
+The explicit `npm ci` updates existing dependencies to the checked lockfile. The launcher only installs dependencies when `ui/node_modules` is absent. Electron 44 has no install script, so `npm ci` installs the package without its binary. `electron:install` runs the package's own `install-electron` installer, which downloads the matching binary or exits at once when it is already present. The launcher runs the same step on every start.
+
+npm 12 blocks dependency install scripts and warns about `esbuild`. The block stays in place deliberately. The esbuild install script only validates or fetches the platform binary, and npm already installs the matching `@esbuild/win32-x64` optional package for both esbuild versions in the lockfile. Builds use that package directly. No separate `TFT_CORE_TOKEN` setup is required: the shell generates the local authentication token.
 
 For a repeatable software check before opening the shell:
 
@@ -72,7 +76,7 @@ Stop-Transcript
 'Launcher exit: ' + $launcherExit
 ```
 
-`start.ps1` syncs the core, installs missing UI dependencies, builds `ui/out`, then starts Electron preview. A failed sync, install or build stops before preview; a failed preview returns its exit code. Keep the terminal open while the tray app runs. The shell starts its own core, so do not start a second core process manually.
+`start.ps1` syncs the core, installs missing UI dependencies, installs the Electron binary when it is missing, builds `ui/out`, then starts Electron preview. A failed sync, install, Electron download or build stops before preview; a failed preview returns its exit code. Keep the terminal open while the tray app runs. The shell starts its own core, so do not start a second core process manually.
 
 Find TFT Assistant in the tray, including hidden tray icons. Click it or choose **Show status**. With no game, the shell should remain connected and report the client phase or client unavailable. An absent capture configuration should leave capture-dependent content unavailable while the shell/core connection remains usable. Open the client, enter a TFT game, and record whether phase changes appear. Phase visibility alone does not establish that the runtime accepted the session as TFT.
 
@@ -109,7 +113,9 @@ Set-Location -LiteralPath $repo
 & pwsh -NoProfile -File .\probe\probe.ps1 -PollSeconds 5 -ShotSeconds 1.5 -MaxMinutes 75 -GraceSeconds 90
 ```
 
-Output goes to ignored `probe/out/<timestamp>/`. Stop with Ctrl+C or allow the 90-second grace period after the game process exits. The maximum duration also bounds collection.
+Output goes to ignored `probe/out/<timestamp>/`. Stop with Ctrl+C or allow the 90-second grace period after the game process exits. The maximum duration also bounds collection. Keep the window open until the final `Done.` line: closing it earlier skips the end record and the manual-capture copy. The probe writes `env-end.json` first when it stops; if a field cannot be read, the file names it under `Errors` and the console reports it.
+
+`-PollSeconds` is the minimum spacing between polls, not a fixed rate. Each poll waits for its LCU and Live Client requests, each bounded by a three-second deadline. When the client is slow or stops answering after a game, polls can be several seconds further apart than requested. Screenshots keep their own schedule but share the loop, so a slow poll also delays the next screenshot.
 
 The probe records `env-start.json`, `env-ingame.json` when a game is detected, `env-end.json`, `poll.jsonl`, changed response bodies under `liveclient/`, screenshots under `shots/`, and manual captures under `manual/`. LCU discovery may produce `lcu-help-tft.json` or `lcu-help-raw.txt`. Port 2999 being closed or returning errors is a recorded observation, not proof that the launcher failed. A missing discovery file can mean the client was not readable at startup.
 

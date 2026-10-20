@@ -34,3 +34,15 @@ The existing launcher tests use npm/uv stand-ins and cannot detect this.
 - Existing installs with the binary present are not re-downloaded.
 - The Windows handoff reflects the final setup commands.
 - Decide explicitly whether the blocked `esbuild` install scripts need approval (`allowScripts`) or are safe to leave blocked, and record why.
+
+## Comments
+
+### 2026-10-20 — Claude
+
+`start.ps1` now runs `npm --prefix ui run electron:install` after the dependency step and before the build, on every start. The new `electron:install` script in `ui/package.json` calls the package's own `install-electron` bin. The installer exits at once when the matching binary is present, so existing installs are not downloaded again. A failure stops the launcher with `Electron binary install failed (exit N)` and that exit code.
+
+The launcher workflow tests (`core/tests/test_windows_launcher.py`) now expect the new stage, including a failure case and the existing-dependencies case. They failed against the old launcher and pass after the change (7 tests). On Windows, `npm run electron:install` exited 0 with the binary present. With `node_modules/electron/dist` moved aside, it restored `dist/electron.exe` (version 44.5.1) in 1.8 s from the local Electron cache, identical to the previous binary.
+
+The Windows handoff now lists `npm --prefix .\ui run electron:install` after `npm ci` and explains why. Decision on esbuild: the blocked npm 12 install scripts stay blocked. The esbuild install script only validates or fetches the platform binary, and the lockfile already installs `@esbuild/win32-x64` for both esbuild versions (0.25.12 and 0.28.2).
+
+Still open: a fresh-checkout run through `start.ps1` to a running tray app on Windows. This change did not launch the tray app, and the binary restore used the cache rather than a network download.

@@ -41,6 +41,8 @@ Source: [MVP spec](../docs/spec.md), its area files, and the resolved planning t
 
 ## Decisions so far
 
+- 2026-10-20: [Ticket 59](059-review-ipc-test-reads-real-client.md) is closed. The Windows IPC failure also hid a core defect: children inherited the watched shell pipe as stdin and stalled at startup, which blocked review Git identity. The watcher now owns a private pipe descriptor and children inherit the null device. [Ticket 60](060-status-window-client-phase.md) is closed: the status window shows the client phase in every mode. Tickets 58 (Electron binary install) and 61 (probe end record) have software fixes and await the owner's Windows checks.
+
 - 2026-10-13: Ticket 57 supplies the build-first launcher and [Windows operator handoff](../docs/agents/windows-test-handoff.md); six executable PowerShell workflow cases pass on macOS with package-manager stand-ins. Windows shell/native, current data and complete Live/runtime qualification remain pending.
 
 - 2026-10-13: The owner plans Windows testing tonight and authorized commit/push. Ticket 57 extracts the independent build-first launcher and operator handoff from 55; full runtime, current data and device qualification remain open. Push verified work on `implement/mvp`, preserving unfinished worktrees and personal artifacts.

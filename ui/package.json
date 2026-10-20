@@ -6,6 +6,7 @@
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
+    "electron:install": "install-electron",
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "gen:types": "node scripts/gen-types.mjs",
